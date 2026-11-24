@@ -31,6 +31,8 @@ export type Player = {
   frozenByWeapon?: string;
   blasterUntil?: number;
   isGodMode?: boolean;
+  lastOnGroundAt?: number;
+  jumpBufferedUntil?: number;
   lastPacketAt?: number;
   avgInterval?: number;
   snapshots?: { x: number; y: number; vx: number; vy: number; time: number }[];
@@ -154,11 +156,11 @@ export function updateStageEntities(
     } else if (plat.type === 'crumble') {
       if (plat.crumbleStartedAt) {
         const elapsed = now - plat.crumbleStartedAt;
-        if (elapsed >= 3550) {
+        if (elapsed >= 5500) {
           plat.brokenUntil = undefined;
           plat.crumbleStartedAt = undefined;
-        } else if (elapsed >= 1150) {
-          plat.brokenUntil = plat.crumbleStartedAt + 3550;
+        } else if (elapsed >= 2500) {
+          plat.brokenUntil = plat.crumbleStartedAt + 5500;
         }
       } else if (plat.brokenUntil && now >= plat.brokenUntil) {
         plat.brokenUntil = undefined;
@@ -513,9 +515,21 @@ export function updatePlayerPhysics(
     if (Math.abs(p.vx) < 0.1) p.vx = 0;
   }
 
-  if (input.jump && p.onGround) {
+  if (p.onGround) {
+    p.lastOnGroundAt = now;
+  }
+  if (input.jump) {
+    p.jumpBufferedUntil = now + 160;
+  }
+
+  const canCoyoteJump = p.onGround || (p.lastOnGroundAt && now - p.lastOnGroundAt <= 120);
+  const wantsJump = Boolean(input.jump || (p.jumpBufferedUntil && now <= p.jumpBufferedUntil));
+
+  if (wantsJump && canCoyoteJump && !p.isDying && !p.frozenUntil && !p.stunnedUntil) {
     p.vy = PHYSICS.jumpVelocity;
     p.onGround = false;
+    p.lastOnGroundAt = undefined;
+    p.jumpBufferedUntil = undefined;
     p.ridingPlayerId = null;
     p.lastCarrierX = undefined;
     p.ridingPlatform = null;
@@ -627,7 +641,9 @@ export function updatePlayerPhysics(
         }
       }
       box.y = p.y;
-      if (isQuestionBox(plat.type) && plat.questionId && onTouchQuestionBlock) {
+      // Landing on top: hanya trigger saat pertama kali mendarat dari udara (bukan setiap frame saat berdiri di atasnya)
+      const justLanded = prevVy > 0.5 && prevY + PLAYER_H <= plat.y + topThreshold;
+      if (isQuestionBox(plat.type) && plat.questionId && onTouchQuestionBlock && justLanded) {
         onTouchQuestionBlock(plat.questionId);
       }
     } else if (

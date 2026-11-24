@@ -259,6 +259,11 @@ export default function GamePage() {
   const isGodModeRef = useRef(false);
   const [mirrorTarget, setMirrorTarget] = useState<string | null>(null);
   const mirrorTargetRef = useRef<{ userId: string; username: string } | 'all' | null>(null);
+  const [isCameraFreePanning, setIsCameraFreePanning] = useState(false);
+  const isCameraFreePanningRef = useRef(false);
+  const [spectateTargetId, setSpectateTargetId] = useState<string | null>(null);
+  const spectateTargetIdRef = useRef<string | null>(null);
+  const [leaderboardSearch, setLeaderboardSearch] = useState('');
   // Posisi terakhir admin yang mengikat tali saya (untuk respawn & leash lintas stage)
   const meAdminAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const meAdminFacingRef = useRef<1 | -1>(1);
@@ -275,6 +280,97 @@ export default function GamePage() {
   const [scores, setScores] = useState<Record<string, number>>({});
   const [question, setQuestion] = useState<Question | null>(null);
   const questionRef = useRef<Question | null>(null);
+  const dismissedQuestionIdRef = useRef<string | null>(null);
+  const closedQuestionCooldownRef = useRef<Map<string, number>>(new Map());
+
+  const returnCameraToSelf = useCallback(() => {
+    if (isCameraFreePanningRef.current) {
+      isCameraFreePanningRef.current = false;
+      setIsCameraFreePanning(false);
+    }
+    if (spectateTargetIdRef.current) {
+      spectateTargetIdRef.current = null;
+      setSpectateTargetId(null);
+      const me = playersRef.current.get(myIdRef.current);
+      if (me?.stage && me.stage !== currentStageRef.current) {
+        applyStage(me.stage, { respawnPlayer: false, showToast: false });
+      }
+      showBanner('Kamera kembali ke karaktermu.');
+    }
+  }, [applyStage, showBanner]);
+
+  const toggleSpectate = useCallback((targetId: string, targetUsername: string) => {
+    if (spectateTargetIdRef.current === targetId) {
+      returnCameraToSelf();
+      return;
+    }
+
+    spectateTargetIdRef.current = targetId;
+    setSpectateTargetId(targetId);
+    isCameraFreePanningRef.current = false;
+    setIsCameraFreePanning(false);
+
+    const targetP = playersRef.current.get(targetId);
+    if (targetP) {
+      if (targetP.stage && targetP.stage !== currentStageRef.current) {
+        applyStage(targetP.stage, { respawnPlayer: false, showToast: false });
+      }
+      if (cameraRef.current) {
+        cameraRef.current.follow(targetP.x + PLAYER_W / 2, targetP.y, 0.4);
+      }
+    }
+
+    // Jika staff memantau siswa, otomatis aktifkan mirror untuk melihat soal & progresnya
+    if (isStaffRole(myRoleRef.current) && targetP?.role !== 'admin' && targetP?.role !== 'teacher') {
+      mirrorTargetRef.current = { userId: targetId, username: targetUsername };
+      mirrorFetchTargetRef.current = targetId;
+      setMirrorTarget(targetUsername);
+      const curStg = targetP?.stage ?? currentStageRef.current;
+      const curStageQs = getStageQuestions(levelQuestionsRef.current, curStg, totalStagesRef.current);
+      questionBlocksRef.current = generateQuestionBlocks(
+        curStageQs.map((q) => q.id),
+        `${targetId}:${roomId}:s${curStg}`,
+        curStg,
+      );
+      answerResultsRef.current.clear();
+      fetch('/api/game/room-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, targetId }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) return;
+          const results = (d.answerResults ?? {}) as Record<string, boolean | 'assisted'>;
+          for (const [qid, okAns] of Object.entries(results)) {
+            answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
+          }
+        })
+        .catch(() => {});
+    }
+
+    soundEngine.playPowerUp();
+    showBanner(`📹 Memantau ${targetP?.fullName || targetUsername} (Gunakan tombol gerak untuk kembali)`);
+  }, [applyStage, returnCameraToSelf, roomId, showBanner]);
+
+  const copyPlayerUsername = useCallback((uname: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(uname).catch(() => {});
+    }
+    soundEngine.playClick();
+    showBanner(`📋 Username '${uname}' disalin ke clipboard!`);
+  }, [showBanner]);
+
+  const closeQuestionModal = useCallback((dismissId?: string) => {
+    const qid = dismissId || questionRef.current?.id;
+    if (qid) {
+      dismissedQuestionIdRef.current = qid;
+      closedQuestionCooldownRef.current.set(qid, Date.now() + 3500);
+    }
+    setQuestion(null);
+    questionRef.current = null;
+    setSelected('');
+  }, []);
   const [selected, setSelected] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; correctAnswer?: string; explanation?: string; pointsEarned: number } | null>(null);
@@ -696,9 +792,15 @@ export default function GamePage() {
   const applyIncomingCommand = useCallback((cmd: RoomCommandEvent) => {
     const isTarget = 'targetId' in cmd && (cmd.targetId === 'all' || cmd.targetId === myIdRef.current);
     if (cmd.op === 'god') {
-      const targetP = playersRef.current.get(cmd.targetId);
-      if (targetP) {
-        targetP.isGodMode = cmd.value;
+      if (cmd.targetId === 'all') {
+        for (const p of playersRef.current.values()) {
+          p.isGodMode = cmd.value;
+        }
+      } else {
+        const targetP = playersRef.current.get(cmd.targetId);
+        if (targetP) {
+          targetP.isGodMode = cmd.value;
+        }
       }
       if (isTarget) {
         isGodModeRef.current = cmd.value;
@@ -772,36 +874,44 @@ export default function GamePage() {
         showBanner('⭐ Soal sudah dibantu jawab');
       }
     } else if (cmd.op === 'gun') {
-      const targetP = playersRef.current.get(cmd.targetId);
-      if (targetP) {
+      const applyGunToP = (p: Player) => {
         if (cmd.value && cmd.weapon) {
           const spec = WEAPONS[cmd.weapon as keyof typeof WEAPONS];
           if (spec) {
-            targetP.gun = cmd.weapon;
-            targetP.blasterAmmo = Infinity;
-            if (cmd.weapon === 'ice') {
-              targetP.frozenUntil = undefined;
-              targetP.frozenDeathAt = undefined;
-              targetP.stunnedUntil = undefined;
-            }
-            if (cmd.weapon === 'stunt') {
-              targetP.frozenUntil = undefined;
-              targetP.frozenDeathAt = undefined;
-              targetP.stunnedUntil = undefined;
+            p.gun = cmd.weapon;
+            p.blasterAmmo = Infinity;
+            if (cmd.weapon === 'ice' || cmd.weapon === 'stunt') {
+              p.frozenUntil = undefined;
+              p.frozenDeathAt = undefined;
+              p.stunnedUntil = undefined;
             }
           }
         } else {
-          targetP.gun = null;
-          targetP.blasterAmmo = 0;
-          targetP.blasterUntil = 0;
+          p.gun = null;
+          p.blasterAmmo = 0;
+          p.blasterUntil = 0;
         }
+      };
+
+      if (cmd.targetId === 'all') {
+        for (const p of playersRef.current.values()) {
+          applyGunToP(p);
+        }
+      } else {
+        const targetP = playersRef.current.get(cmd.targetId);
+        if (targetP) applyGunToP(targetP);
       }
-      if (isTarget && cmd.value && cmd.weapon) {
-        const spec = WEAPONS[cmd.weapon as keyof typeof WEAPONS];
-        if (spec) {
-          setAmmoCount(Infinity);
-          showBanner(cmd.weapon === 'ice' ? `🧊 ${spec.label} diberikan! (beku musuh jadi es, terdorong, lalu mati)` : cmd.weapon === 'stunt' ? `⚡ ${spec.label} diberikan! (musuh terkejut listrik, diam, lalu mati)` : `🔫 ${spec.label} diberikan! (peluru unlimited)`);
-          soundEngine.playPowerUp();
+      if (isTarget) {
+        if (cmd.value && cmd.weapon) {
+          const spec = WEAPONS[cmd.weapon as keyof typeof WEAPONS];
+          if (spec) {
+            setAmmoCount(Infinity);
+            showBanner(cmd.weapon === 'ice' ? `🧊 ${spec.label} diberikan! (beku musuh jadi es, terdorong, lalu mati)` : cmd.weapon === 'stunt' ? `⚡ ${spec.label} diberikan! (musuh terkejut listrik, diam, lalu mati)` : `🔫 ${spec.label} diberikan! (peluru unlimited)`);
+            soundEngine.playPowerUp();
+          }
+        } else {
+          setAmmoCount(0);
+          showBanner('🔫 Senjatamu telah dicabut oleh Admin/Guru.');
         }
       }
     } else if (cmd.op === 'jail') {
@@ -1043,6 +1153,9 @@ export default function GamePage() {
   ablyRef.current = ably;
 
   const fireLaser = useCallback(() => {
+    if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
+      returnCameraToSelf();
+    }
     const me = playersRef.current.get(myIdRef.current);
     if (!me || exitNoticeRef.current || roomRef.current?.status === 'paused') return;
     const now = Date.now();
@@ -1697,6 +1810,20 @@ export default function GamePage() {
         keysRef.current.jump = false;
         return;
       }
+      if (e.key === 'Escape' && down) {
+        if (isStaffRole(myRoleRef.current) && questionRef.current) {
+          closeQuestionModal(questionRef.current.id);
+          return;
+        }
+      }
+      if (
+        down &&
+        (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'A', 'd', 'D', 'w', 'W', ' ', 'f', 'F', 'x', 'X', 'e', 'E', 'j', 'J'].includes(e.key))
+      ) {
+        if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
+          returnCameraToSelf();
+        }
+      }
       if (['ArrowLeft', 'a', 'A'].includes(e.key)) keysRef.current.left = down;
       if (['ArrowRight', 'd', 'D'].includes(e.key)) keysRef.current.right = down;
       if (['ArrowUp', 'w', 'W', ' '].includes(e.key)) {
@@ -2033,6 +2160,23 @@ export default function GamePage() {
         keysRef.current.right = false;
         keysRef.current.jump = false;
       }
+      // Cek apakah player sudah bergeser/lepas dari kontak kotak yang baru di-close
+      if (dismissedQuestionIdRef.current && me) {
+        const dismissedBlock = questionBlocksRef.current.find((b) => b.questionId === dismissedQuestionIdRef.current);
+        if (!dismissedBlock) {
+          dismissedQuestionIdRef.current = null;
+        } else {
+          const isOverlapping =
+            me.x + PLAYER_W > dismissedBlock.x - 4 &&
+            me.x < dismissedBlock.x + dismissedBlock.w + 4 &&
+            me.y + PLAYER_H >= dismissedBlock.y - 4 &&
+            me.y <= dismissedBlock.y + dismissedBlock.h + 4;
+          if (!isOverlapping) {
+            dismissedQuestionIdRef.current = null;
+          }
+        }
+      }
+
       if (
         me &&
         !exitNoticeRef.current &&
@@ -2045,11 +2189,31 @@ export default function GamePage() {
           playersRef.current.values(),
           dynBlocks,
           (qid) => {
+            if (dismissedQuestionIdRef.current === qid) return;
+            const cooldownUntil = closedQuestionCooldownRef.current.get(qid);
+            if (cooldownUntil && Date.now() < cooldownUntil) return;
+            if (questionRef.current?.id === qid) return;
+
             if (!isStaff) {
               if (answeredIdsRef.current.has(qid)) return;
-              if (questionRef.current && !answeredIdsRef.current.has(questionRef.current.id)) {
+              const found = levelQuestionsRef.current.find((q) => q.id === qid);
+              if (found) {
+                keysRef.current.left = false;
+                keysRef.current.right = false;
+                keysRef.current.jump = false;
+                me.vx = 0;
+                soundEngine.playQuestionOpen();
+                questionRef.current = found;
+                setQuestion(found);
                 setQuestionMinimized(false);
-                return;
+                setSelected('');
+                setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
+              }
+            } else {
+              // Guru / Admin: bisa iseng mengecek soal kapanpun (baik saat mirroring maupun tidak)
+              if (mirrorTargetRef.current) {
+                const res = answerResultsRef.current.get(qid);
+                if (res === true || res === 'assisted') return;
               }
               const found = levelQuestionsRef.current.find((q) => q.id === qid);
               if (found) {
@@ -2062,21 +2226,7 @@ export default function GamePage() {
                 setQuestion(found);
                 setQuestionMinimized(false);
                 setSelected('');
-              }
-            } else if (mirrorTargetRef.current) {
-              const res = answerResultsRef.current.get(qid);
-              if (res === true || res === 'assisted') return;
-              const found = levelQuestionsRef.current.find((q) => q.id === qid);
-              if (found) {
-                keysRef.current.left = false;
-                keysRef.current.right = false;
-                keysRef.current.jump = false;
-                me.vx = 0;
-                soundEngine.playQuestionOpen();
-                questionRef.current = found;
-                setQuestion(found);
-                setQuestionMinimized(false);
-                setSelected('');
+                setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
               }
             }
           },
@@ -2229,7 +2379,11 @@ export default function GamePage() {
         }
       }
 
-      camera.follow(me ? me.x + PLAYER_W / 2 : WORLD.width / 2, me ? me.y : WORLD.height / 2, camLerp);
+      const spectateP = spectateTargetIdRef.current ? playersRef.current.get(spectateTargetIdRef.current) : null;
+      const followTarget = spectateP || me;
+      if (!isCameraFreePanningRef.current && followTarget) {
+        camera.follow(followTarget.x + PLAYER_W / 2, followTarget.y, camLerp);
+      }
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2750,7 +2904,17 @@ export default function GamePage() {
     if (!draggingRef.current.active || !cameraRef.current) return;
     const dx = e.clientX - draggingRef.current.x;
     const dy = e.clientY - draggingRef.current.y;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) draggingRef.current.moved = true;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      draggingRef.current.moved = true;
+      if (!isCameraFreePanningRef.current) {
+        isCameraFreePanningRef.current = true;
+        setIsCameraFreePanning(true);
+      }
+      if (spectateTargetIdRef.current) {
+        spectateTargetIdRef.current = null;
+        setSpectateTargetId(null);
+      }
+    }
     cameraRef.current.panBy(dx, dy);
     draggingRef.current = { active: true, x: e.clientX, y: e.clientY, moved: draggingRef.current.moved };
   }
@@ -2784,6 +2948,7 @@ export default function GamePage() {
     setQuestion(found);
     setQuestionMinimized(false);
     setSelected('');
+    setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
   }
   function onWheel(e: React.WheelEvent) {
     e.preventDefault();
@@ -2805,8 +2970,14 @@ export default function GamePage() {
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) d.moved = true;
-    const nx = d.origX + dx;
-    const ny = d.origY + dy;
+    let nx = d.origX + dx;
+    let ny = d.origY + dy;
+    if (d.key === 'question') {
+      const maxW = typeof window !== 'undefined' ? window.innerWidth * 0.42 : 300;
+      const maxH = typeof window !== 'undefined' ? window.innerHeight * 0.42 : 220;
+      nx = Math.max(-maxW, Math.min(maxW, nx));
+      ny = Math.max(-maxH, Math.min(maxH, ny));
+    }
     setPanelOffsets((prev) => ({ ...prev, [d.key]: { x: nx, y: ny } }));
   }
 
@@ -2824,9 +2995,14 @@ export default function GamePage() {
     return o ? { transform: `translate(${o.x}px, ${o.y}px)` } : undefined;
   }
 
-  function touchControl(dir: 'left' | 'right' | 'jump', down: boolean) {
+  const activePointersRef = useRef<Map<number, 'left' | 'right' | 'jump' | 'shoot'>>(new Map());
+
+  const touchControl = useCallback((dir: 'left' | 'right' | 'jump', down: boolean) => {
     if (down) {
       soundEngine.unlockAndStartBgm();
+      if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
+        returnCameraToSelf();
+      }
     }
     if (
       editingControlsLayout ||
@@ -2839,7 +3015,57 @@ export default function GamePage() {
       return;
     }
     keysRef.current[dir] = down;
-  }
+  }, [editingControlsLayout, returnCameraToSelf]);
+
+  const handleTouchControlStart = useCallback(
+    (action: 'left' | 'right' | 'jump' | 'shoot', e: React.PointerEvent) => {
+      if (editingControlsLayout) return;
+      e.preventDefault();
+      e.stopPropagation();
+      soundEngine.unlockAndStartBgm();
+      if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
+        returnCameraToSelf();
+      }
+
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch (_) {}
+
+      activePointersRef.current.set(e.pointerId, action);
+
+      if (action === 'shoot') {
+        fireLaser();
+      } else {
+        touchControl(action, true);
+      }
+    },
+    [editingControlsLayout, fireLaser, returnCameraToSelf, touchControl],
+  );
+
+  const handleTouchControlEnd = useCallback(
+    (action: 'left' | 'right' | 'jump' | 'shoot', e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch (_) {}
+
+      activePointersRef.current.delete(e.pointerId);
+
+      let stillHeld = false;
+      for (const act of activePointersRef.current.values()) {
+        if (act === action) {
+          stillHeld = true;
+          break;
+        }
+      }
+      if (!stillHeld && action !== 'shoot') {
+        touchControl(action, false);
+      }
+    },
+    [touchControl],
+  );
 
   function startControlGroupDrag(group: 'dpad' | 'jump', e: React.PointerEvent) {
     if (!editingControlsLayout) return;
@@ -2896,13 +3122,10 @@ export default function GamePage() {
   const cmdEnabledUsersRef = useRef<Set<string>>(new Set());
   const isStudentCmdAllowed = (uid: string) =>
     cmdEnabledUsersRef.current.has(uid) || cmdEnabledUsersRef.current.has('__ALL_STUDENTS__');
-  const isCmdAllowedFor = (role: string | undefined) =>
-    role === 'admin' || role === 'teacher' || (role === 'student' && isStudentCmdAllowed(myIdRef.current));
 
   async function handleChatCommand(rawText: string) {
     const isStaff = isStaffRole(myRoleRef.current);
     const isAdmin = myRoleRef.current === 'admin';
-    const isTeacher = myRoleRef.current === 'teacher';
 
     if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
       // Siswa yang belum di-enable: ketik '/' dianggap chat biasa, tanpa pesan error
@@ -3043,27 +3266,27 @@ export default function GamePage() {
 
     const ALL_COMMANDS: { prefix: string; usage: string; adminOnly?: boolean; staffOnly?: boolean; staffStrict?: boolean }[] = [
       { prefix: 'cls', usage: '• /cls : Bersihkan seluruh chat di layar' },
-      { prefix: 'set', usage: '• /set god <user|me> : Aktifkan God Mode' },
-      { prefix: 'unset', usage: '• /unset god <user|me> : Nonaktifkan God Mode' },
+      { prefix: 'set', usage: '• /set god <user|me|here|all> : Aktifkan God Mode (here = di stagemu, all = se-game)' },
+      { prefix: 'unset', usage: '• /unset god <user|me|here|all> : Nonaktifkan God Mode' },
       { prefix: 'teleport', usage: '• /teleport <username> : Nyamperin player (pindah ke stage & posisinya)', adminOnly: true },
+      { prefix: 'teleport', usage: '• /teleport here [me|<stage>] : Tarik player di stagemu ke posisimu / lempar ke stage lain', adminOnly: true },
+      { prefix: 'teleport', usage: '• /teleport all <me|here|<stage>> : Tarik SELURUH siswa ke posisimu / lempar ke stage', adminOnly: true },
       { prefix: 'teleport', usage: '• /teleport <user|me> me : Tarik player ke posisimu' },
       { prefix: 'teleport', usage: `• /teleport <user|me> <stage> : Lempar player ke Stage tertentu (1-${totalStagesRef.current})` },
-      { prefix: 'teleport', usage: '• /teleport all me : Tarik SELURUH siswa ke posisimu', adminOnly: true },
-      { prefix: 'teleport', usage: '• /teleport all <stage> : Lempar SELURUH siswa ke Stage tertentu', adminOnly: true },
       { prefix: 'mirror', usage: '• /mirror <username> : Tampilkan & bantu jawab kotak soal siswa', staffOnly: true },
       { prefix: 'mirror', usage: '• /mirror all : Mode soal bonus untuk seluruh kelas', staffOnly: true },
       { prefix: 'unset', usage: '• /unset mirror : Sembunyikan kembali kotak soal', staffOnly: true },
       { prefix: 'reset', usage: '• /reset <user|me> : Reset jawaban & skor player ke Stage 1' },
       { prefix: 'reset', usage: '• /reset all : Reset SEMUA jawaban 1 room ke Stage 1', adminOnly: true },
-      { prefix: 'spawn', usage: '• /spawn gun <minigun|laser|megalaser|ice|stunt> [user|me] : Beri senjata', staffOnly: true },
+      { prefix: 'spawn', usage: '• /spawn gun <minigun|laser|megalaser|ice|stunt|none> [user|me|here|all] : Beri / cabut senjata', staffOnly: true },
       { prefix: 'jail', usage: '• /jail on|off [user|me] : Bekukan player selama 15 detik', staffOnly: true },
       { prefix: 'change', usage: '• /change tag <user|me> <judul> : Ganti title tag di atas kepala', staffOnly: true },
       { prefix: 'change', usage: '• /change color <user|me> body|tag|nick <warna> : Ganti warna', staffOnly: true },
       { prefix: 'set', usage: '• /set nick <user|me> <nama> : Ganti nama player', staffOnly: true },
       { prefix: 'unset', usage: '• /unset nick <user|me> : Balikin nama asli player', staffOnly: true },
-      { prefix: 'take', usage: '• /take rope <user|all> : Ikat player dengan tali (ikut admin & kebal rintangan)', adminOnly: true },
-      { prefix: 'untake', usage: '• /untake rope <user|all> : Lepas tali player', adminOnly: true },
-      { prefix: 'skip', usage: '• /skip stage <username|all|rope> : Tandai semua soal tersisa di stage siswa sebagai selesai', adminOnly: true },
+      { prefix: 'take', usage: '• /take rope <user|here|all> : Ikat player dengan tali (ikut admin & kebal rintangan)', adminOnly: true },
+      { prefix: 'untake', usage: '• /untake rope <user|here|all> : Lepas tali player', adminOnly: true },
+      { prefix: 'skip', usage: '• /skip stage <username|here|all|rope> : Tandai soal tersisa selesai (here = stagemu, all = se-game)', adminOnly: true },
       { prefix: 'enable', usage: '• /enable cmd <target|all> : Izinkan siswa di room pakai perintah chat (sementara)', staffStrict: true },
       { prefix: 'disable', usage: '• /disable cmd <target|all> : Cabut akses perintah chat siswa di room', staffStrict: true },
     ];
@@ -3105,34 +3328,83 @@ export default function GamePage() {
       return;
     }
 
-    if (cmd === 'set' && arg1 === 'god') {
-      const targetQuery = arg2 || parts[2];
-      const target = resolveTarget(targetQuery);
-      if (!target) return;
-      const p = playersRef.current.get(target.id);
-      if (p) p.isGodMode = true;
-      if (target.id === myIdRef.current) {
-        isGodModeRef.current = true;
-        setIsGodMode(true);
+    if ((cmd === 'set' || cmd === 'unset') && arg1 === 'god') {
+      const isTurnOn = cmd === 'set';
+      const targetQuery = (arg2 || parts[2])?.toLowerCase();
+      if (!targetQuery) {
+        addSystemChatMessage(`Format: /${cmd} god <user|me|here|all>`);
+        return;
       }
-      ably.publishCommand({ op: 'god', targetId: target.id, value: true, targetName: target.username });
-      addSystemChatMessage(`👑 God Mode DIAKTIFKAN untuk '${target.username}'. (Kebal & Infinite Laser)`);
-      soundEngine.playPowerUp();
-      return;
-    }
 
-    if (cmd === 'unset' && arg1 === 'god') {
-      const targetQuery = arg2 || parts[2];
+      if (targetQuery === 'all') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'all' hanya dapat digunakan oleh Administrator.");
+          return;
+        }
+        for (const p of playersRef.current.values()) {
+          p.isGodMode = isTurnOn;
+        }
+        isGodModeRef.current = isTurnOn;
+        setIsGodMode(isTurnOn);
+        ably.publishCommand({ op: 'god', targetId: 'all', value: isTurnOn });
+        addSystemChatMessage(
+          isTurnOn
+            ? '👑 God Mode DIAKTIFKAN untuk SEMUA player di game. (Kebal & Infinite Laser)'
+            : '🛡️ God Mode DINONAKTIFKAN untuk SEMUA player di game.',
+        );
+        if (isTurnOn) soundEngine.playPowerUp();
+        else soundEngine.playBounce();
+        return;
+      }
+
+      if (targetQuery === 'here') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'here' hanya dapat digunakan oleh Administrator.");
+          return;
+        }
+        const adminStage = currentStageRef.current;
+        const targets: { id: string; username: string }[] = [];
+        for (const p of playersRef.current.values()) {
+          if ((p.stage ?? 1) === adminStage) {
+            targets.push({ id: p.id, username: p.username });
+          }
+        }
+        for (const t of targets) {
+          const p = playersRef.current.get(t.id);
+          if (p) p.isGodMode = isTurnOn;
+          if (t.id === myIdRef.current) {
+            isGodModeRef.current = isTurnOn;
+            setIsGodMode(isTurnOn);
+          } else {
+            ably.publishCommand({ op: 'god', targetId: t.id, value: isTurnOn, targetName: t.username });
+          }
+        }
+        addSystemChatMessage(
+          isTurnOn
+            ? `👑 God Mode DIAKTIFKAN untuk SEMUA player di Stage ${adminStage} (${targets.length} player).`
+            : `🛡️ God Mode DINONAKTIFKAN untuk SEMUA player di Stage ${adminStage} (${targets.length} player).`,
+        );
+        if (isTurnOn) soundEngine.playPowerUp();
+        else soundEngine.playBounce();
+        return;
+      }
+
       const target = resolveTarget(targetQuery);
       if (!target) return;
       const p = playersRef.current.get(target.id);
-      if (p) p.isGodMode = false;
+      if (p) p.isGodMode = isTurnOn;
       if (target.id === myIdRef.current) {
-        isGodModeRef.current = false;
-        setIsGodMode(false);
+        isGodModeRef.current = isTurnOn;
+        setIsGodMode(isTurnOn);
       }
-      ably.publishCommand({ op: 'god', targetId: target.id, value: false, targetName: target.username });
-      addSystemChatMessage(`🛡️ God Mode DINONAKTIFKAN untuk '${target.username}'.`);
+      ably.publishCommand({ op: 'god', targetId: target.id, value: isTurnOn, targetName: target.username });
+      addSystemChatMessage(
+        isTurnOn
+          ? `👑 God Mode DIAKTIFKAN untuk '${target.username}'. (Kebal & Infinite Laser)`
+          : `🛡️ God Mode DINONAKTIFKAN untuk '${target.username}'.`,
+      );
+      if (isTurnOn) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
       return;
     }
 
@@ -3141,7 +3413,79 @@ export default function GamePage() {
       const dest = arg2;
 
       if (!targetQuery) {
-        addSystemChatMessage('Format salah. Contoh: /teleport bims, /teleport bims me, atau /teleport bims 2');
+        addSystemChatMessage('Format: /teleport <username>, /teleport <user|here|all> [me|<stage>]');
+        return;
+      }
+
+      if (targetQuery === 'here') {
+        if (!isAdmin) {
+          addSystemChatMessage('Perintah /teleport here hanya dapat digunakan oleh Administrator.');
+          return;
+        }
+        const adminStage = currentStageRef.current;
+        const targets: { id: string; username: string }[] = [];
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          if ((p.stage ?? 1) === adminStage) {
+            targets.push({ id: p.id, username: p.username });
+          }
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
+          return;
+        }
+        if (!dest || dest === 'me') {
+          const me = playersRef.current.get(myIdRef.current);
+          for (const t of targets) {
+            ably.publishCommand({
+              op: 'teleport',
+              targetId: t.id,
+              stage: adminStage,
+              x: me?.x ?? 120,
+              y: me?.y ?? 600,
+            });
+          }
+          addSystemChatMessage(`🌀 Berhasil teleport SEMUA player di Stage ${adminStage} (${targets.length} player) ke posisimu.`);
+        } else {
+          const stg = Number(dest);
+          if (stg >= 1 && stg <= totalStagesRef.current) {
+            for (const t of targets) {
+              ably.publishCommand({ op: 'teleport', targetId: t.id, stage: stg });
+            }
+            addSystemChatMessage(`🌀 Berhasil teleport SEMUA player di Stage ${adminStage} (${targets.length} player) ke Stage ${stg}.`);
+          } else {
+            addSystemChatMessage(`Nomor stage tidak valid (1-${totalStagesRef.current}).`);
+          }
+        }
+        soundEngine.playBounce();
+        return;
+      }
+
+      if (targetQuery === 'all') {
+        if (!isAdmin) {
+          addSystemChatMessage('Perintah /teleport all hanya dapat digunakan oleh Administrator.');
+          return;
+        }
+        if (dest === 'me' || dest === 'here' || !dest) {
+          const me = playersRef.current.get(myIdRef.current);
+          ably.publishCommand({
+            op: 'teleport',
+            targetId: 'all',
+            stage: currentStageRef.current,
+            x: me?.x ?? 120,
+            y: me?.y ?? 600,
+          });
+          addSystemChatMessage(`Berhasil teleport SELURUH siswa ke posisimu di Stage ${currentStageRef.current}.`);
+        } else {
+          const stg = Number(dest);
+          if (stg >= 1 && stg <= totalStagesRef.current) {
+            ably.publishCommand({ op: 'teleport', targetId: 'all', stage: stg });
+            addSystemChatMessage(`Berhasil teleport SELURUH siswa ke Stage ${stg}.`);
+          } else {
+            addSystemChatMessage(`Nomor stage tidak valid (1-${totalStagesRef.current}).`);
+          }
+        }
+        soundEngine.playBounce();
         return;
       }
 
@@ -3179,34 +3523,6 @@ export default function GamePage() {
         return;
       }
 
-      if (targetQuery === 'all') {
-        if (!isAdmin) {
-          addSystemChatMessage('Perintah /teleport all hanya dapat digunakan oleh Administrator.');
-          return;
-        }
-        if (dest === 'me') {
-          const me = playersRef.current.get(myIdRef.current);
-          ably.publishCommand({
-            op: 'teleport',
-            targetId: 'all',
-            stage: currentStageRef.current,
-            x: me?.x ?? 120,
-            y: me?.y ?? 600,
-          });
-          addSystemChatMessage(`Berhasil teleport SELURUH siswa ke posisimu di Stage ${currentStageRef.current}.`);
-        } else {
-          const stg = Number(dest);
-          if (stg >= 1 && stg <= totalStagesRef.current) {
-            ably.publishCommand({ op: 'teleport', targetId: 'all', stage: stg });
-            addSystemChatMessage(`Berhasil teleport SELURUH siswa ke Stage ${stg}.`);
-          } else {
-            addSystemChatMessage(`Nomor stage tidak valid (1-${totalStagesRef.current}).`);
-          }
-        }
-        soundEngine.playBounce();
-        return;
-      }
-
       const target = resolveTarget(targetQuery);
       if (!target) return;
 
@@ -3241,7 +3557,7 @@ export default function GamePage() {
       const wantRope = cmd === 'take';
       const targetQuery = arg2;
       if (!targetQuery) {
-        addSystemChatMessage(`Format salah. Contoh: /${cmd} rope bims atau /${cmd} rope all`);
+        addSystemChatMessage(`Format: /${cmd} rope <username|here|all>`);
         return;
       }
       const me = playersRef.current.get(myIdRef.current);
@@ -3249,6 +3565,7 @@ export default function GamePage() {
         addSystemChatMessage('Karaktermu belum siap, coba lagi.');
         return;
       }
+      const adminStage = currentStageRef.current;
       const targets: { id: string; username: string }[] = [];
       if (targetQuery === 'all') {
         for (const p of playersRef.current.values()) {
@@ -3257,6 +3574,17 @@ export default function GamePage() {
         }
         if (wantRope && targets.length === 0) {
           addSystemChatMessage('Tidak ada player untuk diikat.');
+          return;
+        }
+      } else if (targetQuery === 'here') {
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          if ((p.stage ?? 1) === adminStage) {
+            targets.push({ id: p.id, username: p.username });
+          }
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
           return;
         }
       } else {
@@ -3284,7 +3612,13 @@ export default function GamePage() {
       }
       for (const t of targets) {
         const p = playersRef.current.get(t.id);
-        if (p) p.ropedById = wantRope ? myIdRef.current : null;
+        if (p) {
+          p.ropedById = wantRope ? myIdRef.current : null;
+          if (!wantRope) {
+            p.adminAnchor = undefined;
+            p.adminFacing = undefined;
+          }
+        }
         ably.publishCommand({
           op: 'rope',
           targetId: t.id,
@@ -3293,13 +3627,18 @@ export default function GamePage() {
           byName: myUsernameRef.current || 'Admin',
         });
       }
-      const names = targets.map((t) => t.username).join(', ');
+      const names = targetQuery === 'here'
+        ? `SEMUA player di Stage ${adminStage} (${targets.length} player)`
+        : targetQuery === 'all'
+        ? `SEMUA player di game (${targets.length} player)`
+        : `'${targets.map((t) => t.username).join(', ')}'`;
       addSystemChatMessage(
         wantRope
-          ? `🪢 Mengikat '${names}' dengan tali. Mereka akan mengikutimu & kebal rintangan.`
-          : `🪢 Melepas tali '${names}'.`,
+          ? `🪢 Mengikat ${names} dengan tali. Mereka akan mengikutimu & kebal rintangan.`
+          : `🪢 Melepas tali ${names}.`,
       );
       if (wantRope) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
       return;
     }
 
@@ -3310,18 +3649,11 @@ export default function GamePage() {
       }
       if (arg1 !== 'stage' || !arg2) {
         addSystemChatMessage('Perintah tidak lengkap. Format:');
-        addSystemChatMessage('• /skip stage <username|all|rope> : Tandai semua soal tersisa di stage siswa sebagai selesai (tanpa poin). all = semua player di stage admin, rope = yang diikat tali.');
+        addSystemChatMessage('• /skip stage <username|here|all|rope> : Tandai soal tersisa selesai (here = stagemu, all = se-game, rope = diikat tali).');
         return;
       }
-      if (!isAdmin) {
-        addSystemChatMessage('Perintah /skip stage hanya dapat digunakan oleh Administrator.');
-        return;
-      }
-      const targetQuery = arg2;
-      if (!targetQuery) {
-        addSystemChatMessage('Format salah. Contoh: /skip stage najla, /skip stage all, atau /skip stage rope');
-        return;
-      }
+      const targetQuery = arg2?.toLowerCase();
+
       // /skip stage rope: bypass SEMUA player yang sedang diikat tali oleh admin
       if (targetQuery === 'rope') {
         const targets: { id: string; username: string; stage: number }[] = [];
@@ -3364,8 +3696,9 @@ export default function GamePage() {
         }
         return;
       }
-      // /skip stage all: bypass SEMUA player yang ada di stage yang sama dengan admin
-      if (targetQuery === 'all') {
+
+      // /skip stage here: bypass SEMUA player yang ada di stage yang sama dengan admin
+      if (targetQuery === 'here') {
         const adminStage = currentStageRef.current;
         const stageQs = getStageQuestions(levelQuestionsRef.current, adminStage, totalStagesRef.current);
         if (stageQs.length === 0) {
@@ -3379,7 +3712,7 @@ export default function GamePage() {
           targets.push({ id: p.id, username: p.username });
         }
         if (targets.length === 0) {
-          addSystemChatMessage(`Tidak ada player lain di stage ${adminStage}.`);
+          addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
           return;
         }
         try {
@@ -3403,7 +3736,49 @@ export default function GamePage() {
             ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: adminStage });
             totalMarked += qids.length;
           }
-          addSystemChatMessage(`⏭️ Skip stage all (${targets.length} player di stage ${adminStage}): ${totalMarked} soal ditandai selesai (tanpa poin).`);
+          addSystemChatMessage(`⏭️ Skip stage here (${targets.length} player di Stage ${adminStage}): ${totalMarked} soal ditandai selesai (tanpa poin).`);
+          soundEngine.playPowerUp();
+        } catch {
+          addSystemChatMessage('Gagal skip stage here, coba lagi.');
+        }
+        return;
+      }
+
+      // /skip stage all: bypass SEMUA player di seluruh game
+      if (targetQuery === 'all') {
+        const targets: { id: string; username: string; stage: number }[] = [];
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          targets.push({ id: p.id, username: p.username, stage: p.stage ?? 1 });
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage('Tidak ada player lain di game.');
+          return;
+        }
+        try {
+          let totalMarked = 0;
+          for (const t of targets) {
+            const stageQs = getStageQuestions(levelQuestionsRef.current, t.stage, totalStagesRef.current);
+            if (stageQs.length === 0) continue;
+            const res = await fetch('/api/game/room-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id }),
+            });
+            const data = await res.json();
+            const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
+            const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
+            if (unanswered.length === 0) continue;
+            const qids = unanswered.map((q) => q.id);
+            await fetch('/api/game/skip-stage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id, stage: t.stage, questionIds: qids }),
+            });
+            ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: t.stage });
+            totalMarked += qids.length;
+          }
+          addSystemChatMessage(`⏭️ Skip stage all (${targets.length} player di seluruh game): ${totalMarked} soal ditandai selesai (tanpa poin).`);
           soundEngine.playPowerUp();
         } catch {
           addSystemChatMessage('Gagal skip stage all, coba lagi.');
@@ -3631,9 +4006,93 @@ export default function GamePage() {
         addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
         return;
       }
+      const weaponArg = parts[2]?.toLowerCase();
       const weaponType = parseWeaponType(parts[2]);
       const targetQuery = parts[3]?.toLowerCase() || 'me';
-      if (!weaponType && parts[2] && ['none', 'off', 'unset'].includes(parts[2]?.toLowerCase() ?? '')) {
+      const isUnset = !weaponType && weaponArg && ['none', 'off', 'unset'].includes(weaponArg);
+
+      if (!weaponType && !isUnset) {
+        addSystemChatMessage('Format: /spawn gun <minigun|laser|megalaser|ice|stunt|none> [user|me|here|all]');
+        return;
+      }
+
+      if (targetQuery === 'all') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'all' hanya dapat digunakan oleh Administrator.");
+          return;
+        }
+        if (isUnset) {
+          setAmmoCount(0);
+          for (const p of playersRef.current.values()) {
+            p.gun = null;
+            p.blasterAmmo = 0;
+            p.blasterUntil = 0;
+          }
+          ably.publishCommand({ op: 'gun', targetId: 'all', value: false });
+          addSystemChatMessage('🔫 Senjata SEMUA player di game dicabut.');
+          soundEngine.playBounce();
+          return;
+        }
+        if (weaponType) {
+          const spec = WEAPONS[weaponType];
+          setAmmoCount(Infinity);
+          for (const p of playersRef.current.values()) {
+            p.gun = weaponType;
+            p.blasterAmmo = Infinity;
+          }
+          ably.publishCommand({ op: 'gun', targetId: 'all', value: true, weapon: weaponType });
+          addSystemChatMessage(`🔫 ${spec.label} diberikan ke SEMUA player di game (peluru unlimited).`);
+          soundEngine.playPowerUp();
+          return;
+        }
+      }
+
+      if (targetQuery === 'here') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'here' hanya dapat digunakan oleh Administrator.");
+          return;
+        }
+        const adminStage = currentStageRef.current;
+        const targets: { id: string; username: string }[] = [];
+        for (const p of playersRef.current.values()) {
+          if ((p.stage ?? 1) === adminStage) {
+            targets.push({ id: p.id, username: p.username });
+          }
+        }
+        if (isUnset) {
+          for (const t of targets) {
+            const p = playersRef.current.get(t.id);
+            if (p) {
+              p.gun = null;
+              p.blasterAmmo = 0;
+              p.blasterUntil = 0;
+            }
+            if (t.id === myIdRef.current) setAmmoCount(0);
+            else ably.publishCommand({ op: 'gun', targetId: t.id, value: false });
+          }
+          addSystemChatMessage(`🔫 Senjata SEMUA player di Stage ${adminStage} dicabut (${targets.length} player).`);
+          soundEngine.playBounce();
+          return;
+        }
+        if (weaponType) {
+          const spec = WEAPONS[weaponType];
+          for (const t of targets) {
+            const p = playersRef.current.get(t.id);
+            if (p) {
+              p.gun = weaponType;
+              p.blasterAmmo = Infinity;
+            }
+            if (t.id === myIdRef.current) setAmmoCount(Infinity);
+            else ably.publishCommand({ op: 'gun', targetId: t.id, value: true, weapon: weaponType });
+          }
+          addSystemChatMessage(`🔫 ${spec.label} diberikan ke SEMUA player di Stage ${adminStage} (${targets.length} player, peluru unlimited).`);
+          soundEngine.playPowerUp();
+          return;
+        }
+      }
+
+      // Single target
+      if (isUnset) {
         const target = resolveTarget(targetQuery);
         if (!target) return;
         const p = playersRef.current.get(target.id);
@@ -3642,27 +4101,28 @@ export default function GamePage() {
           p.blasterAmmo = 0;
           p.blasterUntil = 0;
         }
+        if (target.id === myIdRef.current) setAmmoCount(0);
         ably.publishCommand({ op: 'gun', targetId: target.id, value: false });
         addSystemChatMessage(`🔫 Senjata '${target.username}' dicabut.`);
+        soundEngine.playBounce();
         return;
       }
-      if (!weaponType) {
-        addSystemChatMessage('Format: /spawn gun <minigun|laser|megalaser|ice|stunt> [user|me]');
+
+      if (weaponType) {
+        const spec = WEAPONS[weaponType];
+        const target = resolveTarget(targetQuery);
+        if (!target) return;
+        const p = playersRef.current.get(target.id);
+        if (p) {
+          p.gun = weaponType;
+          p.blasterAmmo = Infinity;
+        }
+        if (target.id === myIdRef.current) setAmmoCount(Infinity);
+        ably.publishCommand({ op: 'gun', targetId: target.id, value: true, weapon: weaponType });
+        addSystemChatMessage(`🔫 ${spec.label} diberikan ke '${target.username}' (peluru unlimited).`);
+        soundEngine.playPowerUp();
         return;
       }
-      const spec = WEAPONS[weaponType];
-      const target = resolveTarget(targetQuery);
-      if (!target) return;
-      const p = playersRef.current.get(target.id);
-      if (p) {
-        p.gun = weaponType;
-        p.blasterAmmo = Infinity;
-      }
-      if (target.id === myIdRef.current) setAmmoCount(Infinity);
-      ably.publishCommand({ op: 'gun', targetId: target.id, value: true, weapon: weaponType });
-      addSystemChatMessage(`🔫 ${spec.label} diberikan ke '${target.username}' (peluru unlimited).`);
-      soundEngine.playPowerUp();
-      return;
     }
 
     if (cmd === 'jail') {
@@ -4118,7 +4578,35 @@ export default function GamePage() {
               )}
             </div>
 
-            {mirrorTarget && isStaff && (
+            {spectateTargetId && (
+              <div className="mirror-indicator-pill mp-spectate-pill" role="status">
+                <span>📹 Memantau: <strong>{playersRef.current.get(spectateTargetId)?.username || spectateTargetId}</strong></span>
+                <button
+                  type="button"
+                  className="mirror-close-btn"
+                  title="Kembali ke Karakter Sendiri"
+                  onClick={returnCameraToSelf}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {isCameraFreePanning && !spectateTargetId && (
+              <div className="mirror-indicator-pill mp-freepan-pill" role="status">
+                <span>🔍 Kamera Bebas</span>
+                <button
+                  type="button"
+                  className="mp-freepan-reset-btn"
+                  title="Kembalikan kamera ke karakter"
+                  onClick={returnCameraToSelf}
+                >
+                  🎯 Pusatkan
+                </button>
+              </div>
+            )}
+
+            {mirrorTarget && !spectateTargetId && isStaff && (
               <div className="mirror-indicator-pill" role="status">
                 <span>🔍 Mirroring: <strong>{mirrorTarget}</strong></span>
                 <button
@@ -4338,10 +4826,44 @@ export default function GamePage() {
                             −
                           </button>
                         </h2>
+                        {isStaff && (
+                          <div className="mp-leaderboard-search-wrap">
+                            <input
+                              type="text"
+                              className="mp-leaderboard-search-input"
+                              placeholder="🔍 Cari username / nama..."
+                              value={leaderboardSearch}
+                              onChange={(e) => setLeaderboardSearch(e.target.value)}
+                              onFocus={() => {
+                                keysRef.current.left = false;
+                                keysRef.current.right = false;
+                                keysRef.current.jump = false;
+                              }}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              onKeyUp={(e) => e.stopPropagation()}
+                            />
+                            {leaderboardSearch && (
+                              <button
+                                type="button"
+                                className="mp-search-clear-btn"
+                                onClick={() => setLeaderboardSearch('')}
+                                title="Hapus pencarian"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        )}
                         <ol className="mp-rank-list">
                           {sortedPlayers
                             .filter((p) => p.role !== 'admin')
-                            .slice(0, 5)
+                            .filter((p) => {
+                              if (!isStaff || !leaderboardSearch.trim()) return true;
+                              const q = leaderboardSearch.trim().toLowerCase();
+                              const uname = p.username.toLowerCase();
+                              const fname = (p.fullName || '').toLowerCase();
+                              return uname.includes(q) || fname.includes(q);
+                            })
                             .map((p, i) => {
                               const liveP = playersRef.current.get(p.userId);
                               const pFullName = p.fullName || liveP?.fullName;
@@ -4350,12 +4872,39 @@ export default function GamePage() {
                                 pFullName && pFullName.trim().toLowerCase() !== pUsername.trim().toLowerCase()
                                   ? `[${pUsername}] - ${pFullName.trim()}`
                                   : `[${pUsername}]`;
+                              const isSpectatingThis = spectateTargetId === p.userId;
                               return (
-                                <li key={p.userId} className="mp-rank-row">
+                                <li key={p.userId} className={`mp-rank-row${isSpectatingThis ? ' is-spectating' : ''}`}>
                                   <span className={`rank-medal ${['gold', 'silver', 'bronze'][i] ?? 'silver'}`}>{i + 1}</span>
                                   <span className={`rank-cat-dot ${chipColor(p.userId)}`} aria-hidden="true" />
                                   <span className="rank-name" title={rankDisplayName}>{rankDisplayName}</span>
                                   <span className="rank-score">{scores[p.userId] ?? 0}</span>
+                                  {isStaff && (
+                                    <div className="mp-rank-actions">
+                                      <button
+                                        type="button"
+                                        className={`mp-rank-btn mp-rank-spy-btn${isSpectatingThis ? ' is-active' : ''}`}
+                                        title={`Pantau / Spy kamera ke ${pUsername}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleSpectate(p.userId, pUsername);
+                                        }}
+                                      >
+                                        📹
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="mp-rank-btn mp-rank-copy-btn"
+                                        title={`Copy username '${pUsername}'`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          copyPlayerUsername(pUsername);
+                                        }}
+                                      >
+                                        📋
+                                      </button>
+                                    </div>
+                                  )}
                                 </li>
                               );
                             })}
@@ -4509,14 +5058,9 @@ export default function GamePage() {
                 type="button"
                 className="ctrl-circle"
                 aria-label="Gerak ke Kiri"
-                onPointerDown={(e) => {
-                  if (editingControlsLayout) return;
-                  e.preventDefault();
-                  touchControl('left', true);
-                }}
-                onPointerUp={() => touchControl('left', false)}
-                onPointerCancel={() => touchControl('left', false)}
-                onPointerLeave={() => touchControl('left', false)}
+                onPointerDown={(e) => handleTouchControlStart('left', e)}
+                onPointerUp={(e) => handleTouchControlEnd('left', e)}
+                onPointerCancel={(e) => handleTouchControlEnd('left', e)}
                 onContextMenu={(e) => e.preventDefault()}
               >
                 <svg
@@ -4532,14 +5076,9 @@ export default function GamePage() {
                 type="button"
                 className="ctrl-circle"
                 aria-label="Gerak ke Kanan"
-                onPointerDown={(e) => {
-                  if (editingControlsLayout) return;
-                  e.preventDefault();
-                  touchControl('right', true);
-                }}
-                onPointerUp={() => touchControl('right', false)}
-                onPointerCancel={() => touchControl('right', false)}
-                onPointerLeave={() => touchControl('right', false)}
+                onPointerDown={(e) => handleTouchControlStart('right', e)}
+                onPointerUp={(e) => handleTouchControlEnd('right', e)}
+                onPointerCancel={(e) => handleTouchControlEnd('right', e)}
                 onContextMenu={(e) => e.preventDefault()}
               >
                 <svg
@@ -4568,11 +5107,9 @@ export default function GamePage() {
                 className={`ctrl-circle ctrl-shoot-btn has-ammo`}
                 aria-label="Tembak Laser"
                 title="Tembak Laser (F / X / E)"
-                onPointerDown={(e) => {
-                  if (editingControlsLayout) return;
-                  e.preventDefault();
-                  fireLaser();
-                }}
+                onPointerDown={(e) => handleTouchControlStart('shoot', e)}
+                onPointerUp={(e) => handleTouchControlEnd('shoot', e)}
+                onPointerCancel={(e) => handleTouchControlEnd('shoot', e)}
                 onContextMenu={(e) => e.preventDefault()}
               >
                 <span className="ctrl-shoot-icon" aria-hidden="true">⚡</span>
@@ -4583,14 +5120,9 @@ export default function GamePage() {
                 type="button"
                 className="ctrl-circle"
                 aria-label="Lompat"
-                onPointerDown={(e) => {
-                  if (editingControlsLayout) return;
-                  e.preventDefault();
-                  touchControl('jump', true);
-                }}
-                onPointerUp={() => touchControl('jump', false)}
-                onPointerCancel={() => touchControl('jump', false)}
-                onPointerLeave={() => touchControl('jump', false)}
+                onPointerDown={(e) => handleTouchControlStart('jump', e)}
+                onPointerUp={(e) => handleTouchControlEnd('jump', e)}
+                onPointerCancel={(e) => handleTouchControlEnd('jump', e)}
                 onContextMenu={(e) => e.preventDefault()}
               >
                 <svg
@@ -4710,6 +5242,8 @@ export default function GamePage() {
                     onPointerMove={movePanelDrag}
                     onPointerUp={(e) => endPanelDrag(e)}
                     onPointerCancel={(e) => endPanelDrag(e)}
+                    onDoubleClick={() => setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }))}
+                    title="Drag untuk memindahkan, klik 2x untuk reset posisi"
                   >
                     <span className="mp-panel-heading-title">
                       <span aria-hidden="true">📖</span> Tantangan Soal {isStaff && mirrorTarget && (
@@ -4718,63 +5252,74 @@ export default function GamePage() {
                         </span>
                       )}
                     </span>
-                    {isStaff && (
-                      <button
-                        type="button"
-                        className="mp-win-btn ml-auto text-sm font-bold text-slate-300 hover:text-white"
-                        title="Tutup Modal Soal (Guru/Admin)"
-                        onClick={() => {
-                          setQuestion(null);
-                          questionRef.current = null;
-                        }}
-                      >
-                        ✕
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1 ml-auto">
+                      {panelOffsets['question'] && (panelOffsets['question'].x !== 0 || panelOffsets['question'].y !== 0) && (
+                        <button
+                          type="button"
+                          className="mp-win-btn text-xs font-bold text-amber-900 hover:text-black"
+                          title="Reset posisi ke tengah"
+                          onClick={() => setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }))}
+                        >
+                          ⌖
+                        </button>
+                      )}
+                      {isStaff && (
+                        <button
+                          type="button"
+                          className="mp-win-btn text-sm font-bold text-slate-300 hover:text-white"
+                          title="Tutup Modal Soal (Guru/Admin)"
+                          onClick={() => closeQuestionModal(question.id)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="mp-bonus-badge" aria-label={`Bonus ${question.points} poin`}>
                     <span aria-hidden="true">⏱</span> +{question.points}
                   </div>
 
-                  <div className="mp-q-header-row">
-                    <h2 className="mp-q-heading">{question.content}</h2>
-                  </div>
+                  <form onSubmit={submitAnswer} className="mp-q-form-body">
+                    <div className="mp-q-scroll-content">
+                      <div className="mp-q-header-row">
+                        <h2 className="mp-q-heading">{question.content}</h2>
+                      </div>
 
-                  <form onSubmit={submitAnswer}>
-                    <div className="mp-options-grid-2x2" role="radiogroup" aria-label="Pilihan jawaban">
-                      {question.options.map((o, idx) => {
-                        const displayLabel = OPTION_DISPLAY_LABELS[idx] ?? o.label;
-                        const isCorrectKey = myRoleRef.current === 'admin' && Boolean(question.correctAnswer) && (
-                          question.correctAnswer === o.label ||
-                          question.correctAnswer === o.content ||
-                          question.correctAnswer?.toLowerCase() === o.label.toLowerCase() ||
-                          question.correctAnswer?.toLowerCase() === o.content.toLowerCase()
-                        );
-                        return (
-                          <button
-                            key={o.label}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected === o.label}
-                            className={`mp-grid-opt-btn${selected === o.label ? ' selected' : ''}${isCorrectKey ? ' border-emerald-500 ring-2 ring-emerald-400' : ''}`}
-                            onClick={() => {
-                              soundEngine.playClick();
-                              setSelected(o.label);
-                            }}
-                          >
-                            <span className="opt-badge">{displayLabel}</span>
-                            <span className="flex-1 text-left">{o.content}</span>
-                            {isCorrectKey && (
-                              <span className="admin-key-badge ml-2" title="Kunci Jawaban Benar (Admin Only)">
-                                ✓ KUNCI JAWABAN
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
+                      <div className="mp-options-grid-2x2" role="radiogroup" aria-label="Pilihan jawaban">
+                        {question.options.map((o, idx) => {
+                          const displayLabel = OPTION_DISPLAY_LABELS[idx] ?? o.label;
+                          const isCorrectKey = myRoleRef.current === 'admin' && Boolean(question.correctAnswer) && (
+                            question.correctAnswer === o.label ||
+                            question.correctAnswer === o.content ||
+                            question.correctAnswer?.toLowerCase() === o.label.toLowerCase() ||
+                            question.correctAnswer?.toLowerCase() === o.content.toLowerCase()
+                          );
+                          return (
+                            <button
+                              key={o.label}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected === o.label}
+                              className={`mp-grid-opt-btn${selected === o.label ? ' selected' : ''}${isCorrectKey ? ' border-emerald-500 ring-2 ring-emerald-400' : ''}`}
+                              onClick={() => {
+                                soundEngine.playClick();
+                                setSelected(o.label);
+                              }}
+                            >
+                              <span className="opt-badge">{displayLabel}</span>
+                              <span className="flex-1 text-left">{o.content}</span>
+                              {isCorrectKey && (
+                                <span className="admin-key-badge ml-2" title="Kunci Jawaban Benar (Admin Only)">
+                                  ✓ KUNCI JAWABAN
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="mt-3 flex items-center justify-end">
+                    <div className="mp-q-submit-row">
                       <button type="submit" className="btn-orange-action" disabled={!selected || submitting}>
                         <span aria-hidden="true">✔</span> {submitting ? 'Mengirim...' : isStaff ? 'Bantu Jawab (Centang Biru)' : 'Submit'}
                       </button>
