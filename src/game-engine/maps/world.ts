@@ -1244,10 +1244,10 @@ export function generateQuestionBlocks(questionIds: string[], seedStr: string, s
     const jitterX = Math.round((nextRand() - 0.5) * 16);
     const jitterY = Math.round((nextRand() - 0.5) * 10);
     const tierOffset = Math.floor(idx / pool.length) * 64;
-    // Kotak soal dibuat jangan terlalu tinggi (agar mudah dijangkau player):
-    // y < 460 diposisikan ke zona yang nyaman dijangkau (480 s/d 620)
-    const spotY = spot.y < 460 ? 480 + (spot.y % 140) : spot.y;
-    const finalY = Math.max(460, Math.min(WORLD.groundY - 140, spotY + jitterY));
+    // Kotak soal dibuat jangan terlalu tinggi (agar mudah dijangkau saat melompat player):
+    // y dijaga di rentang nyaman jangkauan lompat (540 s/d 680)
+    const spotY = spot.y < 520 ? 540 + (spot.y % 120) : spot.y;
+    const finalY = Math.max(520, Math.min(WORLD.groundY - 140, spotY + jitterY));
     return {
       x: Math.max(260, Math.min(5080, spot.x + jitterX + tierOffset)),
       y: finalY,

@@ -213,6 +213,7 @@ export default function GamePage() {
   const myRoleRef = useRef('student');
   myRoleRef.current = myRole;
   const isStaff = myRole === 'teacher' || myRole === 'admin';
+  const isAdmin = myRole === 'admin';
   const isStaffRole = (r?: string | null) => r === 'teacher' || r === 'admin';
   const [exitNotice, setExitNotice] = useState<'kicked' | 'deleted' | null>(null);
   const exitNoticeRef = useRef<'kicked' | 'deleted' | null>(null);
@@ -264,6 +265,22 @@ export default function GamePage() {
   const [spectateTargetId, setSpectateTargetId] = useState<string | null>(null);
   const spectateTargetIdRef = useRef<string | null>(null);
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
+  interface AdminActionTarget {
+    target: string;
+    username: string;
+    fullName?: string;
+    role?: string;
+    stage?: number;
+  }
+  const [actionModalTarget, setActionModalTarget] = useState<AdminActionTarget | null>(null);
+  const [actionModalScope, setActionModalScope] = useState<'here' | 'all'>('here');
+  const [isStudentPvpEnabled, setIsStudentPvpEnabled] = useState(true);
+  const isStudentPvpEnabledRef = useRef(true);
+  const [ropedByUserId, setRopedByUserId] = useState<string | null>(null);
+  const [studentChosenAnswers, setStudentChosenAnswers] = useState<Map<string, string>>(new Map());
+  const studentChosenAnswersRef = useRef<Map<string, string>>(new Map());
+  const [mirroredStudentSelections, setMirroredStudentSelections] = useState<Map<string, string>>(new Map());
+  const mirroredStudentSelectionRef = useRef<Map<string, string>>(new Map());
   // Posisi terakhir admin yang mengikat tali saya (untuk respawn & leash lintas stage)
   const meAdminAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const meAdminFacingRef = useRef<1 | -1>(1);
@@ -280,6 +297,7 @@ export default function GamePage() {
   const [scores, setScores] = useState<Record<string, number>>({});
   const [question, setQuestion] = useState<Question | null>(null);
   const questionRef = useRef<Question | null>(null);
+  const ablyRef = useRef<AblyRoomApi | null>(null);
   const dismissedQuestionIdRef = useRef<string | null>(null);
   const closedQuestionCooldownRef = useRef<Map<string, number>>(new Map());
 
@@ -345,6 +363,12 @@ export default function GamePage() {
           for (const [qid, okAns] of Object.entries(results)) {
             answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
           }
+          if (d.chosenAnswers) {
+            for (const [qid, ans] of Object.entries(d.chosenAnswers)) {
+              studentChosenAnswersRef.current.set(qid, String(ans));
+            }
+            setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
+          }
         })
         .catch(() => {});
     }
@@ -366,11 +390,14 @@ export default function GamePage() {
     if (qid) {
       dismissedQuestionIdRef.current = qid;
       closedQuestionCooldownRef.current.set(qid, Date.now() + 3500);
+      if (!isStaff) {
+        ablyRef.current?.publishCommand({ op: 'mirror_question_state', userId: myIdRef.current, qid: null });
+      }
     }
     setQuestion(null);
     questionRef.current = null;
     setSelected('');
-  }, []);
+  }, [isStaff]);
   const [selected, setSelected] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; correctAnswer?: string; explanation?: string; pointsEarned: number } | null>(null);
@@ -406,6 +433,7 @@ export default function GamePage() {
     burnUntil?: number;
     jailedUntil?: number;
     gun?: string;
+    hasAdminGun?: boolean;
     tag?: string;
     colors?: PlayerColors;
     ropedById?: string | null;
@@ -432,6 +460,7 @@ export default function GamePage() {
       if (rp.role) existing.role = rp.role;
       if (rp.jailedUntil !== undefined) existing.jailedUntil = rp.jailedUntil;
       if (rp.gun !== undefined) existing.gun = rp.gun;
+      if (rp.hasAdminGun !== undefined) existing.hasAdminGun = rp.hasAdminGun;
       if (rp.tag !== undefined) existing.tag = rp.tag;
       if (rp.colors !== undefined) existing.colors = rp.colors;
       if (rp.ropedById !== undefined) existing.ropedById = rp.ropedById;
@@ -486,6 +515,7 @@ export default function GamePage() {
         burnUntil: rp.burnUntil,
         jailedUntil: rp.jailedUntil,
         gun: rp.gun,
+        hasAdminGun: rp.hasAdminGun,
         tag: rp.tag,
         colors: rp.colors,
         ropedById: rp.ropedById,
@@ -552,8 +582,11 @@ export default function GamePage() {
     projectilesRef.current = [];
     {
       const meNow = playersRef.current.get(myIdRef.current);
-      if (!meNow || !meNow.gun) {
+      if (!meNow || (!meNow.hasAdminGun && !meNow.gun)) {
         setAmmoCount(0);
+      } else if (meNow.hasAdminGun && meNow.gun) {
+        meNow.blasterAmmo = Infinity;
+        setAmmoCount(Infinity);
       }
     }
 
@@ -595,6 +628,14 @@ export default function GamePage() {
         me.isDying = false;
         me.deathStartedAt = undefined;
         me.burnUntil = undefined;
+        if (me.hasAdminGun && me.gun) {
+          me.blasterAmmo = Infinity;
+          me.blasterUntil = undefined;
+        } else {
+          me.gun = null;
+          me.blasterAmmo = 0;
+          me.blasterUntil = undefined;
+        }
       } else if (me.isDying) {
         // Pindah stage tanpa respawn eksplisit (misalnya ditarik tali admin lintas stage):
         // pastikan state death di-reset supaya tidak infinite respawn.
@@ -875,11 +916,13 @@ export default function GamePage() {
       }
     } else if (cmd.op === 'gun') {
       const applyGunToP = (p: Player) => {
-        if (cmd.value && cmd.weapon) {
+        if (cmd.value && cmd.weapon && cmd.weapon !== 'none') {
           const spec = WEAPONS[cmd.weapon as keyof typeof WEAPONS];
           if (spec) {
             p.gun = cmd.weapon;
             p.blasterAmmo = Infinity;
+            p.hasAdminGun = true;
+            p.blasterUntil = undefined;
             if (cmd.weapon === 'ice' || cmd.weapon === 'stunt') {
               p.frozenUntil = undefined;
               p.frozenDeathAt = undefined;
@@ -889,7 +932,8 @@ export default function GamePage() {
         } else {
           p.gun = null;
           p.blasterAmmo = 0;
-          p.blasterUntil = 0;
+          p.hasAdminGun = false;
+          p.blasterUntil = undefined;
         }
       };
 
@@ -902,7 +946,7 @@ export default function GamePage() {
         if (targetP) applyGunToP(targetP);
       }
       if (isTarget) {
-        if (cmd.value && cmd.weapon) {
+        if (cmd.value && cmd.weapon && cmd.weapon !== 'none') {
           const spec = WEAPONS[cmd.weapon as keyof typeof WEAPONS];
           if (spec) {
             setAmmoCount(Infinity);
@@ -923,7 +967,6 @@ export default function GamePage() {
       if (isTarget) {
         const me = playersRef.current.get(myIdRef.current);
         if (me) me.jailedUntil = targetP?.jailedUntil;
-        showBanner(cmd.value ? '⛓️ Kamu dibekukan oleh Admin selama 15 detik!' : '⛓️ Bekukanmu dilepas.');
         if (cmd.value) soundEngine.playBurn();
       }
     } else if (cmd.op === 'cosmetics') {
@@ -949,6 +992,34 @@ export default function GamePage() {
           }
         }
       }
+    } else if (cmd.op === 'mirror_question_state') {
+      const isTargeted =
+        mirrorTargetRef.current === 'all' ||
+        (mirrorTargetRef.current && mirrorTargetRef.current.userId === cmd.userId) ||
+        (ropedByUserId && ropedByUserId === cmd.userId);
+
+      if (isTargeted && isStaffRole(myRoleRef.current)) {
+        if (cmd.qid) {
+          const found = levelQuestionsRef.current.find((q) => q.id === cmd.qid);
+          if (found && (!questionRef.current || questionRef.current.id !== cmd.qid)) {
+            questionRef.current = found;
+            setQuestion(found);
+            setQuestionMinimized(false);
+          }
+          if (cmd.selected) {
+            mirroredStudentSelectionRef.current.set(cmd.qid, cmd.selected);
+            setMirroredStudentSelections(new Map(mirroredStudentSelectionRef.current));
+          }
+          if (cmd.isSubmitted) {
+            studentChosenAnswersRef.current.set(cmd.qid, cmd.selected || '');
+            setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
+            answerResultsRef.current.set(cmd.qid, Boolean(cmd.isCorrect));
+          }
+        }
+      }
+    } else if (cmd.op === 'pvp_mode') {
+      isStudentPvpEnabledRef.current = Boolean(cmd.value);
+      setIsStudentPvpEnabled(Boolean(cmd.value));
     } else if (cmd.op === 'cmd_access') {
       // Admin / Guru broadcast siapa aja yang di-enable / di-disable cmd access-nya
       if (cmd.targetId === 'all') {
@@ -1067,7 +1138,7 @@ export default function GamePage() {
       if (cmd.targetId === myIdRef.current) {
         const me = playersRef.current.get(myIdRef.current);
         if (me && !me.isDying && !me.ropedById) {
-          if (canShooterHitTarget(shooterRole, me.role)) {
+          if (canShooterHitTarget(shooterRole, me.role, isStudentPvpEnabledRef.current)) {
             if (cmd.weapon === 'ice') {
               me.isDying = false;
               me.frozenUntil = Date.now() + 1200;
@@ -1076,7 +1147,6 @@ export default function GamePage() {
               me.frozenByWeapon = 'ice';
               me.vx = me.x < (projectilesRef.current.find((r) => r.shooterId === cmd.by)?.x ?? me.x) ? -4 : 4;
               me.vy = -3.5;
-              showBanner(`🧊 Kamu dibekukan oleh ${shooterName}!`);
             } else if (cmd.weapon === 'stunt') {
               me.isDying = false;
               me.frozenUntil = Date.now() + 1200;
@@ -1086,14 +1156,12 @@ export default function GamePage() {
               me.frozenByWeapon = 'stunt';
               me.vx = 0;
               me.vy = 0;
-              showBanner(`⚡ Kamu terkena kejutan listrik dari ${shooterName}!`);
             } else {
               me.isDying = true;
               me.deathStartedAt = Date.now();
               me.vx = 0;
               me.vy = -13.2;
               soundEngine.playDeath();
-              showBanner(`💥 Kamu ditembak oleh ${shooterName}! (-${cmd.dmg ?? 1})`);
             }
           }
         }
@@ -1101,7 +1169,7 @@ export default function GamePage() {
         // Remote player: update efek visual di player lain juga
         const target = playersRef.current.get(cmd.targetId);
         if (target && !target.isDying && !target.ropedById) {
-          if (canShooterHitTarget(shooterRole, target.role)) {
+          if (canShooterHitTarget(shooterRole, target.role, isStudentPvpEnabledRef.current)) {
             if (cmd.weapon === 'ice') {
               target.isDying = false;
               target.frozenUntil = Date.now() + 1200;
@@ -1131,7 +1199,6 @@ export default function GamePage() {
     }
   }, [applyStage]);
 
-  const ablyRef = useRef<AblyRoomApi | null>(null);
   const ably = useAblyRoom(roomId, ablyEnabled, {
     onDirectMove: (rp) => {
       ingestRemotePlayerSnapshot({ ...rp, gun: rp.gun ?? undefined, tag: rp.tag ?? undefined, colors: rp.colors ?? undefined });
@@ -1161,7 +1228,7 @@ export default function GamePage() {
     const now = Date.now();
     const ammo = me.blasterAmmo ?? 0;
     const until = me.blasterUntil ?? 0;
-    if (me.gun && until > 0 && until <= now) {
+    if (!me.hasAdminGun && until > 0 && until <= now) {
       me.gun = null;
       me.blasterAmmo = 0;
       setAmmoCount(0);
@@ -1176,11 +1243,16 @@ export default function GamePage() {
       return;
     }
     lastShotAtRef.current = now;
-    me.blasterAmmo = ammo - 1;
-    if (me.blasterAmmo <= 0 && gunSpec) {
-      me.gun = null;
+    if (!me.hasAdminGun && me.blasterAmmo !== Infinity) {
+      me.blasterAmmo = Math.max(0, ammo - 1);
+      if (me.blasterAmmo <= 0) {
+        me.gun = null;
+      }
+      setAmmoCount(me.blasterAmmo);
+    } else {
+      me.blasterAmmo = Infinity;
+      setAmmoCount(Infinity);
     }
-    setAmmoCount(me.blasterAmmo);
     soundEngine.playShoot();
 
     const facing = me.facing ?? 1;
@@ -1984,18 +2056,21 @@ export default function GamePage() {
       for (const p of playersRef.current.values()) {
         if (!p.ropedById) continue;
         const owner = playersRef.current.get(p.ropedById);
-        if (!owner || owner.isDying || !ably.connected) {
+        if (!owner || !ably.connected) {
           p.ropedById = null;
           if (p.id === myIdRef.current) {
-            showBanner('🪢 Tali kamu terlepas (admin pergi / disconnect).');
+            showBanner('🪢 Tali kamu terlepas (player pergi / disconnect).');
+            setRopedByUserId(null);
           }
         } else {
-          // Simpan posisi admin sebagai anchor respawn untuk physics.ts
-          p.adminAnchor = { x: owner.x, y: owner.y };
-          p.adminFacing = owner.facing;
-          if (p.id === myIdRef.current) {
-            meAdminAnchorRef.current = { x: owner.x, y: owner.y };
-            meAdminFacingRef.current = owner.facing;
+          // Simpan posisi owner sebagai anchor respawn (jika owner mati, anchor lama tetap dijaga sampai respawn)
+          if (!owner.isDying) {
+            p.adminAnchor = { x: owner.x, y: owner.y };
+            p.adminFacing = owner.facing;
+            if (p.id === myIdRef.current) {
+              meAdminAnchorRef.current = { x: owner.x, y: owner.y };
+              meAdminFacingRef.current = owner.facing;
+            }
           }
         }
       }
@@ -2208,6 +2283,9 @@ export default function GamePage() {
                 setQuestionMinimized(false);
                 setSelected('');
                 setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
+                if (!isStaff) {
+                  ably.publishCommand({ op: 'mirror_question_state', userId: myIdRef.current, qid: found.id });
+                }
               }
             } else {
               // Guru / Admin: bisa iseng mengecek soal kapanpun (baik saat mirroring maupun tidak)
@@ -2252,7 +2330,16 @@ export default function GamePage() {
             },
             onCollectPowerUp: () => {
               soundEngine.playPowerUp();
-              setAmmoCount(10);
+              const meNow = playersRef.current.get(myIdRef.current);
+              if (!meNow?.hasAdminGun) {
+                setAmmoCount(10);
+              }
+            },
+            onRespawn: (p) => {
+              if (p.id === myIdRef.current) {
+                const newAmmo = p.hasAdminGun && p.gun ? Infinity : (p.blasterAmmo ?? 0);
+                setAmmoCount(newAmmo);
+              }
             },
             onEnterGate: () => {
               if (currentStageRef.current < totalStagesRef.current) {
@@ -2276,6 +2363,7 @@ export default function GamePage() {
                 weapon: (r as Projectile & { weapon?: string }).weapon,
                 shooterRole: r.shooterRole ?? playersRef.current.get(r.shooterId)?.role,
               })),
+            isPvpEnabled: isStudentPvpEnabledRef.current,
             myPlayerId: myIdRef.current,
             onPlayerHitByRound: (victimId, shooterId, dmg, weapon, projId) => {
               if (projId && weapon !== 'megalaser') {
@@ -2289,7 +2377,7 @@ export default function GamePage() {
                     playersRef.current.get(shooterId)?.role ??
                     'student';
               const victim = playersRef.current.get(victimId);
-              if (victim && !canShooterHitTarget(shooterRole, victim.role)) return;
+              if (victim && !canShooterHitTarget(shooterRole, victim.role, isStudentPvpEnabledRef.current)) return;
 
               if (victimId === myIdRef.current) {
                 const me = playersRef.current.get(myIdRef.current);
@@ -2305,7 +2393,6 @@ export default function GamePage() {
                     me.frozenByWeapon = 'ice';
                     me.vx = me.x < (projectilesRef.current.find((r) => r.shooterId === shooterId)?.x ?? me.x) ? -4 : 4;
                     me.vy = -3.5;
-                    showBanner(`🧊 Kamu dibekukan oleh ${shooterName}!`);
                   } else if (weapon === 'stunt') {
                     me.isDying = false;
                     me.frozenUntil = Date.now() + 1200;
@@ -2315,14 +2402,12 @@ export default function GamePage() {
                     me.frozenByWeapon = 'stunt';
                     me.vx = 0;
                     me.vy = 0;
-                    showBanner(`⚡ Kamu terkena kejutan listrik dari ${shooterName}!`);
                   } else {
                     me.isDying = true;
                     me.deathStartedAt = Date.now();
                     me.vx = 0;
                     me.vy = -13.2;
                     soundEngine.playDeath();
-                    showBanner(`💥 Kamu ditembak oleh ${shooterName}! (-${dmg ?? 1})`);
                   }
                 }
               }
@@ -2373,6 +2458,7 @@ export default function GamePage() {
             burnUntil: me.burnUntil,
             jailedUntil: me.jailedUntil,
             gun: me.gun ?? undefined,
+            hasAdminGun: me.hasAdminGun,
             tag: me.tag,
             colors: me.colors,
           });
@@ -3192,6 +3278,20 @@ export default function GamePage() {
         addSystemChatMessage('Format: /enable cmd <target|all>');
         return;
       }
+      if (targetQuery === 'here') {
+        const curStg = currentStageRef.current;
+        for (const p of playersRef.current.values()) {
+          const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
+          if ((role === 'student' || (!role && p.id !== myIdRef.current)) && (p.stage ?? 1) === curStg) {
+            cmdEnabledUsersRef.current.add(p.id);
+            ably.publishCommand({ op: 'cmd_access', targetId: p.id, value: true });
+          }
+        }
+        addSystemChatMessage(`✅ Akses perintah chat DIAKTIFKAN untuk siswa di Stage ${curStg}.`);
+        soundEngine.playPowerUp();
+        return;
+      }
+
       if (targetQuery === 'all') {
         cmdEnabledUsersRef.current.add('__ALL_STUDENTS__');
         for (const p of playersRef.current.values()) {
@@ -3238,6 +3338,20 @@ export default function GamePage() {
         addSystemChatMessage('Format: /disable cmd <target|all>');
         return;
       }
+      if (targetQuery === 'here') {
+        const curStg = currentStageRef.current;
+        for (const p of playersRef.current.values()) {
+          const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
+          if ((role === 'student' || (!role && p.id !== myIdRef.current)) && (p.stage ?? 1) === curStg) {
+            cmdEnabledUsersRef.current.delete(p.id);
+            ably.publishCommand({ op: 'cmd_access', targetId: p.id, value: false });
+          }
+        }
+        addSystemChatMessage(`⛔ Akses perintah chat untuk siswa di Stage ${curStg} telah dicabut.`);
+        soundEngine.playDeath();
+        return;
+      }
+
       if (targetQuery === 'all') {
         cmdEnabledUsersRef.current.clear();
         ably.publishCommand({ op: 'cmd_access', targetId: 'all', value: false });
@@ -3312,6 +3426,7 @@ export default function GamePage() {
       addSystemChatMessage('--- DAFTAR PERINTAH CHAT ---');
       addSystemChatMessage('Ketik perintah untuk melihat format syntaxnya (contoh: /skip):');
       addSystemChatMessage('• /set, /unset, /teleport, /mirror, /reset');
+      addSystemChatMessage('• /follow <user>, /unfollow');
       if (isAdmin || isStaff) {
         addSystemChatMessage('• /spawn, /jail, /enable, /disable, /take, /untake');
       }
@@ -3321,10 +3436,171 @@ export default function GamePage() {
       addSystemChatMessage('• /change, /cls');
       return;
     }
+    // /follow <target> & /unfollow
+    if (cmd === 'follow') {
+      const targetQuery = arg1 || parts[1];
+      if (!targetQuery) {
+        addSystemChatMessage('Format: /follow <username>');
+        return;
+      }
+      const target = findPlayer(targetQuery);
+      if (!target) {
+        addSystemChatMessage(`Player '${targetQuery}' tidak ditemukan di room.`);
+        return;
+      }
+      if (target.id === myIdRef.current) {
+        addSystemChatMessage('Kamu tidak bisa mengikuti dirimu sendiri.');
+        return;
+      }
+      const me = playersRef.current.get(myIdRef.current);
+      if (me) {
+        me.ropedById = target.id;
+        const targetP = playersRef.current.get(target.id);
+        if (targetP) {
+          meAdminAnchorRef.current = { x: targetP.x, y: targetP.y };
+          meAdminFacingRef.current = targetP.facing ?? 1;
+        }
+      }
+      setRopedByUserId(target.id);
+      // Mode Follow: otomatis aktifkan mode mirror ke player yang diikuti
+      mirrorTargetRef.current = { userId: target.id, username: target.username };
+      mirrorFetchTargetRef.current = target.id;
+      setMirrorTarget(target.username);
+      const targetP = playersRef.current.get(target.id);
+      const followStg = targetP?.stage ?? currentStageRef.current;
+      const followStageQs = getStageQuestions(levelQuestionsRef.current, followStg, totalStagesRef.current);
+      questionBlocksRef.current = generateQuestionBlocks(
+        followStageQs.map((q) => q.id),
+        `${target.id}:${roomId}:s${followStg}`,
+        followStg,
+      );
+      answerResultsRef.current.clear();
+      studentChosenAnswersRef.current.clear();
+      fetch('/api/game/room-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, targetId: target.id }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) return;
+          if (d.answerResults) {
+            for (const [qid, okAns] of Object.entries(d.answerResults)) {
+              answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
+            }
+          }
+          if (d.chosenAnswers) {
+            for (const [qid, ans] of Object.entries(d.chosenAnswers)) {
+              studentChosenAnswersRef.current.set(qid, String(ans));
+            }
+            setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
+          }
+        })
+        .catch(() => {});
+
+      ably.publishCommand({
+        op: 'rope',
+        targetId: myIdRef.current,
+        value: true,
+        byId: target.id,
+        byName: target.username,
+      });
+      addSystemChatMessage(`🪢 Kamu sekarang mengikuti '${target.username}'! Gerakan & soalnya otomatis di-mirror ke layarmu. Ketik /unfollow untuk melepas.`);
+      soundEngine.playPowerUp();
+      return;
+    }
+
+    if (cmd === 'unfollow') {
+      const me = playersRef.current.get(myIdRef.current);
+      if (!me?.ropedById && !ropedByUserId) {
+        addSystemChatMessage('Kamu sedang tidak mengikuti player siapa pun.');
+        return;
+      }
+      if (me) {
+        me.ropedById = null;
+        me.adminAnchor = undefined;
+        me.adminFacing = undefined;
+      }
+      meAdminAnchorRef.current = null;
+      meAdminFacingRef.current = 1;
+      setRopedByUserId(null);
+      if (mirrorTargetRef.current && mirrorTargetRef.current !== 'all') {
+        mirrorTargetRef.current = null;
+        mirrorFetchTargetRef.current = null;
+        setMirrorTarget(null);
+        questionBlocksRef.current = [];
+      }
+      ably.publishCommand({
+        op: 'rope',
+        targetId: myIdRef.current,
+        value: false,
+      });
+      addSystemChatMessage('🪢 Kamu telah berhenti mengikuti player (Unfollow). Bebas bergerak kembali!');
+      soundEngine.playBounce();
+      return;
+    }
+
     if (cmd === 'cls' || cmd === 'clear') {
       setChat([]);
       seenMsgIdsRef.current.clear();
       setUnreadCount(0);
+      return;
+    }
+
+    // /set semiadmin <target> & /unset semiadmin <target>
+    if ((cmd === 'set' || cmd === 'unset') && (arg1 === 'semiadmin' || arg1 === 'ketua')) {
+      if (!isStaff) {
+        addSystemChatMessage('Perintah Semi-Admin hanya dapat diatur oleh Guru atau Administrator.');
+        return;
+      }
+      const targetQuery = (arg2 || parts[2])?.toLowerCase();
+      if (!targetQuery) {
+        addSystemChatMessage(`Format: /${cmd} semiadmin <target>`);
+        return;
+      }
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      const isTurnOn = cmd === 'set';
+      const p = playersRef.current.get(target.id);
+      if (p) {
+        p.tag = isTurnOn ? '⭐ SEMI-ADMIN' : undefined;
+        p.gun = isTurnOn ? 'ice' : null;
+        p.blasterAmmo = isTurnOn ? Infinity : 0;
+        p.hasAdminGun = isTurnOn;
+        p.blasterUntil = undefined;
+      }
+      if (target.id === myIdRef.current) {
+        setAmmoCount(isTurnOn ? Infinity : 0);
+      }
+      ably.publishCommand({ op: 'cosmetics', targetId: target.id, tag: isTurnOn ? '⭐ SEMI-ADMIN' : '' });
+      ably.publishCommand({ op: 'gun', targetId: target.id, value: isTurnOn, weapon: isTurnOn ? 'ice' : 'none' });
+      addSystemChatMessage(
+        isTurnOn
+          ? `⭐ '${target.username}' sekarang diangkat menjadi SEMI-ADMIN (Ketua Kelas) dan dibekali Ice Gun!`
+          : `⭐ Status Semi-Admin '${target.username}' telah dicabut.`,
+      );
+      if (isTurnOn) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
+      return;
+    }
+
+    // /set pvp <on|off> & /unset pvp
+    if ((cmd === 'set' && arg1 === 'pvp') || (cmd === 'unset' && arg1 === 'pvp')) {
+      if (!isStaff) {
+        addSystemChatMessage('Pengaturan PvP hanya dapat diatur oleh Guru atau Administrator.');
+        return;
+      }
+      const isTurnOn = cmd === 'set' && (arg2 === 'on' || !arg2 || arg2 === 'true');
+      isStudentPvpEnabledRef.current = isTurnOn;
+      setIsStudentPvpEnabled(isTurnOn);
+      ably.publishCommand({ op: 'pvp_mode', value: isTurnOn });
+      addSystemChatMessage(
+        isTurnOn
+          ? '⚔️ Mode Tawuran Siswa DIAKTIFKAN oleh Guru/Admin! Siswa sekarang bisa saling tembak/prank.'
+          : '🕊️ Mode Damai DIAKTIFKAN. Tembakan antar siswa dinonaktifkan.',
+      );
+      if (isTurnOn) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
       return;
     }
 
@@ -3930,6 +4206,12 @@ export default function GamePage() {
           for (const [qid, okAns] of Object.entries(results)) {
             answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
           }
+          if (d.chosenAnswers) {
+            for (const [qid, ans] of Object.entries(d.chosenAnswers)) {
+              studentChosenAnswersRef.current.set(qid, String(ans));
+            }
+            setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
+          }
         })
         .catch(() => { });
       addSystemChatMessage(`🔍 Mode Mirroring '${target.username}' aktif! Kotak soal siswa dimunculkan di map.`);
@@ -4026,7 +4308,8 @@ export default function GamePage() {
           for (const p of playersRef.current.values()) {
             p.gun = null;
             p.blasterAmmo = 0;
-            p.blasterUntil = 0;
+            p.hasAdminGun = false;
+            p.blasterUntil = undefined;
           }
           ably.publishCommand({ op: 'gun', targetId: 'all', value: false });
           addSystemChatMessage('🔫 Senjata SEMUA player di game dicabut.');
@@ -4039,6 +4322,8 @@ export default function GamePage() {
           for (const p of playersRef.current.values()) {
             p.gun = weaponType;
             p.blasterAmmo = Infinity;
+            p.hasAdminGun = true;
+            p.blasterUntil = undefined;
           }
           ably.publishCommand({ op: 'gun', targetId: 'all', value: true, weapon: weaponType });
           addSystemChatMessage(`🔫 ${spec.label} diberikan ke SEMUA player di game (peluru unlimited).`);
@@ -4065,7 +4350,8 @@ export default function GamePage() {
             if (p) {
               p.gun = null;
               p.blasterAmmo = 0;
-              p.blasterUntil = 0;
+              p.hasAdminGun = false;
+              p.blasterUntil = undefined;
             }
             if (t.id === myIdRef.current) setAmmoCount(0);
             else ably.publishCommand({ op: 'gun', targetId: t.id, value: false });
@@ -4081,6 +4367,8 @@ export default function GamePage() {
             if (p) {
               p.gun = weaponType;
               p.blasterAmmo = Infinity;
+              p.hasAdminGun = true;
+              p.blasterUntil = undefined;
             }
             if (t.id === myIdRef.current) setAmmoCount(Infinity);
             else ably.publishCommand({ op: 'gun', targetId: t.id, value: true, weapon: weaponType });
@@ -4099,7 +4387,8 @@ export default function GamePage() {
         if (p) {
           p.gun = null;
           p.blasterAmmo = 0;
-          p.blasterUntil = 0;
+          p.hasAdminGun = false;
+          p.blasterUntil = undefined;
         }
         if (target.id === myIdRef.current) setAmmoCount(0);
         ably.publishCommand({ op: 'gun', targetId: target.id, value: false });
@@ -4116,6 +4405,8 @@ export default function GamePage() {
         if (p) {
           p.gun = weaponType;
           p.blasterAmmo = Infinity;
+          p.hasAdminGun = true;
+          p.blasterUntil = undefined;
         }
         if (target.id === myIdRef.current) setAmmoCount(Infinity);
         ably.publishCommand({ op: 'gun', targetId: target.id, value: true, weapon: weaponType });
@@ -4440,6 +4731,16 @@ export default function GamePage() {
           showBanner(msg, 5000);
         }
         setSelected('');
+        if (!isStaff) {
+          ably.publishCommand({
+            op: 'mirror_question_state',
+            userId: myIdRef.current,
+            qid: answeredId,
+            selected,
+            isSubmitted: true,
+            isCorrect: Boolean(result.isCorrect),
+          });
+        }
         if (result.isCorrect) {
           soundEngine.playAnswerCorrect();
           if (myIdRef.current) {
@@ -4447,6 +4748,14 @@ export default function GamePage() {
               ...prev,
               [myIdRef.current]: (prev[myIdRef.current] ?? 0) + (result.pointsEarned ?? 0),
             }));
+            const me = playersRef.current.get(myIdRef.current);
+            if (me && !isStaff) {
+              if (!me.hasAdminGun) {
+                me.blasterAmmo = Math.min((me.blasterAmmo ?? 0) + 5, 20);
+                me.blasterUntil = Date.now() + 60000;
+                setAmmoCount(me.blasterAmmo);
+              }
+            }
           }
         } else {
           soundEngine.playAnswerWrong();
@@ -4621,6 +4930,20 @@ export default function GamePage() {
                   }}
                 >
                   ✕
+                </button>
+              </div>
+            )}
+
+            {ropedByUserId && (
+              <div className="follow-indicator-pill" role="status">
+                <span>🪢 Mengikuti: <strong>{playersRef.current.get(ropedByUserId)?.username || 'Player'}</strong></span>
+                <button
+                  type="button"
+                  className="follow-unfollow-btn"
+                  title="Lepas Tali / Berhenti Mengikuti (/unfollow)"
+                  onClick={() => handleChatCommand('/unfollow')}
+                >
+                  ✕ Unfollow
                 </button>
               </div>
             )}
@@ -4816,15 +5139,33 @@ export default function GamePage() {
                           <span className="mp-panel-heading-title">
                             <span aria-hidden="true">🏆</span> Leaderboard
                           </span>
-                          <button
-                            type="button"
-                            className="mp-win-btn"
-                            aria-label="Perkecil leaderboard"
-                            title="Perkecil"
-                            onClick={() => setLeaderboardMinimized(true)}
-                          >
-                            −
-                          </button>
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                className="mp-win-btn text-xs font-bold hover:text-amber-300"
+                                aria-label="Panel Aksi Masal Admin (All / Here)"
+                                title="Panel Aksi Masal Admin (All / Here)"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  soundEngine.playClick();
+                                  setActionModalTarget({ target: 'global', username: 'Aksi Masal (Global)' });
+                                  setActionModalScope('here');
+                                }}
+                              >
+                                ⚙️
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="mp-win-btn"
+                              aria-label="Perkecil leaderboard"
+                              title="Perkecil"
+                              onClick={() => setLeaderboardMinimized(true)}
+                            >
+                              −
+                            </button>
+                          </div>
                         </h2>
                         {isStaff && (
                           <div className="mp-leaderboard-search-wrap">
@@ -4854,7 +5195,12 @@ export default function GamePage() {
                             )}
                           </div>
                         )}
-                        <ol className="mp-rank-list">
+                        <ol
+                          className="mp-rank-list"
+                          onWheel={(e) => e.stopPropagation()}
+                          onTouchMove={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                        >
                           {sortedPlayers
                             .filter((p) => p.role !== 'admin')
                             .filter((p) => {
@@ -4894,14 +5240,21 @@ export default function GamePage() {
                                       </button>
                                       <button
                                         type="button"
-                                        className="mp-rank-btn mp-rank-copy-btn"
-                                        title={`Copy username '${pUsername}'`}
+                                        className="mp-rank-btn mp-rank-admin-btn"
+                                        title={`Buka Panel Aksi untuk ${pUsername}`}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          copyPlayerUsername(pUsername);
+                                          soundEngine.playClick();
+                                          setActionModalTarget({
+                                            target: p.userId,
+                                            username: pUsername,
+                                            fullName: pFullName,
+                                            role: p.role,
+                                            stage: liveP?.stage ?? p.stage,
+                                          });
                                         }}
                                       >
-                                        📋
+                                        ⚙️
                                       </button>
                                     </div>
                                   )}
@@ -5113,7 +5466,7 @@ export default function GamePage() {
                 onContextMenu={(e) => e.preventDefault()}
               >
                 <span className="ctrl-shoot-icon" aria-hidden="true">⚡</span>
-                <span className="ctrl-ammo-badge">{ammoCount}</span>
+                <span className="ctrl-ammo-badge">{ammoCount === Infinity ? '∞' : ammoCount}</span>
               </button>
               )}
               <button
@@ -5289,29 +5642,83 @@ export default function GamePage() {
                       <div className="mp-options-grid-2x2" role="radiogroup" aria-label="Pilihan jawaban">
                         {question.options.map((o, idx) => {
                           const displayLabel = OPTION_DISPLAY_LABELS[idx] ?? o.label;
-                          const isCorrectKey = myRoleRef.current === 'admin' && Boolean(question.correctAnswer) && (
+                          const isStaffViewer = isStaffRole(myRoleRef.current);
+                          const isCorrectKey = isStaffViewer && Boolean(question.correctAnswer) && (
                             question.correctAnswer === o.label ||
                             question.correctAnswer === o.content ||
                             question.correctAnswer?.toLowerCase() === o.label.toLowerCase() ||
                             question.correctAnswer?.toLowerCase() === o.content.toLowerCase()
                           );
+
+                          // Cek apakah opsi ini dipilih oleh siswa yang sedang di-mirror / di-follow
+                          const isMirrorActive = Boolean(mirrorTargetRef.current || ropedByUserId);
+                          const chosenAns = studentChosenAnswers.get(question.id);
+                          const liveSelecting = mirroredStudentSelections.get(question.id);
+                          const studentChoice = chosenAns || liveSelecting;
+                          const isStudentPick = Boolean(isMirrorActive && isStaffViewer && studentChoice && (
+                            studentChoice === o.label ||
+                            studentChoice === o.content ||
+                            studentChoice.toLowerCase() === o.label.toLowerCase() ||
+                            studentChoice.toLowerCase() === o.content.toLowerCase()
+                          ));
+
+                          const qResult = answerResultsRef.current.get(question.id);
+                          const isStudentPickWrong = isStudentPick && (qResult === false || (chosenAns && !isCorrectKey));
+                          const isStudentPickCorrect = isStudentPick && (qResult === true || (chosenAns && isCorrectKey));
+                          const isStudentLiveChoice = isStudentPick && !chosenAns;
+
+                          let ringClass = '';
+                          if (isCorrectKey) ringClass = ' border-emerald-500 ring-2 ring-emerald-400 bg-emerald-50/20';
+                          if (isStudentPickWrong) ringClass = ' border-rose-500 ring-2 ring-rose-400 bg-rose-50/25';
+                          else if (isStudentLiveChoice) ringClass = ' border-amber-400 ring-2 ring-amber-300 bg-amber-50/25';
+
                           return (
                             <button
                               key={o.label}
                               type="button"
                               role="radio"
                               aria-checked={selected === o.label}
-                              className={`mp-grid-opt-btn${selected === o.label ? ' selected' : ''}${isCorrectKey ? ' border-emerald-500 ring-2 ring-emerald-400' : ''}`}
+                              className={`mp-grid-opt-btn${selected === o.label ? ' selected' : ''}${ringClass}`}
                               onClick={() => {
                                 soundEngine.playClick();
                                 setSelected(o.label);
+                                if (!isStaff && question) {
+                                  ably.publishCommand({ op: 'mirror_question_state', userId: myIdRef.current, qid: question.id, selected: o.label });
+                                }
                               }}
                             >
                               <span className="opt-badge">{displayLabel}</span>
                               <span className="flex-1 text-left">{o.content}</span>
                               {isCorrectKey && (
-                                <span className="admin-key-badge ml-2" title="Kunci Jawaban Benar (Admin Only)">
+                                <span className="admin-key-badge ml-2" title="Kunci Jawaban Benar (Admin & Guru)">
                                   ✓ KUNCI JAWABAN
+                                </span>
+                              )}
+                              {isStudentPickWrong && (
+                                <span
+                                  className="ml-2 font-bold text-xs"
+                                  title="Opsi yang dipilih siswa (Salah)"
+                                  style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', borderRadius: '6px' }}
+                                >
+                                  ❌ Dipilih Siswa (Salah)
+                                </span>
+                              )}
+                              {isStudentPickCorrect && !isCorrectKey && (
+                                <span
+                                  className="ml-2 font-bold text-xs"
+                                  title="Opsi yang dipilih siswa (Benar)"
+                                  style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '6px' }}
+                                >
+                                  ✓ Dipilih Siswa (Benar)
+                                </span>
+                              )}
+                              {isStudentLiveChoice && (
+                                <span
+                                  className="ml-2 font-bold text-xs"
+                                  title="Siswa sedang memilih opsi ini"
+                                  style={{ background: '#f59e0b', color: '#1e1b4b', padding: '2px 8px', borderRadius: '6px' }}
+                                >
+                                  👤 Pilihan Siswa
                                 </span>
                               )}
                             </button>
@@ -5331,6 +5738,353 @@ export default function GamePage() {
             </div>
           )}
         </div>
+
+        {actionModalTarget && (
+          <div
+            className="overlay-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Panel Aksi"
+            onClick={() => setActionModalTarget(null)}
+          >
+            <div className="parchment-card admin-action-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="admin-action-header">
+                <div>
+                  <div className="admin-action-title">
+                    <span aria-hidden="true">{actionModalTarget.target === 'global' ? '🌐' : '⚡'}</span>
+                    {actionModalTarget.target === 'global' ? 'Panel Aksi Masal Admin' : `Panel Aksi: ${actionModalTarget.username}`}
+                    {actionModalTarget.target !== 'global' && (
+                      <button
+                        type="button"
+                        className="btn-copy-nick text-xs px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 border border-amber-400 font-bold ml-2 text-amber-900 inline-flex items-center gap-1"
+                        title={`Salin Username '${actionModalTarget.username}'`}
+                        onClick={() => copyPlayerUsername(actionModalTarget.username)}
+                      >
+                        📋 Salin
+                      </button>
+                    )}
+                  </div>
+                  {actionModalTarget.target !== 'global' && (
+                    <div className="admin-action-subinfo">
+                      {actionModalTarget.fullName && <span>Nama: <strong>{actionModalTarget.fullName}</strong></span>}
+                      {actionModalTarget.stage && <span>Stage: <strong>{actionModalTarget.stage}</strong></span>}
+                      {actionModalTarget.role && <span>Role: <strong className="capitalize">{actionModalTarget.role}</strong></span>}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="mp-win-btn text-base font-bold text-amber-950 hover:text-black ml-auto"
+                  aria-label="Tutup Panel Aksi"
+                  onClick={() => setActionModalTarget(null)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {actionModalTarget.target === 'global' && isAdmin && (
+                <div className="admin-action-scope-tabs" role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={actionModalScope === 'here'}
+                    className={`admin-action-scope-tab${actionModalScope === 'here' ? ' is-active' : ''}`}
+                    onClick={() => setActionModalScope('here')}
+                  >
+                    📍 Stage Ini ({currentStage})
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={actionModalScope === 'all'}
+                    className={`admin-action-scope-tab${actionModalScope === 'all' ? ' is-active' : ''}`}
+                    onClick={() => setActionModalScope('all')}
+                  >
+                    🌐 Seluruh Siswa (All)
+                  </button>
+                </div>
+              )}
+
+              <div className="admin-action-scroll">
+                {/* 1. TELEPORT */}
+                <div className="admin-action-group">
+                  <div className="admin-action-group-title">
+                    <span aria-hidden="true">🚀</span> Teleportasi &amp; Posisi
+                  </div>
+                  <div className="admin-action-grid">
+                    {actionModalTarget.target === 'global' ? (
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-cyan"
+                        onClick={() => handleChatCommand(`/teleport ${actionModalScope} me`)}
+                      >
+                        🚀 Tarik {actionModalScope === 'here' ? 'Stage Ini' : 'Semua'} ke Saya
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-cyan"
+                          onClick={() => handleChatCommand(`/teleport ${actionModalTarget.username} me`)}
+                        >
+                          🚀 Tarik ke Posisi Saya
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-cyan"
+                          onClick={() => handleChatCommand(`/teleport ${actionModalTarget.username}`)}
+                        >
+                          📍 Samperin Player Ini
+                        </button>
+                        {actionModalTarget.target !== myIdRef.current && (
+                          ropedByUserId === actionModalTarget.target ? (
+                            <button
+                              type="button"
+                              className="admin-action-btn btn-rose"
+                              onClick={() => handleChatCommand('/unfollow')}
+                            >
+                              ⛓️ Unfollow ({actionModalTarget.username})
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="admin-action-btn btn-amber"
+                              onClick={() => handleChatCommand(`/follow ${actionModalTarget.username}`)}
+                            >
+                              🪢 Follow ({actionModalTarget.username})
+                            </button>
+                          )
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. SENJATA / WEAPONS */}
+                <div className="admin-action-group">
+                  <div className="admin-action-group-title">
+                    <span aria-hidden="true">🔫</span> Senjata &amp; Combat
+                  </div>
+                  <div className="admin-action-grid admin-action-grid-3">
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun minigun ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🔫 Minigun
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun laser ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      ⚡ Laser
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun ice ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🧊 Ice Gun
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun stunt ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      ⚡ Stun Gun
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-rose"
+                      onClick={() => handleChatCommand(`/spawn gun none ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🚫 Tarik Senjata
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. GOD MODE (ADMIN ONLY) */}
+                {isAdmin && (
+                  <div className="admin-action-group">
+                    <div className="admin-action-group-title">
+                      <span aria-hidden="true">👑</span> Mode Kebal (God Mode)
+                    </div>
+                    <div className="admin-action-grid">
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-gold"
+                        onClick={() => handleChatCommand(`/set god ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                      >
+                        👑 Aktifkan God Mode
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-gold"
+                        onClick={() => handleChatCommand(`/unset god ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                      >
+                        ❌ Matikan God Mode
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. ROPE & SKIP STAGE (ADMIN ONLY) */}
+                {isAdmin && (
+                  <div className="admin-action-group">
+                    <div className="admin-action-group-title">
+                      <span aria-hidden="true">🪢</span> Tali &amp; Bypass Soal (Admin)
+                    </div>
+                    <div className="admin-action-grid">
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-emerald"
+                        onClick={() => handleChatCommand(`/take rope ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                      >
+                        🪢 Ikat Tali (Rope)
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-emerald"
+                        onClick={() => handleChatCommand(`/untake rope ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                      >
+                        🪢 Lepas Tali
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-violet"
+                        onClick={() => handleChatCommand(`/skip stage ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                      >
+                        ⏩ Luluskan Stage (Skip)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. KONTROL & AKSES SISWA (STAFF: ADMIN & GURU) */}
+                <div className="admin-action-group">
+                  <div className="admin-action-group-title">
+                    <span aria-hidden="true">🛡️</span> Kontrol &amp; Akses Siswa
+                  </div>
+                  <div className="admin-action-grid">
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-emerald"
+                      onClick={() => handleChatCommand(`/enable cmd ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      💬 Beri Akses Cmd
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-rose"
+                      onClick={() => handleChatCommand(`/disable cmd ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🚫 Cabut Akses Cmd
+                    </button>
+
+                    {actionModalTarget.target !== 'global' && (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-rose"
+                          onClick={() => handleChatCommand(`/jail on ${actionModalTarget.username}`)}
+                        >
+                          🔒 Penjara (Jail)
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-emerald"
+                          onClick={() => handleChatCommand(`/jail off ${actionModalTarget.username}`)}
+                        >
+                          🔓 Buka Penjara
+                        </button>
+                      </>
+                    )}
+
+                    {actionModalTarget.target !== 'global' ? (
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-cyan"
+                        onClick={() => handleChatCommand(`/mirror ${actionModalTarget.username}`)}
+                      >
+                        🔍 Mirror Soal Siswa
+                      </button>
+                    ) : isAdmin && actionModalScope === 'all' && (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-cyan"
+                          onClick={() => handleChatCommand(`/mirror all`)}
+                        >
+                          🔍 Mirror Seluruh Kelas
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-cyan"
+                          onClick={() => handleChatCommand(`/unset mirror`)}
+                        >
+                          ❌ Matikan Mirror
+                        </button>
+                      </>
+                    )}
+
+                    {actionModalTarget.target !== 'global' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-gold"
+                          onClick={() => handleChatCommand(`/set semiadmin ${actionModalTarget.username}`)}
+                        >
+                          ⭐ Angkat Semi-Admin
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-rose"
+                          onClick={() => handleChatCommand(`/unset semiadmin ${actionModalTarget.username}`)}
+                        >
+                          🚫 Cabut Semi-Admin
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-rose"
+                          onClick={() => handleChatCommand(`/reset ${actionModalTarget.username}`)}
+                        >
+                          🔄 Reset Soal Siswa
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-amber"
+                          onClick={() => handleChatCommand('/set pvp on')}
+                        >
+                          ⚔️ Bolehkan Siswa Saling Tembak
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-emerald"
+                          onClick={() => handleChatCommand('/set pvp off')}
+                        >
+                          🕊️ Mode Damai (Tutup PvP Siswa)
+                        </button>
+                        {isAdmin && actionModalScope === 'all' && (
+                          <button
+                            type="button"
+                            className="admin-action-btn btn-rose"
+                            onClick={() => handleChatCommand(`/reset all`)}
+                          >
+                            🔄 Reset Soal Sekelas
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {settingsModalOpen && (
           <div

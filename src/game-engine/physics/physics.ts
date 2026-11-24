@@ -38,6 +38,7 @@ export type Player = {
   snapshots?: { x: number; y: number; vx: number; vy: number; time: number }[];
   jailedUntil?: number;
   gun?: string | null;
+  hasAdminGun?: boolean;
   tag?: string | null;
   originalFullName?: string | null;
   colors?: { body?: string; tag?: string; nick?: string } | null;
@@ -96,12 +97,18 @@ function isQuestionBox(type: string) {
   return type === 'qblock' || type === 'qblock-correct' || type === 'qblock-wrong' || type === 'qblock-assisted';
 }
 
-function respawnToStart(p: Player) {
+function respawnToStart(p: Player, onRespawn?: (p: Player) => void) {
   p.isDying = false;
   p.deathStartedAt = undefined;
   p.burnUntil = undefined;
-  p.blasterAmmo = 0;
-  p.blasterUntil = undefined;
+  if (p.hasAdminGun && p.gun) {
+    p.blasterAmmo = Infinity;
+    p.blasterUntil = undefined;
+  } else {
+    p.gun = null;
+    p.blasterAmmo = 0;
+    p.blasterUntil = undefined;
+  }
   p.x = p.spawnX ?? 120;
   p.y = p.spawnY ?? WORLD.groundY - PLAYER_H - 20;
   // Player yang diikat tali admin: respawn di belakang admin (bukan spawn point),
@@ -117,6 +124,7 @@ function respawnToStart(p: Player) {
   p.ridingPlayerId = null;
   p.lastCarrierX = undefined;
   p.ridingPlatform = null;
+  onRespawn?.(p);
 }
 
 export function updateStageEntities(
@@ -156,11 +164,11 @@ export function updateStageEntities(
     } else if (plat.type === 'crumble') {
       if (plat.crumbleStartedAt) {
         const elapsed = now - plat.crumbleStartedAt;
-        if (elapsed >= 5500) {
+        if (elapsed >= 9500) {
           plat.brokenUntil = undefined;
           plat.crumbleStartedAt = undefined;
-        } else if (elapsed >= 2500) {
-          plat.brokenUntil = plat.crumbleStartedAt + 5500;
+        } else if (elapsed >= 4500) {
+          plat.brokenUntil = plat.crumbleStartedAt + 9500;
         }
       } else if (plat.brokenUntil && now >= plat.brokenUntil) {
         plat.brokenUntil = undefined;
@@ -296,7 +304,9 @@ export function updateStageEntities(
         break;
       }
     }
-    if (hit || pr.x < 0 || pr.x > WORLD.width || now - pr.createdAt > 3200) {
+    const isStudentRound = pr.shooterRole === 'student' || pr.shooterRole === 'semiadmin';
+    const maxLife = isStudentRound ? 800 : 3200; // Peluru siswa jarak tempuh dekat-menengah (~800ms)
+    if (hit || pr.x < 0 || pr.x > WORLD.width || now - pr.createdAt > maxLife) {
       projectiles.splice(i, 1);
     }
   }
@@ -308,16 +318,24 @@ export type PhysicsSoundEvent = 'jump' | 'bounce' | 'burn' | 'death' | 'bossSpit
 // 1. Siswa gabisa nembak ke player lain
 // 2. Guru bisa nembak ke siswa, tapi gabisa ke admin (dan sesama guru)
 // 3. Admin bisa nembak kesiapapun, baik siswa maupun guru
-export function canShooterHitTarget(shooterRole: string | undefined, targetRole: string | undefined): boolean {
+export function canShooterHitTarget(
+  shooterRole: string | undefined,
+  targetRole: string | undefined,
+  isPvpEnabled = true,
+): boolean {
   const sRole = (shooterRole ?? 'student').toLowerCase();
   const tRole = (targetRole ?? 'student').toLowerCase();
 
-  if (sRole === 'student') {
-    return false;
+  // Siswa bisa tembak sesama siswa jika PvP aktif, tapi GABISA nembak Guru apalagi Admin!
+  if (sRole === 'student' || sRole === 'semiadmin') {
+    if (tRole === 'teacher' || tRole === 'admin') return false;
+    return isPvpEnabled && (tRole === 'student' || tRole === 'semiadmin');
   }
+  // Guru bisa tembak siswa, tapi gabisa tembak Admin atau sesama Guru
   if (sRole === 'teacher') {
-    return tRole === 'student';
+    return tRole === 'student' || tRole === 'semiadmin';
   }
+  // Admin bisa tembak siapapun
   if (sRole === 'admin') {
     return true;
   }
@@ -350,7 +368,9 @@ export function updatePlayerPhysics(
         | { op: 'boss_died'; stg: number },
     ) => void;
     onCollectPowerUp?: (pu: StagePowerUp) => void;
+    onRespawn?: (p: Player) => void;
     bossProjectiles?: BossProjectile[];
+    isPvpEnabled?: boolean;
     playerRounds?: { id?: string; x: number; y: number; vx?: number; shooterId: string; damage?: number; len?: number; w?: number; h?: number; weapon?: string; shooterRole?: string }[];
     onPlayerHitByRound?: (victimId: string, shooterId: string, dmg: number, weapon?: string, projId?: string) => void;
     myPlayerId?: string;
@@ -377,6 +397,9 @@ export function updatePlayerPhysics(
       const rBox = { x: rX, y: pr.y - bigH / 2, w: Math.max(rW, len), h: bigH };
 
       if (rectsOverlap(rBox, pBox)) {
+        // 1 Peluru 1 Target: konsumsi peluru agar tidak mengenai target lain
+        const rIdx = stageOptions?.playerRounds ? stageOptions.playerRounds.indexOf(pr) : -1;
+        if (rIdx >= 0) stageOptions?.playerRounds?.splice(rIdx, 1);
         const isIce = pr.weapon === 'ice';
         const isStunt = pr.weapon === 'stunt';
         if (isIce) {
@@ -467,7 +490,7 @@ export function updatePlayerPhysics(
       p.y += stepVy * dtScale;
     }
     if (elapsed >= 1200 || p.y > WORLD.height + 240) {
-      respawnToStart(p);
+      respawnToStart(p, stageOptions?.onRespawn);
     }
     return;
   }
@@ -680,8 +703,10 @@ export function updatePlayerPhysics(
     const puBox = { x: pu.x, y: pu.y, w: pu.w, h: pu.h };
     if (rectsOverlap(box, puBox)) {
       pu.collectedUntil = now + 40000;
-      p.blasterAmmo = p.isGodMode ? 999 : 10;
-      p.blasterUntil = p.isGodMode ? now + 99999999 : now + 30000;
+      if (!p.hasAdminGun) {
+        p.blasterAmmo = p.isGodMode ? 999 : 10;
+        p.blasterUntil = p.isGodMode ? now + 99999999 : now + 30000;
+      }
       stageOptions?.onCollectPowerUp?.(pu);
       stageOptions?.onObstacleEvent?.({
         op: 'powerup',
@@ -812,6 +837,9 @@ export function updatePlayerPhysics(
         const rBox = { x: rX, y: pr.y - bigH / 2, w: Math.max(rW, len), h: bigH };
 
         if (rectsOverlap(rBox, otherBox)) {
+          // 1 Peluru 1 Target
+          const rIdx = stageOptions?.playerRounds ? stageOptions.playerRounds.indexOf(pr) : -1;
+          if (rIdx >= 0) stageOptions?.playerRounds?.splice(rIdx, 1);
           stageOptions?.onPlayerHitByRound?.(other.id, p.id, pr.damage ?? 1, pr.weapon, pr.id);
           break;
         }

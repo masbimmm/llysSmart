@@ -41,6 +41,7 @@ const globalForUserGameCache = globalThis as unknown as {
       sessionId: string | null;
       answeredQuestionIds: string[];
       answerResults: Record<string, boolean | 'assisted'>;
+      chosenAnswers?: Record<string, string>;
       correctCount: number;
     }
   >;
@@ -908,14 +909,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
         const myAnswers =
           sessionIds.length > 0
             ? await db
-                .select({ questionId: playerAnswers.questionId, isCorrect: playerAnswers.isCorrect, assisted: playerAnswers.assisted })
+                .select({
+                  questionId: playerAnswers.questionId,
+                  answer: playerAnswers.answer,
+                  isCorrect: playerAnswers.isCorrect,
+                  assisted: playerAnswers.assisted,
+                })
                 .from(playerAnswers)
                 .where(inArray(playerAnswers.sessionId, sessionIds))
             : [];
 
         const answerResults: Record<string, boolean | 'assisted'> = {};
+        const chosenAnswers: Record<string, string> = {};
         for (const a of myAnswers) {
           answerResults[a.questionId] = a.assisted ? 'assisted' : Boolean(a.isCorrect);
+          if (a.answer) chosenAnswers[a.questionId] = a.answer;
         }
         const uniqueAnsweredIds = Object.keys(answerResults);
 
@@ -924,6 +932,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
           sessionId: activeSessionId,
           answeredQuestionIds: uniqueAnsweredIds,
           answerResults,
+          chosenAnswers,
           // Hitung semua soal yang sudah dijawab (baik benar maupun salah) agar progres misi selalu bertambah
           correctCount: uniqueAnsweredIds.length,
         };
@@ -960,6 +969,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
         chatCursor: chatSync.chatCursor,
         answeredQuestionIds: userAns.answeredQuestionIds,
         answerResults: userAns.answerResults,
+        chosenAnswers: userAns.chosenAnswers,
         correctCount: userAns.correctCount,
         rejoinRequests: isStaff ? getRejoinRequests(roomId) : undefined,
       });

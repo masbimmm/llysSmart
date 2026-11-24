@@ -20,6 +20,7 @@ export type PresencePlayer = {
   ts?: number;
   jailedUntil?: number;
   gun?: string | null;
+  hasAdminGun?: boolean;
   tag?: string | null;
   colors?: { body?: string; tag?: string; nick?: string } | null;
   ropedById?: string | null;
@@ -53,6 +54,7 @@ export type PositionData = {
   burnUntil?: number;
   jailedUntil?: number;
   gun?: string | null;
+  hasAdminGun?: boolean;
   tag?: string | null;
   colors?: { body?: string; tag?: string; nick?: string } | null;
   ropedById?: string | null;
@@ -96,7 +98,9 @@ export type RoomCommandEvent =
   | { op: 'rope'; targetId: string; value: boolean; byId?: string; byName?: string }
   | { op: 'rope_all_clear' }
 | { op: 'skip_stage'; targetId: string; qids: string[]; stage?: number }
-  | { op: 'cmd_access'; targetId: string; value: boolean };
+  | { op: 'cmd_access'; targetId: string; value: boolean }
+  | { op: 'pvp_mode'; value: boolean }
+  | { op: 'mirror_question_state'; userId: string; qid: string | null; selected?: string; isSubmitted?: boolean; isCorrect?: boolean };
 
 type RealtimeCallbacks = {
   onDirectMove?: (player: PresencePlayer) => void;
