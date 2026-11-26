@@ -40,8 +40,14 @@ export type Player = {
   gun?: string | null;
   hasAdminGun?: boolean;
   tag?: string | null;
+  tag1?: string | null;
+  tag2?: string | null;
+  tag3?: string | null;
+  customNick?: string | null;
   originalFullName?: string | null;
-  colors?: { body?: string; tag?: string; nick?: string } | null;
+  bodyModel?: string;
+  customColors?: Record<string, string> | null;
+  colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null;
   ropedById?: string | null;
   // Posisi terakhir admin yang mengikat tali (untuk safe-respawn di belakang admin)
   adminAnchor?: { x: number; y: number };
@@ -136,18 +142,19 @@ export function updateStageEntities(
   projectiles: Projectile[] = [],
   onProjectileHitEnemy?: (projId: string, enemyId: string) => void,
   bosses?: StageBoss[],
-  onProjectileHitBoss?: (projId: string, bossId: string) => void,
+  onProjectileHitBoss?: (projId: string, bossId: string, damage?: number) => void,
   bossProjectiles: BossProjectile[] = [],
   onBossSpit?: (evt: { bid: string; pid: string; x: number; y: number; vx: number; vy: number }) => void,
   onBossHitPlayer?: (playerId: string, bossId: string) => void,
   players?: Player[],
+  myPlayerId?: string,
 ) {
   for (const plat of basePlatforms) {
-    if (plat.type === 'moving') {
+    if (plat.type === 'moving' || plat.type === 'plane') {
       const bx = plat.baseX ?? plat.x;
       const by = plat.baseY ?? plat.y;
-      const range = plat.moveRange ?? 90;
-      const speed = plat.moveSpeed ?? 0.0022;
+      const range = plat.moveRange ?? (plat.type === 'plane' ? 320 : 90);
+      const speed = plat.moveSpeed ?? (plat.type === 'plane' ? 0.002 : 0.0022);
       const phase = plat.movePhase ?? 0;
       const offset = Math.sin(now * speed + phase) * range;
       const prevX = plat.x;
@@ -159,7 +166,7 @@ export function updateStageEntities(
       } else {
         plat.x = bx + offset;
         plat.dx = plat.x - prevX;
-        plat.dy = 0;
+        plat.dy = plat.type === 'plane' ? Math.sin(now * 0.003 + phase) * 6 : 0;
       }
     } else if (plat.type === 'crumble') {
       if (plat.crumbleStartedAt) {
@@ -296,10 +303,15 @@ export function updateStageEntities(
       if (!b.alive) continue;
       const bHitbox = { x: b.x + 8, y: b.y + 8, w: b.w - 16, h: b.h - 16 };
       if (rectsOverlap(pBox, bHitbox)) {
-        b.hp = Math.max(0, b.hp - (pr.damage ?? 1));
-        b.hitFlashUntil = now + 120;
-        if (b.hp <= 0) b.alive = false;
-        onProjectileHitBoss?.(pr.id, b.id);
+        const isMyShot = !pr.shooterId || !myPlayerId || pr.shooterId === myPlayerId;
+        if (isMyShot) {
+          b.hp = Math.max(0, b.hp - (pr.damage ?? 1));
+          b.hitFlashUntil = now + 120;
+          if (b.hp <= 0) b.alive = false;
+          onProjectileHitBoss?.(pr.id, b.id, pr.damage ?? 1);
+        } else {
+          b.hitFlashUntil = now + 120;
+        }
         hit = true;
         break;
       }
@@ -315,9 +327,10 @@ export function updateStageEntities(
 export type PhysicsSoundEvent = 'jump' | 'bounce' | 'burn' | 'death' | 'bossSpit';
 
 // Rule tembakan antar player:
-// 1. Siswa gabisa nembak ke player lain
+// 1. Siswa gabisa nembak ke player lain (cuma monster/bola), KECUALI Guru mengaktifkan /set pvp on
 // 2. Guru bisa nembak ke siswa, tapi gabisa ke admin (dan sesama guru)
 // 3. Admin bisa nembak kesiapapun, baik siswa maupun guru
+// 4. Semi-admin (ketua kelas, diberi staff) mengikuti aturan Guru
 export function canShooterHitTarget(
   shooterRole: string | undefined,
   targetRole: string | undefined,
@@ -326,10 +339,14 @@ export function canShooterHitTarget(
   const sRole = (shooterRole ?? 'student').toLowerCase();
   const tRole = (targetRole ?? 'student').toLowerCase();
 
-  // Siswa bisa tembak sesama siswa jika PvP aktif, tapi GABISA nembak Guru apalagi Admin!
-  if (sRole === 'student' || sRole === 'semiadmin') {
+  // Siswa: default gabisa nembak player lain. Kalau Guru mengaktifkan PvP, boleh sesama siswa.
+  if (sRole === 'student') {
     if (tRole === 'teacher' || tRole === 'admin') return false;
-    return isPvpEnabled && (tRole === 'student' || tRole === 'semiadmin');
+    return isPvpEnabled && tRole === 'student';
+  }
+  // Semi-admin: seperti Guru (boleh ke siswa, tidak ke admin/guru)
+  if (sRole === 'semiadmin') {
+    return tRole === 'student' || tRole === 'semiadmin';
   }
   // Guru bisa tembak siswa, tapi gabisa tembak Admin atau sesama Guru
   if (sRole === 'teacher') {
@@ -357,6 +374,7 @@ export function updatePlayerPhysics(
     powerUps?: StagePowerUp[];
     isGateUnlocked?: boolean;
     onEnterGate?: () => void;
+    onLockedGateTouch?: () => void;
     isStaff?: boolean;
     onObstacleEvent?: (
       evt:
@@ -385,7 +403,7 @@ export function updatePlayerPhysics(
     for (const pr of stageOptions?.playerRounds ?? []) {
       if (pr.shooterId === p.id) continue;
       const shooterRole = pr.shooterRole ?? 'student';
-      if (!canShooterHitTarget(shooterRole, p.role)) continue;
+      if (!canShooterHitTarget(shooterRole, p.role, stageOptions?.isPvpEnabled !== false)) continue;
 
       const rW = pr.w ?? 28;
       const rH = pr.h ?? 18;
@@ -501,7 +519,7 @@ export function updatePlayerPhysics(
   const activeMoveSpeed = isBurning ? PHYSICS.moveSpeed * 1.2 : PHYSICS.moveSpeed;
 
   // Carry player when standing on a moving platform
-  if (p.ridingPlatform && p.ridingPlatform.type === 'moving') {
+  if (p.ridingPlatform && (p.ridingPlatform.type === 'moving' || p.ridingPlatform.type === 'plane')) {
     p.x += p.ridingPlatform.dx ?? 0;
     p.y += p.ridingPlatform.dy ?? 0;
   }
@@ -569,6 +587,7 @@ export function updatePlayerPhysics(
 
   // Horizontal collision with solid block obstacles (crates, qblocks)
   const hBox = { x: p.x, y: p.y + 4, w: PLAYER_W, h: PLAYER_H - 8 };
+
   for (const plat of allPlatforms) {
     if (p.ropedById) continue; // diikat tali: tembus obstacle (collision false)
     if (!isSolidBox(plat.type)) continue;
@@ -599,10 +618,43 @@ export function updatePlayerPhysics(
   const box = { x: p.x, y: p.y, w: PLAYER_W, h: PLAYER_H };
   for (const plat of allPlatforms) {
     if (p.ropedById) continue; // diikat tali: tembus obstacle (collision false)
+
+    // Kipas Angin (Updraft Fan): Meniup player melambung tinggi ke atas!
+    if (plat.type === 'fan') {
+      const fanRange = plat.moveRange ?? 460;
+      const inX = p.x + PLAYER_W > plat.x && p.x < plat.x + plat.w;
+      const inY = p.y + PLAYER_H >= plat.y - fanRange && p.y <= plat.y + 16;
+      if (inX && inY) {
+        const dist = Math.max(0, plat.y - (p.y + PLAYER_H));
+        const liftForce = 1.45 * Math.max(0.4, 1 - dist / (fanRange + 60));
+        p.vy = Math.max(-15.2, p.vy - liftForce * dtScale);
+        p.onGround = false;
+        if (p.y + PLAYER_H >= plat.y - 4) {
+          p.vy = -13.8;
+          onSoundEvent?.('bounce');
+        }
+      }
+    }
+
     if (plat.type === 'crumble' && plat.brokenUntil && now < plat.brokenUntil) {
       continue;
     }
     if (!rectsOverlap(box, plat)) continue;
+
+    // Awan Petir (Thunder Storm): Sambaran listrik mematikan
+    if (plat.type === 'thunder') {
+      if (p.isGodMode || p.ropedById) continue;
+      p.isDying = true;
+      p.deathStartedAt = now;
+      p.vx = (Math.random() - 0.5) * 4;
+      p.vy = -13.2;
+      p.onGround = false;
+      p.ridingPlayerId = null;
+      p.lastCarrierX = undefined;
+      p.ridingPlatform = null;
+      onSoundEvent?.('death');
+      return;
+    }
 
     if (plat.type === 'spike') {
       if (p.isGodMode || p.ropedById) {
@@ -638,7 +690,7 @@ export function updatePlayerPhysics(
     }
 
     // Landing on top of any platform or obstacle
-    const topThreshold = plat.type === 'moving' ? 18 : 14;
+    const topThreshold = (plat.type === 'moving' || plat.type === 'plane') ? 18 : 14;
     if (p.vy >= 0 && prevY + PLAYER_H <= plat.y + topThreshold) {
       p.y = plat.y - PLAYER_H;
       if (plat.type === 'bounce') {
@@ -648,7 +700,7 @@ export function updatePlayerPhysics(
       } else {
         p.vy = 0;
         p.onGround = true;
-        if (plat.type === 'moving') {
+        if (plat.type === 'moving' || plat.type === 'plane') {
           newRidingPlatform = plat;
         } else if (plat.type === 'crumble' && !plat.crumbleStartedAt) {
           plat.crumbleStartedAt = now;
@@ -740,7 +792,7 @@ export function updatePlayerPhysics(
     }
 
     // Mario-style Stomp on top of Virus head!
-    if (enemy.kind === 'virus' && p.vy > 0 && prevY + PLAYER_H <= enemy.y + enemy.h * 0.55) {
+    if ((enemy.kind === 'virus' || enemy.kind === 'drone' || enemy.kind === 'robot') && p.vy > 0 && prevY + PLAYER_H <= enemy.y + enemy.h * 0.55) {
       enemy.stompedUntil = now + 6000;
       p.y = enemy.y - PLAYER_H;
       p.vy = -12.6;
@@ -770,13 +822,17 @@ export function updatePlayerPhysics(
     return;
   }
 
-  // Boss collisions: sentuh boss = KO (kecuali god mode / super cat)
+  // Boss collisions: sentuh boss = KO!
+  // Boss TIDAK BISA diinjek/stomp & kebal kontak fisik (walaupun player punya energy/blaster buff).
+  // Cara mengurangi HP dan mengalahkan boss HANYA dengan cara ditembaki!
   const bosses = stageOptions?.bosses ?? [];
   for (const b of bosses) {
     if (!b.alive) continue;
-    const bHitbox = { x: b.x + 10, y: b.y + 10, w: b.w - 20, h: b.h - 20 };
+    const bHitbox = { x: b.x + 8, y: b.y + 8, w: b.w - 16, h: b.h - 16 };
     if (!rectsOverlap(box, bHitbox)) continue;
     if (p.isGodMode || p.ropedById) continue;
+
+    // Menyentuh boss dari arah mana pun (diinjak dari atas, ditabrak dari samping/bawah, ada buff energy/tidak) -> player MATI!
     p.isDying = true;
     p.deathStartedAt = now;
     p.vx = 0;
@@ -805,11 +861,16 @@ export function updatePlayerPhysics(
     return;
   }
 
-  // Exit Gate Portal check (when all questions in current stage are answered)
-  if (stageOptions?.isGateUnlocked && stageOptions.onEnterGate) {
-    const gateBox = { x: DECOR.gate.x + 22, y: DECOR.gate.y + 24, w: 86, h: 136 };
-    if (rectsOverlap(box, gateBox)) {
+  // Exit Gate Portal check (when all questions in current stage are answered & boss defeated)
+  const gateBox = { x: DECOR.gate.x + 22, y: DECOR.gate.y + 24, w: 86, h: 136 };
+  if (rectsOverlap(box, gateBox)) {
+    if (stageOptions?.isGateUnlocked && stageOptions.onEnterGate) {
       stageOptions.onEnterGate();
+    } else if (!stageOptions?.isGateUnlocked && !stageOptions?.isStaff) {
+      // Solid locked gate: block student from walking through
+      p.x = Math.min(p.x, DECOR.gate.x + 22 - PLAYER_W);
+      if (p.vx > 0) p.vx = 0;
+      stageOptions?.onLockedGateTouch?.();
     }
   }
 
@@ -825,7 +886,7 @@ export function updatePlayerPhysics(
       for (const pr of stageOptions?.playerRounds ?? []) {
         if (pr.shooterId !== p.id) continue;
         const shooterRole = pr.shooterRole ?? p.role ?? 'student';
-        if (!canShooterHitTarget(shooterRole, other.role)) continue;
+        if (!canShooterHitTarget(shooterRole, other.role, stageOptions?.isPvpEnabled !== false)) continue;
 
         const rW = pr.w ?? 28;
         const rH = pr.h ?? 18;

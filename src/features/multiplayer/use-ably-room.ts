@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export type PresencePlayer = {
   id: string;
   username: string;
+  fullName?: string | null;
+  customNick?: string | null;
   avatar: string;
   role?: string;
   stage?: number;
@@ -22,7 +24,11 @@ export type PresencePlayer = {
   gun?: string | null;
   hasAdminGun?: boolean;
   tag?: string | null;
-  colors?: { body?: string; tag?: string; nick?: string } | null;
+  tag1?: string | null;
+  tag2?: string | null;
+  tag3?: string | null;
+  colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null;
+  bodyModel?: string;
   ropedById?: string | null;
 };
 
@@ -40,6 +46,8 @@ export type ChatMessage = {
 export type PositionData = {
   id: string;
   username: string;
+  fullName?: string | null;
+  customNick?: string | null;
   avatar: string;
   role?: string;
   stage?: number;
@@ -56,7 +64,11 @@ export type PositionData = {
   gun?: string | null;
   hasAdminGun?: boolean;
   tag?: string | null;
-  colors?: { body?: string; tag?: string; nick?: string } | null;
+  tag1?: string | null;
+  tag2?: string | null;
+  tag3?: string | null;
+  colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null;
+  bodyModel?: string;
   ropedById?: string | null;
 };
 
@@ -81,8 +93,9 @@ export type ObstacleEvent =
   | { op: 'stomp'; stg: number; id: string; until: number }
   | { op: 'powerup'; stg: number; id: string; until: number }
   | { op: 'shoot'; stg: number; pid: string; x: number; y: number; vx: number; len?: number; thk?: number; color?: string; glow?: string; gun?: string; dmg?: number; weapon?: string; shooterRole?: string; shooterId?: string }
-  | { op: 'boss_hit'; stg: number; bid: string; dmg: number }
+  | { op: 'boss_hit'; stg: number; bid: string; dmg: number; hp?: number }
   | { op: 'boss_died'; stg: number }
+  | { op: 'boss_sync'; stg: number; bid: string; hp: number; maxHp?: number; alive: boolean; x?: number; dir?: number }
   | { op: 'boss_spit'; stg: number; bid: string; pid: string; x: number; y: number; vx: number; vy: number };
 
 export type RoomCommandEvent =
@@ -92,7 +105,7 @@ export type RoomCommandEvent =
   | { op: 'assist_answer'; targetId: string; qid: string }
   | { op: 'gun'; targetId: string; value: boolean; weapon?: string }
   | { op: 'jail'; targetId: string; value: boolean }
-  | { op: 'cosmetics'; targetId: string; tag?: string; colors?: { body?: string; tag?: string; nick?: string } }
+  | { op: 'cosmetics'; targetId: string; tag?: string | null; tag1?: string | null; tag2?: string | null; tag3?: string | null; avatar?: string; bodyModel?: string; colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null }
   | { op: 'hit'; targetId: string; by: string; dmg: number; weapon?: string; shooterRole?: string }
   | { op: 'change_nick'; targetId: string; value: string }
   | { op: 'rope'; targetId: string; value: boolean; byId?: string; byName?: string }
@@ -100,7 +113,9 @@ export type RoomCommandEvent =
 | { op: 'skip_stage'; targetId: string; qids: string[]; stage?: number }
   | { op: 'cmd_access'; targetId: string; value: boolean }
   | { op: 'pvp_mode'; value: boolean }
-  | { op: 'mirror_question_state'; userId: string; qid: string | null; selected?: string; isSubmitted?: boolean; isCorrect?: boolean };
+  | { op: 'mirror_question_state'; userId: string; qid: string | null; selected?: string; isSubmitted?: boolean; isCorrect?: boolean }
+  | { op: 'shop_prices_update'; prices: unknown }
+  | { op: 'reset_items'; itemType: 'body' | 'tag' | 'color' | 'all'; targetId: string };
 
 type RealtimeCallbacks = {
   onDirectMove?: (player: PresencePlayer) => void;
@@ -199,6 +214,7 @@ export function useAblyRoom(
             crumbles?: { stage: number; idx: number; startedAt: number }[];
             stomps?: { stage: number; id: string; until: number }[];
             powerups?: { stage: number; id: string; until: number }[];
+            bosses?: { stage: number; bid: string; hp: number; maxHp: number; alive: boolean; x?: number; dir?: number }[];
           };
           if (Array.isArray(obs.crumbles)) {
             for (const c of obs.crumbles) {
@@ -213,6 +229,20 @@ export function useAblyRoom(
           if (Array.isArray(obs.powerups)) {
             for (const p of obs.powerups) {
               callbacksRef.current?.onObstacleEvent?.({ op: 'powerup', stg: p.stage, id: p.id, until: p.until });
+            }
+          }
+          if (Array.isArray(obs.bosses)) {
+            for (const b of obs.bosses) {
+              callbacksRef.current?.onObstacleEvent?.({
+                op: 'boss_sync',
+                stg: b.stage,
+                bid: b.bid,
+                hp: b.hp,
+                maxHp: b.maxHp,
+                alive: b.alive,
+                x: b.x,
+                dir: b.dir,
+              });
             }
           }
         }
@@ -362,9 +392,20 @@ export function useAblyRoom(
         } else if (op === 'shoot' && typeof msg.pid === 'string' && typeof msg.x === 'number' && typeof msg.y === 'number' && typeof msg.vx === 'number') {
           callbacksRef.current?.onObstacleEvent?.({ op: 'shoot', stg, pid: msg.pid, x: msg.x, y: msg.y, vx: msg.vx, len: typeof msg.len === 'number' ? msg.len : undefined, thk: typeof msg.thk === 'number' ? msg.thk : undefined, color: typeof msg.color === 'string' ? msg.color : undefined, glow: typeof msg.glow === 'string' ? msg.glow : undefined, gun: typeof msg.gun === 'string' ? msg.gun : undefined, dmg: typeof msg.dmg === 'number' ? msg.dmg : undefined, weapon: typeof msg.weapon === 'string' ? msg.weapon : undefined, shooterRole: typeof msg.shooterRole === 'string' ? msg.shooterRole : undefined, shooterId: typeof msg.shooterId === 'string' ? msg.shooterId : undefined });
         } else if (op === 'boss_hit' && typeof msg.bid === 'string' && typeof msg.dmg === 'number') {
-          callbacksRef.current?.onObstacleEvent?.({ op: 'boss_hit', stg, bid: msg.bid, dmg: msg.dmg });
+          callbacksRef.current?.onObstacleEvent?.({ op: 'boss_hit', stg, bid: msg.bid, dmg: msg.dmg, hp: typeof msg.hp === 'number' ? msg.hp : undefined });
         } else if (op === 'boss_died') {
           callbacksRef.current?.onObstacleEvent?.({ op: 'boss_died', stg });
+        } else if (op === 'boss_sync' && typeof msg.bid === 'string' && typeof msg.hp === 'number') {
+          callbacksRef.current?.onObstacleEvent?.({
+            op: 'boss_sync',
+            stg,
+            bid: msg.bid,
+            hp: msg.hp,
+            maxHp: typeof msg.maxHp === 'number' ? msg.maxHp : undefined,
+            alive: typeof msg.alive === 'boolean' ? msg.alive : msg.hp > 0,
+            x: typeof msg.x === 'number' ? msg.x : undefined,
+            dir: typeof msg.dir === 'number' ? msg.dir : undefined,
+          });
         } else if (op === 'boss_spit' && typeof msg.bid === 'string' && typeof msg.pid === 'string' && typeof msg.x === 'number' && typeof msg.y === 'number' && typeof msg.vx === 'number') {
           callbacksRef.current?.onObstacleEvent?.({ op: 'boss_spit', stg, bid: msg.bid, pid: msg.pid, x: msg.x, y: msg.y, vx: msg.vx, vy: typeof msg.vy === 'number' ? msg.vy : 0.0025 });
         }
@@ -373,7 +414,7 @@ export function useAblyRoom(
 
       if (t === 'cmd') {
         const op = msg.op;
-        if (typeof op === 'string' && (op === 'rope_all_clear' || typeof msg.targetId === 'string')) {
+        if (typeof op === 'string' && (op === 'rope_all_clear' || op === 'shop_prices_update' || typeof msg.targetId === 'string')) {
           callbacksRef.current?.onCommandEvent?.(msg as unknown as RoomCommandEvent);
         }
         return;

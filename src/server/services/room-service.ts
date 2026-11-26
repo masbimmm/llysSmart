@@ -70,6 +70,11 @@ async function withDetails(room: typeof rooms.$inferSelect) {
       userId: roomPlayers.userId,
       username: users.username,
       fullName: users.fullName,
+      customNick: users.customNick,
+      tag1: users.tag1,
+      tag2: users.tag2,
+      tag3: users.tag3,
+      customColors: users.customColors,
       avatar: roomPlayers.avatar,
       role: users.role,
       lastX: roomPlayers.lastX,
@@ -107,7 +112,7 @@ export async function updateRoomStatus(
       status,
       updatedAt: new Date(),
       startedAt: status === 'in_progress' ? new Date() : undefined,
-      endedAt: status === 'completed' ? new Date() : undefined,
+      endedAt: status === 'completed' ? new Date() : null,
     })
     .where(eq(rooms.id, id));
   return getRoom(id);

@@ -1,3 +1,4 @@
+// Map & World Platform Definitions for 20 Multi-Tier Stages
 export const WORLD = {
   width: 5600,
   height: 1100,
@@ -28,7 +29,11 @@ export type PlatformType =
   | 'roof'
   | 'crumble'
   | 'moving'
-  | 'conveyor';
+  | 'conveyor'
+  | 'fan'
+  | 'plane'
+  | 'thunder'
+  | 'bossbarrier';
 
 export type Platform = {
   x: number;
@@ -37,7 +42,7 @@ export type Platform = {
   h: number;
   type: PlatformType;
   questionId?: string;
-  // Moving platform properties
+  // Moving platform & Airplane properties
   baseX?: number;
   baseY?: number;
   moveAxis?: 'x' | 'y';
@@ -56,7 +61,7 @@ export type Platform = {
 
 export type StageEnemy = {
   id: string;
-  kind: 'virus' | 'fireball';
+  kind: 'virus' | 'fireball' | 'drone' | 'robot' | 'cloud';
   x: number;
   y: number;
   w: number;
@@ -68,566 +73,19 @@ export type StageEnemy = {
   stompedUntil?: number;
 };
 
-export const PLATFORMS: Platform[] = [
-  // Main ground (expanded to 5600px)
-  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-
-  // Starting zone & Signboard platform (left)
-  { x: 40, y: 710, w: 220, h: 28, type: 'grass' },
-  { x: 290, y: 650, w: 180, h: 26, type: 'grass' },
-
-  // Wooden crates stack (can step on each crate)
-  { x: 510, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 560, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 535, y: 724, w: 48, h: 48, type: 'crate' },
-
-  // Low floating grass islands & stone steps
-  { x: 650, y: 700, w: 190, h: 28, type: 'grass' },
-  { x: 890, y: 630, w: 210, h: 28, type: 'grass' },
-  { x: 1150, y: 700, w: 220, h: 28, type: 'grass' },
-
-  // Spikes hazard on ground & between platforms (Mario Bros death + respawn to start!)
-  { x: 850, y: 794, w: 66, h: 26, type: 'spike' },
-  { x: 1410, y: 794, w: 66, h: 26, type: 'spike' },
-  { x: 2220, y: 794, w: 88, h: 26, type: 'spike' },
-  { x: 3290, y: 794, w: 88, h: 26, type: 'spike' },
-  { x: 4040, y: 794, w: 88, h: 26, type: 'spike' },
-  { x: 4720, y: 794, w: 88, h: 26, type: 'spike' },
-
-  // Fire hazards (touching sets character on fire for 5 seconds!)
-  { x: 635, y: 794, w: 64, h: 26, type: 'fire' },
-  { x: 1225, y: 676, w: 56, h: 24, type: 'fire' },
-  { x: 1830, y: 794, w: 68, h: 26, type: 'fire' },
-  { x: 2535, y: 596, w: 56, h: 24, type: 'fire' },
-  { x: 2840, y: 794, w: 68, h: 26, type: 'fire' },
-  { x: 3560, y: 794, w: 72, h: 26, type: 'fire' },
-  { x: 3720, y: 596, w: 56, h: 24, type: 'fire' },
-  { x: 4340, y: 794, w: 72, h: 26, type: 'fire' },
-  { x: 4520, y: 516, w: 56, h: 24, type: 'fire' },
-  { x: 5010, y: 794, w: 68, h: 26, type: 'fire' },
-
-  // Bounce / trampoline pads (super jump!)
-  { x: 770, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1650, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 2540, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 3440, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 4220, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 4880, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // School building walkable ledges & roof (center-left)
-  { x: 960, y: 510, w: 360, h: 20, type: 'stone' },
-  { x: 940, y: 390, w: 400, h: 22, type: 'roof' },
-  { x: 1060, y: 285, w: 160, h: 22, type: 'roof' },
-
-  // Mid-section parkour bridges & crates
-  { x: 1440, y: 640, w: 200, h: 26, type: 'wood' },
-  { x: 1510, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 1700, y: 570, w: 230, h: 28, type: 'grass' },
-  { x: 1980, y: 650, w: 210, h: 28, type: 'grass' },
-  { x: 1980, y: 460, w: 190, h: 26, type: 'wood' },
-
-  // High sky islands & golden key platform
-  { x: 1480, y: 420, w: 200, h: 26, type: 'grass' },
-  { x: 1730, y: 310, w: 210, h: 28, type: 'grass' },
-  { x: 1380, y: 220, w: 190, h: 26, type: 'stone' },
-
-  // Center-right obstacle tower & stair pyramid
-  { x: 2260, y: 710, w: 170, h: 28, type: 'stone' },
-  { x: 2470, y: 620, w: 200, h: 28, type: 'grass' },
-  { x: 2720, y: 540, w: 200, h: 28, type: 'grass' },
-  { x: 2500, y: 470, w: 180, h: 26, type: 'wood' },
-  { x: 2740, y: 370, w: 210, h: 28, type: 'stone' },
-  { x: 2990, y: 280, w: 220, h: 28, type: 'grass' },
-
-  // Crate pyramid mid-map
-  { x: 2960, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 3010, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 3060, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 2985, y: 724, w: 48, h: 48, type: 'crate' },
-  { x: 3035, y: 724, w: 48, h: 48, type: 'crate' },
-  { x: 3010, y: 676, w: 48, h: 48, type: 'crate' },
-
-  // NEW EXPANDED ZONE 1: Volcano Canyon & Fire Bridges (3180 - 4100)
-  { x: 3180, y: 700, w: 220, h: 28, type: 'stone' },
-  { x: 3420, y: 610, w: 210, h: 26, type: 'wood' },
-  { x: 3650, y: 620, w: 230, h: 28, type: 'stone' },
-  { x: 3520, y: 450, w: 200, h: 26, type: 'grass' },
-  { x: 3780, y: 350, w: 220, h: 28, type: 'roof' },
-  { x: 3930, y: 690, w: 190, h: 28, type: 'grass' },
-  { x: 3860, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 4030, y: 520, w: 210, h: 26, type: 'wood' },
-
-  // NEW EXPANDED ZONE 2: Sky Citadel & High Parkour (4150 - 5050)
-  { x: 4180, y: 670, w: 220, h: 28, type: 'grass' },
-  { x: 4440, y: 540, w: 230, h: 28, type: 'stone' },
-  { x: 4260, y: 390, w: 210, h: 26, type: 'grass' },
-  { x: 4540, y: 280, w: 220, h: 28, type: 'roof' },
-  { x: 4720, y: 640, w: 210, h: 28, type: 'wood' },
-  { x: 4820, y: 450, w: 210, h: 28, type: 'grass' },
-  { x: 4630, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 4680, y: 772, w: 48, h: 48, type: 'crate' },
-  { x: 4655, y: 724, w: 48, h: 48, type: 'crate' },
-
-  // NEW EXPANDED ZONE 3: Fortress Finish Terrace (5100 - 5520)
-  { x: 5120, y: 700, w: 380, h: 32, type: 'grass' },
-  { x: 5180, y: 540, w: 260, h: 26, type: 'stone' },
-];
-
-export const DECOR = {
-  school: { x: 960, y: 400, w: 360, h: 420 },
-  trees: [
-    { x: 260, y: 820, s: 1.1 },
-    { x: 470, y: 820, s: 0.95 },
-    { x: 740, y: 700, s: 0.85 },
-    { x: 910, y: 820, s: 1.05 },
-    { x: 1370, y: 820, s: 1.1 },
-    { x: 1610, y: 820, s: 0.95 },
-    { x: 1810, y: 570, s: 0.8 },
-    { x: 2150, y: 820, s: 1.15 },
-    { x: 2420, y: 820, s: 1.0 },
-    { x: 2680, y: 820, s: 1.05 },
-    { x: 2890, y: 820, s: 0.95 },
-    { x: 3140, y: 820, s: 1.1 },
-    { x: 3510, y: 820, s: 1.0 },
-    { x: 3810, y: 820, s: 1.1 },
-    { x: 4150, y: 820, s: 0.95 },
-    { x: 4480, y: 820, s: 1.15 },
-    { x: 4830, y: 820, s: 1.0 },
-    { x: 5100, y: 820, s: 1.05 },
-    { x: 5480, y: 820, s: 1.1 },
-  ],
-  clouds: [
-    { x: 180, y: 130, s: 1.0 },
-    { x: 560, y: 85, s: 1.25 },
-    { x: 980, y: 120, s: 0.95 },
-    { x: 1420, y: 75, s: 1.3 },
-    { x: 1880, y: 135, s: 1.05 },
-    { x: 2340, y: 95, s: 1.2 },
-    { x: 2820, y: 125, s: 0.9 },
-    { x: 3280, y: 85, s: 1.15 },
-    { x: 3740, y: 110, s: 1.2 },
-    { x: 4220, y: 80, s: 1.05 },
-    { x: 4720, y: 125, s: 1.25 },
-    { x: 5210, y: 90, s: 1.1 },
-  ],
-  sign: { x: 95, y: 625, text: 'Kerja sama tim untuk menyelesaikan setiap tantangan!' },
-  gate: { x: 5240, y: 540 },
-};
-
-export const SPAWN_POINTS = Array.from({ length: 48 }, (_, i) => ({
-  x: 100 + (i % 16) * 45,
-  y: 740 - Math.floor(i / 16) * 60,
-}));
-
-export const QBLOCK_CANDIDATE_SPOTS: { x: number; y: number }[] = [
-  { x: 340, y: 530 },
-  { x: 535, y: 610 },
-  { x: 720, y: 575 },
-  { x: 960, y: 505 },
-  { x: 1030, y: 390 },
-  { x: 1115, y: 270 },
-  { x: 1120, y: 165 },
-  { x: 1270, y: 575 },
-  { x: 1510, y: 515 },
-  { x: 1555, y: 295 },
-  { x: 1450, y: 105 },
-  { x: 1790, y: 445 },
-  { x: 1810, y: 185 },
-  { x: 2040, y: 530 },
-  { x: 2050, y: 335 },
-  { x: 2320, y: 585 },
-  { x: 2540, y: 495 },
-  { x: 2565, y: 345 },
-  { x: 2810, y: 415 },
-  { x: 2820, y: 245 },
-  { x: 3010, y: 555 },
-  { x: 3075, y: 155 },
-  { x: 3255, y: 575 },
-  { x: 3480, y: 485 },
-  { x: 3585, y: 325 },
-  { x: 3740, y: 495 },
-  { x: 3850, y: 225 },
-  { x: 4100, y: 395 },
-  { x: 4255, y: 545 },
-  { x: 4330, y: 265 },
-  { x: 4510, y: 415 },
-  { x: 4610, y: 160 },
-  { x: 4785, y: 515 },
-  { x: 4890, y: 325 },
-  { x: 5060, y: 575 },
-];
-
-export const STAGE2_PLATFORMS: Platform[] = [
-  // Main ground
-  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-
-  // Starting zone (left)
-  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
-  { x: 310, y: 650, w: 170, h: 24, type: 'crumble' },
-  { x: 530, y: 590, w: 180, h: 26, type: 'stone' },
-
-  // First Moving Bridge & Spike Pit
-  { x: 720, y: 794, w: 132, h: 26, type: 'spike' },
-  { x: 750, y: 660, w: 170, h: 24, type: 'moving', baseX: 750, baseY: 660, moveAxis: 'x', moveRange: 95, moveSpeed: 0.0022, movePhase: 0 },
-
-  // Sunset Cyber-Tower ledges & elevator (960 - 1340)
-  { x: 960, y: 520, w: 360, h: 22, type: 'stone' },
-  { x: 940, y: 390, w: 400, h: 22, type: 'roof' },
-  { x: 1050, y: 270, w: 180, h: 22, type: 'roof' },
-  { x: 870, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Crumbling Sky Steps & Vertical Lift (1420 - 2180)
-  { x: 1420, y: 660, w: 175, h: 24, type: 'crumble' },
-  { x: 1520, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 1660, y: 570, w: 170, h: 24, type: 'moving', baseX: 1660, baseY: 470, moveAxis: 'y', moveRange: 120, moveSpeed: 0.0024, movePhase: 1.2 },
-  { x: 1890, y: 630, w: 220, h: 28, type: 'stone' },
-  { x: 1920, y: 380, w: 190, h: 24, type: 'crumble' },
-  { x: 1620, y: 250, w: 200, h: 26, type: 'roof' },
-  { x: 2140, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Mid-Arena Virus Gauntlet & Crumble Bridge (2240 - 3150)
-  { x: 2240, y: 680, w: 320, h: 28, type: 'stone' },
-  { x: 2610, y: 600, w: 170, h: 24, type: 'crumble' },
-  { x: 2830, y: 530, w: 260, h: 28, type: 'stone' },
-  { x: 2480, y: 430, w: 190, h: 24, type: 'moving', baseX: 2480, baseY: 430, moveAxis: 'x', moveRange: 110, moveSpeed: 0.0025, movePhase: 2.1 },
-  { x: 2820, y: 310, w: 230, h: 26, type: 'roof' },
-  { x: 2620, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 3060, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Zone 3: Sunset Canyon & Dual Moving Lifts (3180 - 4120)
-  { x: 3180, y: 690, w: 280, h: 28, type: 'stone' },
-  { x: 3510, y: 610, w: 170, h: 24, type: 'crumble' },
-  { x: 3730, y: 530, w: 180, h: 24, type: 'moving', baseX: 3730, baseY: 530, moveAxis: 'x', moveRange: 95, moveSpeed: 0.0026, movePhase: 0.7 },
-  { x: 3460, y: 390, w: 220, h: 26, type: 'stone' },
-  { x: 3780, y: 280, w: 220, h: 26, type: 'roof' },
-  { x: 3980, y: 660, w: 240, h: 28, type: 'stone' },
-  { x: 3540, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 3890, y: 794, w: 72, h: 26, type: 'fire' },
-
-  // Zone 4: Final Citadel Approach (4220 - 5500)
-  { x: 4250, y: 580, w: 175, h: 24, type: 'crumble' },
-  { x: 4480, y: 500, w: 260, h: 28, type: 'stone' },
-  { x: 4320, y: 330, w: 200, h: 24, type: 'moving', baseX: 4320, baseY: 330, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.9 },
-  { x: 4620, y: 240, w: 210, h: 26, type: 'roof' },
-  { x: 4790, y: 620, w: 175, h: 24, type: 'crumble' },
-  { x: 4880, y: 420, w: 210, h: 26, type: 'stone' },
-  { x: 4340, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 4720, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Finish Gate Terrace
-  { x: 5120, y: 700, w: 380, h: 32, type: 'stone' },
-  { x: 5180, y: 540, w: 260, h: 26, type: 'roof' },
-];
-
-export const STAGE2_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 365, y: 525 },
-  { x: 590, y: 465 },
-  { x: 785, y: 520 },
-  { x: 1010, y: 400 },
-  { x: 1115, y: 150 },
-  { x: 1245, y: 400 },
-  { x: 1480, y: 535 },
-  { x: 1690, y: 130 },
-  { x: 1980, y: 505 },
-  { x: 1990, y: 255 },
-  { x: 2370, y: 555 },
-  { x: 2520, y: 295 },
-  { x: 2670, y: 475 },
-  { x: 2920, y: 405 },
-  { x: 2910, y: 185 },
-  { x: 3290, y: 565 },
-  { x: 3545, y: 265 },
-  { x: 3780, y: 395 },
-  { x: 3865, y: 155 },
-  { x: 4075, y: 535 },
-  { x: 4310, y: 455 },
-  { x: 4585, y: 375 },
-  { x: 4700, y: 120 },
-  { x: 4960, y: 295 },
-];
-
-export const STAGE3_PLATFORMS: Platform[] = [
-  // Main ground
-  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-
-  // Starting zone (left) - Dark Basalt Fortress Ledges
-  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
-  { x: 300, y: 640, w: 160, h: 24, type: 'crumble' },
-  { x: 520, y: 580, w: 180, h: 26, type: 'stone' },
-
-  // Zone 1: First Magma Chasm & Moving Ferry (700 - 1450)
-  { x: 720, y: 794, w: 180, h: 26, type: 'fire' },
-  { x: 760, y: 660, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 660, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0022, movePhase: 0 },
-  { x: 980, y: 530, w: 320, h: 22, type: 'stone' },
-  { x: 960, y: 390, w: 360, h: 22, type: 'roof' },
-  { x: 1060, y: 260, w: 170, h: 22, type: 'roof' },
-  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1360, y: 460, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 460, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.57 },
-
-  // Zone 2: Crumbling Obsidian Steps & Spike Pits (1550 - 2200)
-  { x: 1560, y: 794, w: 220, h: 26, type: 'spike' },
-  { x: 1580, y: 640, w: 140, h: 24, type: 'crumble' },
-  { x: 1780, y: 570, w: 150, h: 24, type: 'stone' },
-  { x: 1980, y: 500, w: 140, h: 24, type: 'crumble' },
-  { x: 1740, y: 330, w: 190, h: 24, type: 'roof' },
-  { x: 1880, y: 794, w: 180, h: 26, type: 'fire' },
-  { x: 2120, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Zone 3: Twin Magma Counter-Lifts & Mid Fortress (2240 - 3150)
-  { x: 2250, y: 680, w: 280, h: 28, type: 'stone' },
-  { x: 2360, y: 520, w: 150, h: 24, type: 'moving', baseX: 2360, baseY: 520, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 2640, y: 420, w: 150, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2840, y: 340, w: 220, h: 24, type: 'stone' },
-  { x: 2820, y: 590, w: 160, h: 24, type: 'crumble' },
-  { x: 2600, y: 794, w: 150, h: 26, type: 'spike' },
-  { x: 2980, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 3080, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Zone 4: Inferno Spire & Sky Elevator (3180 - 4150)
-  { x: 3180, y: 680, w: 260, h: 28, type: 'conveyor', conveyorDir: -1 },
-  { x: 3480, y: 590, w: 150, h: 24, type: 'crumble' },
-  { x: 3420, y: 420, w: 150, h: 24, type: 'moving', baseX: 3420, baseY: 420, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0026, movePhase: 0.8 },
-  { x: 3660, y: 540, w: 320, h: 26, type: 'conveyor', conveyorDir: 1 },
-  { x: 3720, y: 380, w: 250, h: 24, type: 'roof' },
-  { x: 3800, y: 230, w: 180, h: 22, type: 'roof' },
-  { x: 4020, y: 650, w: 220, h: 26, type: 'stone' },
-
-  // Zone 5: Final Magma Crossing to the Citadel Gate (4200 - 5500)
-  { x: 4220, y: 560, w: 150, h: 24, type: 'crumble' },
-  { x: 4420, y: 480, w: 240, h: 26, type: 'conveyor', conveyorDir: -1 },
-  { x: 4320, y: 310, w: 190, h: 24, type: 'moving', baseX: 4320, baseY: 310, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.6 },
-  { x: 4620, y: 220, w: 210, h: 24, type: 'roof' },
-  { x: 4720, y: 600, w: 160, h: 24, type: 'crumble' },
-  { x: 4860, y: 440, w: 220, h: 26, type: 'stone' },
-  { x: 4640, y: 640, w: 160, h: 24, type: 'moving', baseX: 4640, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0 },
-  { x: 4360, y: 794, w: 130, h: 26, type: 'spike' },
-  { x: 4540, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 4780, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Finish Citadel Terrace & Portal
-  { x: 5120, y: 700, w: 400, h: 32, type: 'stone' },
-  { x: 5180, y: 540, w: 280, h: 26, type: 'roof' },
-];
-
-export const STAGE3_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 350, y: 515 },
-  { x: 580, y: 455 },
-  { x: 790, y: 530 },
-  { x: 1020, y: 410 },
-  { x: 1120, y: 140 },
-  { x: 1250, y: 410 },
-  { x: 1420, y: 310 },
-  { x: 1640, y: 510 },
-  { x: 1820, y: 440 },
-  { x: 1800, y: 200 },
-  { x: 2040, y: 380 },
-  { x: 2420, y: 390 },
-  { x: 2700, y: 290 },
-  { x: 2900, y: 210 },
-  { x: 2880, y: 460 },
-  { x: 3240, y: 550 },
-  { x: 3480, y: 290 },
-  { x: 3720, y: 410 },
-  { x: 3840, y: 110 },
-  { x: 4080, y: 520 },
-  { x: 4280, y: 430 },
-  { x: 4480, y: 350 },
-  { x: 4680, y: 100 },
-  { x: 4780, y: 470 },
-  { x: 4940, y: 310 },
-];
-
 export type StagePowerUp = {
   id: string;
   stage: number;
-  kind: 'blaster' | 'star';
+  kind: 'blaster' | 'star' | 'speed';
   x: number;
   y: number;
   w: number;
   h: number;
+  collectedBy?: string;
+  collectedAt?: number;
   collectedUntil?: number;
 };
 
-export const STAGE4_PLATFORMS: Platform[] = [
-  // Main ground - Neon Cyber Grid
-  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-
-  // Starting zone (left) - Cyber Launchpad
-  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
-  { x: 300, y: 640, w: 160, h: 24, type: 'crumble' },
-  { x: 520, y: 580, w: 180, h: 26, type: 'stone' },
-
-  // Zone 1: Anti-Gravity Cyan Lift & Space Void Spike Pit (700 - 1450)
-  { x: 720, y: 794, w: 180, h: 26, type: 'spike' },
-  { x: 760, y: 660, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 660, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0022, movePhase: 0 },
-  { x: 980, y: 530, w: 320, h: 22, type: 'stone' },
-  { x: 960, y: 390, w: 360, h: 22, type: 'roof' },
-  { x: 1060, y: 260, w: 170, h: 22, type: 'roof' },
-  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1360, y: 460, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 460, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.57 },
-
-  // Zone 2: Crumbling Quantum Bridge & Laser Hazard (1550 - 2200)
-  { x: 1560, y: 794, w: 220, h: 26, type: 'spike' },
-  { x: 1580, y: 640, w: 140, h: 24, type: 'crumble' },
-  { x: 1780, y: 570, w: 150, h: 24, type: 'stone' },
-  { x: 1980, y: 500, w: 140, h: 24, type: 'crumble' },
-  { x: 1740, y: 330, w: 190, h: 24, type: 'roof' },
-  { x: 1880, y: 794, w: 180, h: 26, type: 'fire' },
-  { x: 2120, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Zone 3: Orbital Space Lifts & Mid Cyber Citadel (2240 - 3150)
-  { x: 2250, y: 680, w: 280, h: 28, type: 'stone' },
-  { x: 2360, y: 520, w: 150, h: 24, type: 'moving', baseX: 2360, baseY: 520, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 2640, y: 420, w: 150, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2840, y: 340, w: 220, h: 24, type: 'stone' },
-  { x: 2820, y: 590, w: 160, h: 24, type: 'crumble' },
-  { x: 2600, y: 794, w: 150, h: 26, type: 'spike' },
-  { x: 2980, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 3080, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Zone 4: Cyber Spire & High Altitude Beam (3180 - 4150)
-  { x: 3180, y: 680, w: 260, h: 28, type: 'conveyor', conveyorDir: -1 },
-  { x: 3480, y: 590, w: 150, h: 24, type: 'crumble' },
-  { x: 3420, y: 420, w: 150, h: 24, type: 'moving', baseX: 3420, baseY: 420, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0026, movePhase: 0.8 },
-  { x: 3660, y: 540, w: 320, h: 26, type: 'conveyor', conveyorDir: 1 },
-  { x: 3720, y: 380, w: 250, h: 24, type: 'roof' },
-  { x: 3800, y: 230, w: 180, h: 22, type: 'roof' },
-  { x: 4020, y: 650, w: 220, h: 26, type: 'stone' },
-
-  // Zone 5: Final Cosmic Bridge & Citadel Gate Approach (4200 - 5500)
-  { x: 4220, y: 560, w: 150, h: 24, type: 'crumble' },
-  { x: 4420, y: 480, w: 240, h: 26, type: 'conveyor', conveyorDir: -1 },
-  { x: 4320, y: 310, w: 190, h: 24, type: 'moving', baseX: 4320, baseY: 310, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.6 },
-  { x: 4620, y: 220, w: 210, h: 24, type: 'roof' },
-  { x: 4720, y: 600, w: 160, h: 24, type: 'crumble' },
-  { x: 4860, y: 440, w: 220, h: 26, type: 'stone' },
-  { x: 4640, y: 640, w: 160, h: 24, type: 'moving', baseX: 4640, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0 },
-  { x: 4360, y: 794, w: 130, h: 26, type: 'spike' },
-  { x: 4540, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 4780, y: 798, w: 64, h: 22, type: 'bounce' },
-
-  // Finish Citadel Terrace & Portal
-  { x: 5120, y: 700, w: 400, h: 32, type: 'stone' },
-  { x: 5180, y: 540, w: 280, h: 26, type: 'roof' },
-];
-
-export const STAGE4_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 360, y: 520 },
-  { x: 590, y: 460 },
-  { x: 800, y: 530 },
-  { x: 1030, y: 410 },
-  { x: 1130, y: 150 },
-  { x: 1260, y: 410 },
-  { x: 1430, y: 320 },
-  { x: 1650, y: 510 },
-  { x: 1830, y: 440 },
-  { x: 1810, y: 210 },
-  { x: 2050, y: 390 },
-  { x: 2430, y: 390 },
-  { x: 2710, y: 300 },
-  { x: 2910, y: 220 },
-  { x: 2890, y: 470 },
-  { x: 3250, y: 550 },
-  { x: 3490, y: 300 },
-  { x: 3730, y: 410 },
-  { x: 3850, y: 120 },
-  { x: 4090, y: 530 },
-  { x: 4290, y: 440 },
-  { x: 4490, y: 360 },
-  { x: 4690, y: 110 },
-  { x: 4790, y: 480 },
-  { x: 4950, y: 320 },
-];
-
-// ===================== STAGE 5: Hutan Neon Biolumin =====================
-// Layout: hutan cendaki glowing, lava-fire pit berwarna toxic green, ranting pohon sebagai platform,
-// lantai konveyor lumut, dan arena boss di teras ujung (x 4760-5290) dengan tembok tumbuh-tumbuhan.
-export const STAGE5_PLATFORMS: Platform[] = [
-  // Main ground (broken into segments with glowing toxic pits between)
-  { x: 0, y: 820, w: 1400, h: 280, type: 'ground' },
-  { x: 1540, y: 820, w: 900, h: 280, type: 'ground' },
-  { x: 2640, y: 820, w: 800, h: 280, type: 'ground' },
-  { x: 3620, y: 820, w: 600, h: 280, type: 'ground' },
-  { x: 4400, y: 820, w: 1200, h: 280, type: 'ground' },
-  // Toxic fire pits (hijau neon, bukan lava biasa)
-  { x: 1400, y: 830, w: 140, h: 26, type: 'fire' },
-  { x: 2440, y: 830, w: 200, h: 26, type: 'fire' },
-  { x: 3440, y: 830, w: 180, h: 26, type: 'fire' },
-  { x: 4220, y: 830, w: 180, h: 26, type: 'fire' },
-  // Spore spike beds
-  { x: 1740, y: 794, w: 160, h: 26, type: 'spike' },
-  { x: 2960, y: 794, w: 150, h: 26, type: 'spike' },
-  { x: 3860, y: 794, w: 130, h: 26, type: 'spike' },
-  // Zone 1: glowing mushroom starter bouncers + canopy logs
-  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
-  { x: 320, y: 620, w: 150, h: 24, type: 'roof' },
-  { x: 560, y: 540, w: 180, h: 26, type: 'stone' },
-  { x: 820, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 900, y: 650, w: 260, h: 24, type: 'roof' },
-  { x: 1080, y: 540, w: 200, h: 24, type: 'stone' },
-  { x: 1240, y: 430, w: 170, h: 22, type: 'crumble' },
-  // Zone 2: vertical vine climb over the first pit
-  { x: 1440, y: 700, w: 120, h: 24, type: 'moving', baseX: 1440, baseY: 700, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 1620, y: 600, w: 140, h: 24, type: 'roof' },
-  { x: 1820, y: 520, w: 150, h: 24, type: 'stone' },
-  { x: 1980, y: 420, w: 170, h: 24, type: 'crumble' },
-  { x: 2040, y: 640, w: 130, h: 24, type: 'moving', baseX: 2040, baseY: 640, moveAxis: 'x', moveRange: 110, moveSpeed: 0.0026, movePhase: 1.2 },
-  { x: 2260, y: 798, w: 64, h: 22, type: 'bounce' },
-  // Zone 3: mossy conveyor highway (dorong ke depan, hindari spike)
-  { x: 2460, y: 700, w: 220, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2720, y: 640, w: 180, h: 24, type: 'stone' },
-  { x: 2680, y: 500, w: 160, h: 22, type: 'crumble' },
-  { x: 2900, y: 560, w: 200, h: 24, type: 'roof' },
-  { x: 3120, y: 470, w: 180, h: 24, type: 'stone' },
-  { x: 3180, y: 640, w: 150, h: 24, type: 'moving', baseX: 3180, baseY: 640, moveAxis: 'y', moveRange: 120, moveSpeed: 0.0025, movePhase: 0.9 },
-  { x: 3380, y: 798, w: 64, h: 22, type: 'bounce' },
-  // Zone 4: canopy bridge + counter-conveyor (lawan arah, butuh lompat)
-  { x: 3480, y: 680, w: 260, h: 24, type: 'conveyor', conveyorDir: -1 },
-  { x: 3780, y: 590, w: 160, h: 24, type: 'roof' },
-  { x: 3960, y: 500, w: 200, h: 26, type: 'stone' },
-  { x: 3900, y: 360, w: 180, h: 22, type: 'crumble' },
-  { x: 4160, y: 640, w: 140, h: 24, type: 'moving', baseX: 4160, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 2.4 },
-  { x: 4340, y: 540, w: 170, h: 24, type: 'roof' },
-  // Zone 5: final approach - bounce mushroom + vine steps
-  { x: 4520, y: 460, w: 150, h: 24, type: 'stone' },
-  { x: 4680, y: 380, w: 170, h: 22, type: 'crumble' },
-  { x: 4560, y: 660, w: 140, h: 24, type: 'moving', baseX: 4560, baseY: 660, moveAxis: 'y', moveRange: 110, moveSpeed: 0.0027, movePhase: 1.6 },
-  { x: 4820, y: 798, w: 64, h: 22, type: 'bounce' },
-  // Boss arena terrace: datar, luas, sejajar gerbang (boss patrol minX 4760 - maxX 5290)
-  { x: 4920, y: 700, w: 520, h: 32, type: 'stone' },
-  { x: 5060, y: 540, w: 320, h: 26, type: 'roof' },
-  // Arena wall vine (dekup di dinding kanan)
-  { x: 5440, y: 560, w: 60, h: 260, type: 'stone' },
-];
-
-export const STAGE5_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 120, y: 520 },
-  { x: 380, y: 460 },
-  { x: 620, y: 400 },
-  { x: 860, y: 560 },
-  { x: 980, y: 480 },
-  { x: 1140, y: 380 },
-  { x: 1300, y: 300 },
-  { x: 1500, y: 540 },
-  { x: 1700, y: 460 },
-  { x: 1880, y: 380 },
-  { x: 2040, y: 300 },
-  { x: 2200, y: 520 },
-  { x: 2520, y: 560 },
-  { x: 2760, y: 480 },
-  { x: 2960, y: 420 },
-  { x: 3180, y: 350 },
-  { x: 3400, y: 540 },
-  { x: 3540, y: 440 },
-  { x: 3820, y: 380 },
-  { x: 4020, y: 300 },
-  { x: 4200, y: 480 },
-  { x: 4560, y: 320 },
-  { x: 4740, y: 260 },
-  { x: 4980, y: 420 },
-];
-
-// ===================== BOSS GUARDIAN =====================
 export type StageBoss = {
   id: string;
   stage: number;
@@ -640,580 +98,1460 @@ export type StageBoss = {
   maxHp: number;
   hp: number;
   alive: boolean;
-  /** Facing direction during patrol: 1 = right, -1 = left */
-  dir?: 1 | -1;
-  /** Patrol bounds (boss paces between minX and maxX) */
+  dir: 1 | -1;
+  lastAttackAt?: number;
+  hitFlashUntil?: number;
+  attackUntil?: number;
+  nextAttackAt?: number;
   minX?: number;
   maxX?: number;
-  /** Next time (epoch ms) the boss spits a projectile at players */
-  nextAttackAt?: number;
-  /** Until when the attack telegraph (mouth glow) is shown */
-  attackUntil?: number;
-  /** Until when the white hit-flash overlay is shown */
-  hitFlashUntil?: number;
 };
 
-const BOSS_KINDS: Record<number, { kind: string; name: string }> = {
-  1: { kind: 'guardian', name: 'Penjaga Pintu' },
-  2: { kind: 'guardian', name: 'Raja Virus' },
-  3: { kind: 'guardian', name: 'Ratu Api' },
-  4: { kind: 'guardian', name: 'Mekanik Cyber' },
-  5: { kind: 'golem', name: 'Golem Neon' },
-  6: { kind: 'tank', name: 'Tank Roda Gigi' },
-  7: { kind: 'crab', name: 'Kepiting Es Raksasa' },
-  8: { kind: 'scorpion', name: 'Kalajengking Pasir' },
-  9: { kind: 'queen', name: 'Ratu Virus' },
-  10: { kind: 'overlord', name: 'OVERLORD Final' },
+export const DECOR = {
+  school: { x: 960, y: 400, w: 360, h: 420 },
+  trees: [
+    { x: 260, y: 820, s: 1.1 },
+    { x: 470, y: 820, s: 0.95 },
+    { x: 910, y: 820, s: 1.05 },
+    { x: 1370, y: 820, s: 1.1 },
+    { x: 1610, y: 820, s: 0.95 },
+    { x: 2150, y: 820, s: 1.15 },
+    { x: 2420, y: 820, s: 1.0 },
+    { x: 2680, y: 820, s: 1.05 },
+    { x: 2890, y: 820, s: 0.95 },
+    { x: 3140, y: 820, s: 1.1 },
+    { x: 3510, y: 820, s: 1.0 },
+    { x: 3860, y: 820, s: 1.05 },
+    { x: 4220, y: 820, s: 0.95 },
+    { x: 4580, y: 820, s: 1.1 },
+    { x: 4860, y: 820, s: 0.9 },
+  ],
+  clouds: [
+    { x: 80, y: 120, s: 1.0 },
+    { x: 220, y: 75, s: 1.2 },
+    { x: 380, y: 155, s: 0.9 },
+    { x: 540, y: 90, s: 1.25 },
+    { x: 700, y: 140, s: 1.05 },
+    { x: 860, y: 70, s: 1.15 },
+    { x: 1020, y: 130, s: 0.95 },
+    { x: 1180, y: 80, s: 1.2 },
+    { x: 1340, y: 160, s: 0.9 },
+    { x: 1500, y: 75, s: 1.3 },
+    { x: 1660, y: 135, s: 1.05 },
+    { x: 1820, y: 85, s: 1.15 },
+    { x: 1980, y: 150, s: 0.95 },
+    { x: 2140, y: 70, s: 1.25 },
+    { x: 2300, y: 125, s: 1.1 },
+    { x: 2460, y: 80, s: 1.2 },
+    { x: 2620, y: 165, s: 0.85 },
+    { x: 2780, y: 95, s: 1.3 },
+    { x: 2940, y: 140, s: 1.0 },
+    { x: 3100, y: 75, s: 1.2 },
+    { x: 3260, y: 155, s: 0.95 },
+    { x: 3420, y: 85, s: 1.25 },
+    { x: 3580, y: 130, s: 1.05 },
+    { x: 3740, y: 70, s: 1.15 },
+    { x: 3900, y: 150, s: 0.9 },
+    { x: 4060, y: 80, s: 1.3 },
+    { x: 4220, y: 135, s: 1.0 },
+    { x: 4380, y: 75, s: 1.2 },
+    { x: 4540, y: 160, s: 0.95 },
+    { x: 4700, y: 85, s: 1.25 },
+    { x: 4860, y: 130, s: 1.05 },
+    { x: 5020, y: 70, s: 1.2 },
+    { x: 5180, y: 145, s: 0.9 },
+    { x: 5340, y: 80, s: 1.25 },
+    { x: 5480, y: 135, s: 1.05 },
+  ],
+  sign: { x: 95, y: 625, text: 'Kerja sama tim untuk menyelesaikan setiap tantangan!' },
+  gate: { x: 5380, y: 660 },
 };
 
-export function createStageBosses(stage: number): StageBoss[] {
-  if (stage === 1) return [];
-  const meta = BOSS_KINDS[stage] ?? { kind: 'guardian', name: 'Penjaga Pintu' };
-  const hp = stage >= 10 ? 60 : stage >= 8 ? 40 : 30;
-  return [
-    {
-      id: `boss_s${stage}`,
-      stage,
-      kind: meta.kind,
-      name: meta.name,
-      x: 4980,
-      y: 700,
-      w: 130,
-      h: 118,
-      maxHp: hp,
-      hp,
-      alive: true,
-      dir: -1,
-      minX: 4760,
-      maxX: 5290,
-      nextAttackAt: 0,
-      attackUntil: 0,
-    },
-  ];
-}
+export const SPAWN_POINTS = Array.from({ length: 48 }, (_, i) => ({
+  x: 100 + (i % 16) * 65,
+  y: 740 - Math.floor(i / 16) * 60,
+}));
 
-// ===================== STAGE 6: Kota Roda Gigi =====================
-export const STAGE6_PLATFORMS: Platform[] = [
-  // Main ground
+// =========================================================================
+// TIER 1: RINTANGAN MUDAH (STAGE 1 - 5)
+// =========================================================================
+
+// --- STAGE 1: Lembah Kampus (Tutorial & Jalur Hijau) ---
+export const STAGE1_PLATFORMS: Platform[] = [
   { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-  { x: 40, y: 710, w: 220, h: 28, type: 'moving', baseX: 40, baseY: 710, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0.4 },
-  { x: 300, y: 640, w: 160, h: 24, type: 'crumble' },
-  { x: 520, y: 580, w: 180, h: 26, type: 'conveyor', conveyorDir: 1 },
-  { x: 720, y: 794, w: 180, h: 26, type: 'spike' },
-  { x: 760, y: 660, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 660, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0022, movePhase: 0 },
-  { x: 980, y: 530, w: 320, h: 22, type: 'conveyor', conveyorDir: -1 },
-  { x: 960, y: 390, w: 360, h: 22, type: 'stone' },
-  { x: 1060, y: 260, w: 170, h: 22, type: 'stone' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'grass' },
+  { x: 290, y: 650, w: 180, h: 26, type: 'grass' },
+  { x: 510, y: 772, w: 48, h: 48, type: 'crate' },
+  { x: 560, y: 772, w: 48, h: 48, type: 'crate' },
+  { x: 535, y: 724, w: 48, h: 48, type: 'crate' },
+  { x: 650, y: 700, w: 190, h: 28, type: 'grass' },
+  { x: 890, y: 630, w: 210, h: 28, type: 'grass' },
+  { x: 1150, y: 700, w: 220, h: 28, type: 'grass' },
+  { x: 850, y: 794, w: 66, h: 26, type: 'spike' },
+  { x: 1410, y: 794, w: 66, h: 26, type: 'spike' },
+  { x: 2220, y: 794, w: 88, h: 26, type: 'spike' },
+  { x: 3290, y: 794, w: 88, h: 26, type: 'spike' },
+  { x: 4040, y: 794, w: 88, h: 26, type: 'spike' },
+  { x: 4720, y: 794, w: 88, h: 26, type: 'spike' },
+  { x: 635, y: 794, w: 64, h: 26, type: 'fire' },
+  { x: 1225, y: 676, w: 56, h: 24, type: 'fire' },
+  { x: 1830, y: 794, w: 68, h: 26, type: 'fire' },
+  { x: 2840, y: 794, w: 68, h: 26, type: 'fire' },
+  { x: 3560, y: 794, w: 72, h: 26, type: 'fire' },
+  { x: 4340, y: 794, w: 72, h: 26, type: 'fire' },
+  { x: 770, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 1650, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 2540, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 3440, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 4220, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 4880, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 960, y: 510, w: 360, h: 20, type: 'stone' },
+  { x: 940, y: 390, w: 400, h: 22, type: 'roof' },
+  { x: 1060, y: 285, w: 160, h: 22, type: 'roof' },
+  { x: 1440, y: 640, w: 200, h: 26, type: 'wood' },
+  { x: 1700, y: 570, w: 230, h: 28, type: 'grass' },
+  { x: 1980, y: 650, w: 210, h: 28, type: 'grass' },
+  { x: 1980, y: 460, w: 190, h: 26, type: 'wood' },
+  { x: 1480, y: 420, w: 200, h: 26, type: 'grass' },
+  { x: 1730, y: 310, w: 210, h: 28, type: 'grass' },
+  { x: 2260, y: 710, w: 170, h: 28, type: 'stone' },
+  { x: 2470, y: 620, w: 200, h: 28, type: 'grass' },
+  { x: 2720, y: 540, w: 200, h: 28, type: 'grass' },
+  { x: 2740, y: 370, w: 210, h: 28, type: 'stone' },
+  { x: 2990, y: 280, w: 220, h: 28, type: 'grass' },
+  { x: 3180, y: 700, w: 220, h: 28, type: 'stone' },
+  { x: 3420, y: 610, w: 210, h: 26, type: 'wood' },
+  { x: 3650, y: 620, w: 230, h: 28, type: 'stone' },
+  { x: 3780, y: 350, w: 220, h: 28, type: 'roof' },
+  { x: 4180, y: 670, w: 220, h: 28, type: 'grass' },
+  { x: 4440, y: 540, w: 230, h: 28, type: 'stone' },
+  { x: 4720, y: 640, w: 210, h: 28, type: 'wood' },
+  { x: 4820, y: 450, w: 210, h: 28, type: 'grass' },
+  { x: 5020, y: 680, w: 460, h: 32, type: 'stone' },
+];
+
+export const PLATFORMS = STAGE1_PLATFORMS;
+
+export const QBLOCK_CANDIDATE_SPOTS: { x: number; y: number }[] = [
+  { x: 380, y: 560 },
+  { x: 740, y: 610 },
+  { x: 1000, y: 440 },
+  { x: 1220, y: 440 },
+  { x: 1530, y: 550 },
+  { x: 1810, y: 480 },
+  { x: 2080, y: 560 },
+  { x: 2350, y: 620 },
+  { x: 2570, y: 530 },
+  { x: 2820, y: 450 },
+  { x: 3100, y: 570 },
+  { x: 3300, y: 610 },
+  { x: 3530, y: 520 },
+  { x: 3770, y: 530 },
+  { x: 4070, y: 580 },
+  { x: 4290, y: 580 },
+  { x: 4550, y: 450 },
+  { x: 4790, y: 550 },
+  { x: 4940, y: 590 },
+  { x: 5220, y: 590 },
+];
+
+// --- STAGE 2: Menara Sunset (Sunset, Stone Stairs & Mild Hazards) ---
+export const STAGE2_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'crumble' },
+  { x: 530, y: 580, w: 200, h: 28, type: 'stone' },
+  { x: 780, y: 660, w: 180, h: 26, type: 'moving', baseX: 780, baseY: 660, moveAxis: 'x', moveRange: 120, moveSpeed: 0.002, movePhase: 0 },
+  { x: 800, y: 794, w: 80, h: 26, type: 'spike' },
+  { x: 1420, y: 794, w: 80, h: 26, type: 'spike' },
+  { x: 2300, y: 794, w: 80, h: 26, type: 'spike' },
+  { x: 3300, y: 794, w: 80, h: 26, type: 'spike' },
+  { x: 4100, y: 794, w: 80, h: 26, type: 'spike' },
+  { x: 980, y: 520, w: 320, h: 22, type: 'stone' },
+  { x: 960, y: 390, w: 360, h: 22, type: 'roof' },
+  { x: 1080, y: 280, w: 170, h: 22, type: 'roof' },
   { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1360, y: 460, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 460, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.57 },
-  { x: 1560, y: 794, w: 220, h: 26, type: 'spike' },
-  { x: 1580, y: 640, w: 140, h: 24, type: 'crumble' },
-  { x: 1780, y: 570, w: 150, h: 24, type: 'moving', baseX: 1780, baseY: 570, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 5.24 },
-  { x: 1980, y: 500, w: 140, h: 24, type: 'crumble' },
-  { x: 1740, y: 330, w: 190, h: 24, type: 'stone' },
-  { x: 1880, y: 794, w: 180, h: 26, type: 'fire' },
+  { x: 1380, y: 470, w: 170, h: 26, type: 'moving', baseX: 1380, baseY: 470, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0022, movePhase: 1.57 },
+  { x: 1600, y: 630, w: 190, h: 26, type: 'crumble' },
+  { x: 1840, y: 560, w: 200, h: 26, type: 'stone' },
+  { x: 2080, y: 490, w: 190, h: 26, type: 'crumble' },
+  { x: 1750, y: 340, w: 220, h: 26, type: 'roof' },
+  { x: 1880, y: 794, w: 80, h: 26, type: 'fire' },
   { x: 2120, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 2250, y: 680, w: 280, h: 28, type: 'conveyor', conveyorDir: -1 },
-  { x: 2360, y: 520, w: 150, h: 24, type: 'moving', baseX: 2360, baseY: 520, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 2640, y: 420, w: 150, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2840, y: 340, w: 220, h: 24, type: 'moving', baseX: 2840, baseY: 340, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 3.28 },
-  { x: 2820, y: 590, w: 160, h: 24, type: 'crumble' },
-  { x: 2600, y: 794, w: 150, h: 26, type: 'spike' },
-  { x: 2980, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 3080, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 3180, y: 680, w: 260, h: 28, type: 'conveyor', conveyorDir: -1 },
-  { x: 3480, y: 590, w: 150, h: 24, type: 'crumble' },
-  { x: 3420, y: 420, w: 150, h: 24, type: 'moving', baseX: 3420, baseY: 420, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0026, movePhase: 0.8 },
-  { x: 3660, y: 540, w: 320, h: 26, type: 'conveyor', conveyorDir: 1 },
-  { x: 3720, y: 380, w: 250, h: 24, type: 'stone' },
-  { x: 3800, y: 230, w: 180, h: 22, type: 'stone' },
-  { x: 4020, y: 650, w: 220, h: 26, type: 'moving', baseX: 4020, baseY: 650, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 2.52 },
-  { x: 3500, y: 794, w: 140, h: 26, type: 'spike' },
-  { x: 3880, y: 794, w: 110, h: 26, type: 'fire' },
-  { x: 4220, y: 560, w: 150, h: 24, type: 'crumble' },
-  { x: 4420, y: 480, w: 240, h: 26, type: 'conveyor', conveyorDir: -1 },
-  { x: 4320, y: 310, w: 190, h: 24, type: 'moving', baseX: 4320, baseY: 310, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.6 },
-  { x: 4620, y: 220, w: 210, h: 24, type: 'stone' },
-  { x: 4720, y: 600, w: 160, h: 24, type: 'crumble' },
-  { x: 4860, y: 440, w: 220, h: 26, type: 'conveyor', conveyorDir: -1 },
-  { x: 4640, y: 640, w: 160, h: 24, type: 'moving', baseX: 4640, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0 },
-  { x: 4360, y: 794, w: 130, h: 26, type: 'spike' },
-  { x: 4540, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 4780, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 5120, y: 700, w: 400, h: 32, type: 'moving', baseX: 5120, baseY: 700, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0.96 },
-  { x: 5180, y: 540, w: 280, h: 26, type: 'stone' },
+  { x: 2320, y: 660, w: 240, h: 28, type: 'stone' },
+  { x: 2600, y: 580, w: 200, h: 26, type: 'moving', baseX: 2600, baseY: 580, moveAxis: 'x', moveRange: 130, moveSpeed: 0.002, movePhase: 0.8 },
+  { x: 2880, y: 500, w: 220, h: 26, type: 'stone' },
+  { x: 3140, y: 430, w: 200, h: 26, type: 'crumble' },
+  { x: 2800, y: 794, w: 80, h: 26, type: 'fire' },
+  { x: 3040, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 3380, y: 680, w: 260, h: 28, type: 'stone' },
+  { x: 3680, y: 600, w: 190, h: 26, type: 'moving', baseX: 3680, baseY: 600, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0024, movePhase: 2.1 },
+  { x: 3920, y: 530, w: 220, h: 26, type: 'stone' },
+  { x: 4180, y: 450, w: 200, h: 26, type: 'crumble' },
+  { x: 3820, y: 360, w: 220, h: 26, type: 'roof' },
+  { x: 3740, y: 794, w: 80, h: 26, type: 'fire' },
+  { x: 4000, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 4420, y: 640, w: 220, h: 28, type: 'stone' },
+  { x: 4680, y: 550, w: 210, h: 26, type: 'moving', baseX: 4680, baseY: 550, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0022, movePhase: 0 },
+  { x: 4940, y: 460, w: 220, h: 26, type: 'stone' },
+  { x: 4620, y: 794, w: 80, h: 26, type: 'fire' },
+  { x: 4860, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'stone' },
+  { x: 5180, y: 520, w: 280, h: 26, type: 'roof' },
+];
+
+export const STAGE2_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 540 },
+  { x: 590, y: 490 },
+  { x: 800, y: 560 },
+  { x: 1040, y: 440 },
+  { x: 1140, y: 200 },
+  { x: 1260, y: 440 },
+  { x: 1440, y: 390 },
+  { x: 1660, y: 550 },
+  { x: 1840, y: 470 },
+  { x: 2060, y: 410 },
+  { x: 2420, y: 580 },
+  { x: 2700, y: 500 },
+  { x: 2940, y: 420 },
+  { x: 3200, y: 350 },
+  { x: 3440, y: 600 },
+  { x: 3740, y: 520 },
+  { x: 3980, y: 450 },
+  { x: 4240, y: 370 },
+  { x: 4480, y: 560 },
+  { x: 4740, y: 470 },
+  { x: 5000, y: 380 },
+  { x: 5240, y: 440 },
+];
+
+// --- STAGE 3: Lembah Kipas Angin (Pengenalan Updraft Fan / Hembusan Angin ke Atas) ---
+export const STAGE3_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'grass' },
+  { x: 300, y: 650, w: 180, h: 26, type: 'grass' },
+  // KIPAS ANGIN 1: Meniup player melambung tinggi ke grass island atas!
+  { x: 620, y: 796, w: 84, h: 24, type: 'fan', moveRange: 450 },
+  { x: 580, y: 440, w: 220, h: 28, type: 'grass' },
+  { x: 860, y: 520, w: 200, h: 28, type: 'grass' },
+  { x: 1120, y: 620, w: 220, h: 28, type: 'stone' },
+  { x: 1380, y: 720, w: 180, h: 26, type: 'grass' },
+  // KIPAS ANGIN 2: Peluncur langit
+  { x: 1640, y: 796, w: 84, h: 24, type: 'fan', moveRange: 460 },
+  { x: 1600, y: 410, w: 240, h: 28, type: 'grass' },
+  { x: 1900, y: 490, w: 200, h: 26, type: 'wood' },
+  { x: 2160, y: 590, w: 210, h: 28, type: 'grass' },
+  { x: 2420, y: 680, w: 180, h: 26, type: 'stone' },
+  // KIPAS ANGIN 3: Menerbangkan melewati jurang duri
+  { x: 2680, y: 796, w: 84, h: 24, type: 'fan', moveRange: 480 },
+  { x: 2780, y: 794, w: 90, h: 26, type: 'spike' },
+  { x: 2640, y: 390, w: 250, h: 28, type: 'grass' },
+  { x: 2950, y: 480, w: 210, h: 26, type: 'stone' },
+  { x: 3220, y: 580, w: 200, h: 28, type: 'grass' },
+  // KIPAS ANGIN 4
+  { x: 3500, y: 796, w: 84, h: 24, type: 'fan', moveRange: 460 },
+  { x: 3460, y: 400, w: 240, h: 28, type: 'roof' },
+  { x: 3760, y: 490, w: 200, h: 26, type: 'wood' },
+  { x: 4020, y: 590, w: 220, h: 28, type: 'grass' },
+  { x: 4280, y: 690, w: 180, h: 26, type: 'stone' },
+  // KIPAS ANGIN 5: Final soaring booster
+  { x: 4520, y: 796, w: 84, h: 24, type: 'fan', moveRange: 500 },
+  { x: 4480, y: 370, w: 240, h: 28, type: 'grass' },
+  { x: 4780, y: 480, w: 220, h: 26, type: 'stone' },
+  { x: 5060, y: 680, w: 420, h: 32, type: 'stone' },
+  { x: 5140, y: 510, w: 260, h: 26, type: 'roof' },
+];
+
+export const STAGE3_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 570 },
+  { x: 640, y: 360 },
+  { x: 920, y: 440 },
+  { x: 1180, y: 540 },
+  { x: 1440, y: 640 },
+  { x: 1680, y: 330 },
+  { x: 1960, y: 410 },
+  { x: 2220, y: 510 },
+  { x: 2480, y: 600 },
+  { x: 2720, y: 310 },
+  { x: 3010, y: 400 },
+  { x: 3280, y: 500 },
+  { x: 3540, y: 320 },
+  { x: 3820, y: 410 },
+  { x: 4080, y: 510 },
+  { x: 4340, y: 610 },
+  { x: 4560, y: 290 },
+  { x: 4840, y: 400 },
+  { x: 5120, y: 600 },
+  { x: 5260, y: 430 },
+];
+
+// --- STAGE 4: Bukit Balon Udara (Awan Melayang & Super Trampolin) ---
+export const STAGE4_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'grass' },
+  { x: 300, y: 650, w: 180, h: 26, type: 'grass' },
+  { x: 540, y: 798, w: 70, h: 22, type: 'bounce' },
+  { x: 500, y: 460, w: 240, h: 26, type: 'stone' },
+  { x: 790, y: 540, w: 200, h: 26, type: 'grass' },
+  { x: 1040, y: 640, w: 180, h: 26, type: 'wood' },
+  { x: 1280, y: 798, w: 70, h: 22, type: 'bounce' },
+  { x: 1240, y: 430, w: 240, h: 26, type: 'roof' },
+  { x: 1540, y: 520, w: 210, h: 26, type: 'grass' },
+  { x: 1800, y: 620, w: 190, h: 26, type: 'stone' },
+  { x: 2040, y: 798, w: 70, h: 22, type: 'bounce' },
+  { x: 2000, y: 410, w: 250, h: 26, type: 'roof' },
+  { x: 2310, y: 510, w: 210, h: 26, type: 'grass' },
+  { x: 2570, y: 610, w: 190, h: 26, type: 'wood' },
+  { x: 2820, y: 798, w: 70, h: 22, type: 'bounce' },
+  { x: 2780, y: 390, w: 250, h: 26, type: 'stone' },
+  { x: 3090, y: 490, w: 210, h: 26, type: 'grass' },
+  { x: 3350, y: 590, w: 190, h: 26, type: 'roof' },
+  { x: 3600, y: 798, w: 70, h: 22, type: 'bounce' },
+  { x: 3560, y: 370, w: 260, h: 26, type: 'grass' },
+  { x: 3880, y: 480, w: 210, h: 26, type: 'wood' },
+  { x: 4140, y: 590, w: 200, h: 26, type: 'stone' },
+  { x: 4400, y: 798, w: 70, h: 22, type: 'bounce' },
+  { x: 4360, y: 380, w: 240, h: 26, type: 'roof' },
+  { x: 4660, y: 500, w: 210, h: 26, type: 'grass' },
+  { x: 4920, y: 620, w: 190, h: 26, type: 'stone' },
+  { x: 5140, y: 680, w: 380, h: 32, type: 'stone' },
+];
+
+export const STAGE4_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 570 },
+  { x: 570, y: 380 },
+  { x: 850, y: 460 },
+  { x: 1100, y: 560 },
+  { x: 1310, y: 350 },
+  { x: 1600, y: 440 },
+  { x: 1860, y: 540 },
+  { x: 2070, y: 330 },
+  { x: 2370, y: 430 },
+  { x: 2630, y: 530 },
+  { x: 2850, y: 310 },
+  { x: 3150, y: 410 },
+  { x: 3410, y: 510 },
+  { x: 3630, y: 290 },
+  { x: 3940, y: 400 },
+  { x: 4200, y: 510 },
+  { x: 4430, y: 300 },
+  { x: 4720, y: 420 },
+  { x: 4980, y: 540 },
+  { x: 5250, y: 600 },
+];
+
+// --- STAGE 5: Galaksi Cyber Pemula (Cyber Grid & Senjata Blaster) ---
+export const STAGE5_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'stone' },
+  { x: 530, y: 570, w: 190, h: 26, type: 'moving', baseX: 530, baseY: 570, moveAxis: 'x', moveRange: 110, moveSpeed: 0.002, movePhase: 0 },
+  { x: 770, y: 500, w: 210, h: 26, type: 'stone' },
+  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 1040, y: 620, w: 220, h: 26, type: 'stone' },
+  { x: 1320, y: 530, w: 190, h: 26, type: 'moving', baseX: 1320, baseY: 530, moveAxis: 'y', moveRange: 120, moveSpeed: 0.0022, movePhase: 1.57 },
+  { x: 1570, y: 450, w: 210, h: 26, type: 'stone' },
+  { x: 1830, y: 540, w: 200, h: 26, type: 'crumble' },
+  { x: 2080, y: 630, w: 220, h: 28, type: 'stone' },
+  { x: 2360, y: 540, w: 190, h: 26, type: 'moving', baseX: 2360, baseY: 540, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0022, movePhase: 0 },
+  { x: 2610, y: 460, w: 210, h: 26, type: 'stone' },
+  { x: 2870, y: 550, w: 200, h: 26, type: 'crumble' },
+  { x: 3120, y: 640, w: 220, h: 28, type: 'stone' },
+  { x: 3400, y: 550, w: 190, h: 26, type: 'moving', baseX: 3400, baseY: 550, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0023, movePhase: 1.0 },
+  { x: 3650, y: 460, w: 220, h: 26, type: 'stone' },
+  { x: 3930, y: 550, w: 200, h: 26, type: 'crumble' },
+  { x: 4180, y: 640, w: 220, h: 28, type: 'stone' },
+  { x: 4460, y: 550, w: 190, h: 26, type: 'moving', baseX: 4460, baseY: 550, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0024, movePhase: 0 },
+  { x: 4720, y: 460, w: 220, h: 26, type: 'stone' },
+  { x: 5020, y: 680, w: 460, h: 32, type: 'stone' },
+  { x: 5120, y: 520, w: 260, h: 26, type: 'roof' },
+];
+
+export const STAGE5_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 560 },
+  { x: 590, y: 490 },
+  { x: 830, y: 420 },
+  { x: 1100, y: 540 },
+  { x: 1380, y: 450 },
+  { x: 1630, y: 370 },
+  { x: 1890, y: 460 },
+  { x: 2140, y: 550 },
+  { x: 2420, y: 460 },
+  { x: 2670, y: 380 },
+  { x: 2930, y: 470 },
+  { x: 3180, y: 560 },
+  { x: 3460, y: 470 },
+  { x: 3710, y: 380 },
+  { x: 3990, y: 470 },
+  { x: 4240, y: 560 },
+  { x: 4520, y: 470 },
+  { x: 4780, y: 380 },
+  { x: 5080, y: 600 },
+  { x: 5240, y: 440 },
+];
+
+// =========================================================================
+// TIER 2: RINTANGAN SEDANG (STAGE 6 - 10)
+// =========================================================================
+
+// --- STAGE 6: Kastil Magma (Lahar Panas & Lift Vulkanik) ---
+export const STAGE6_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 630, w: 170, h: 26, type: 'fire' },
+  { x: 520, y: 560, w: 190, h: 26, type: 'stone' },
+  { x: 760, y: 640, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 640, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0022, movePhase: 0 },
+  { x: 970, y: 500, w: 320, h: 22, type: 'fire' },
+  { x: 960, y: 370, w: 360, h: 22, type: 'roof' },
+  { x: 1060, y: 250, w: 170, h: 22, type: 'roof' },
+  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 1360, y: 450, w: 160, h: 24, type: 'moving', baseX: 1360, baseY: 450, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0025, movePhase: 1.57 },
+  { x: 1570, y: 620, w: 150, h: 24, type: 'crumble' },
+  { x: 1770, y: 540, w: 180, h: 24, type: 'stone' },
+  { x: 2000, y: 460, w: 160, h: 24, type: 'fire' },
+  { x: 1740, y: 310, w: 200, h: 24, type: 'roof' },
+  { x: 1860, y: 794, w: 140, h: 26, type: 'fire' },
+  { x: 2110, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 2240, y: 660, w: 260, h: 28, type: 'stone' },
+  { x: 2550, y: 560, w: 180, h: 24, type: 'moving', baseX: 2550, baseY: 560, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0024, movePhase: 0 },
+  { x: 2830, y: 470, w: 200, h: 24, type: 'fire' },
+  { x: 3080, y: 390, w: 180, h: 24, type: 'stone' },
+  { x: 2800, y: 794, w: 150, h: 26, type: 'fire' },
+  { x: 3050, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 3320, y: 660, w: 260, h: 28, type: 'stone' },
+  { x: 3640, y: 570, w: 170, h: 24, type: 'moving', baseX: 3640, baseY: 570, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0026, movePhase: 1.0 },
+  { x: 3880, y: 480, w: 200, h: 24, type: 'fire' },
+  { x: 4130, y: 390, w: 190, h: 24, type: 'stone' },
+  { x: 3740, y: 794, w: 160, h: 26, type: 'fire' },
+  { x: 4000, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 4380, y: 640, w: 220, h: 28, type: 'stone' },
+  { x: 4660, y: 540, w: 180, h: 24, type: 'moving', baseX: 4660, baseY: 540, moveAxis: 'x', moveRange: 150, moveSpeed: 0.0024, movePhase: 0 },
+  { x: 4920, y: 440, w: 200, h: 24, type: 'fire' },
+  { x: 4600, y: 794, w: 160, h: 26, type: 'fire' },
+  { x: 4840, y: 798, w: 64, h: 22, type: 'bounce' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'stone' },
+  { x: 5180, y: 520, w: 280, h: 26, type: 'roof' },
 ];
 
 export const STAGE6_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 2890, y: 487 },
-  { x: 3250, y: 533 },
-  { x: 3490, y: 290 },
-  { x: 3730, y: 407 },
-  { x: 3850, y: 124 },
-  { x: 4090, y: 541 },
-  { x: 4290, y: 458 },
-  { x: 4490, y: 344 },
-  { x: 4690, y: 101 },
-  { x: 4790, y: 478 },
-  { x: 4950, y: 325 },
-  { x: 360, y: 532 },
-  { x: 590, y: 479 },
-  { x: 800, y: 515 },
-  { x: 1030, y: 402 },
-  { x: 1130, y: 149 },
-  { x: 1260, y: 416 },
-  { x: 1430, y: 333 },
-  { x: 1650, y: 530 },
-  { x: 1830, y: 426 },
-  { x: 1810, y: 203 },
-  { x: 2050, y: 390 },
-  { x: 2430, y: 397 },
-  { x: 2710, y: 314 },
-  { x: 2910, y: 200 },
+  { x: 360, y: 550 },
+  { x: 580, y: 480 },
+  { x: 810, y: 550 },
+  { x: 1040, y: 420 },
+  { x: 1140, y: 170 },
+  { x: 1420, y: 370 },
+  { x: 1640, y: 530 },
+  { x: 1840, y: 460 },
+  { x: 2070, y: 380 },
+  { x: 2320, y: 580 },
+  { x: 2600, y: 480 },
+  { x: 2890, y: 390 },
+  { x: 3140, y: 310 },
+  { x: 3390, y: 580 },
+  { x: 3700, y: 490 },
+  { x: 3940, y: 400 },
+  { x: 4190, y: 310 },
+  { x: 4440, y: 560 },
+  { x: 4720, y: 460 },
+  { x: 4980, y: 360 },
+  { x: 5240, y: 440 },
 ];
 
-// ===================== STAGE 7: Samudra Es =====================
+// --- STAGE 7: Hutan Neon Biolumin (Biolumin, Spora Bercahaya & Celah Neon) ---
 export const STAGE7_PLATFORMS: Platform[] = [
-  // Main ground
   { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-  { x: 40, y: 710, w: 220, h: 28, type: 'crumble' },
-  { x: 300, y: 640, w: 160, h: 24, type: 'stone' },
-  { x: 520, y: 580, w: 180, h: 26, type: 'crumble' },
-  { x: 720, y: 794, w: 180, h: 26, type: 'fire' },
-  { x: 760, y: 660, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 660, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0022, movePhase: 0 },
-  { x: 980, y: 530, w: 320, h: 22, type: 'crumble' },
-  { x: 960, y: 390, w: 360, h: 22, type: 'roof' },
-  { x: 1060, y: 260, w: 170, h: 22, type: 'roof' },
-  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1360, y: 460, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 460, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.57 },
-  { x: 1560, y: 794, w: 220, h: 26, type: 'fire' },
-  { x: 1580, y: 640, w: 140, h: 24, type: 'stone' },
-  { x: 1780, y: 570, w: 150, h: 24, type: 'crumble' },
-  { x: 1980, y: 500, w: 140, h: 24, type: 'stone' },
-  { x: 1740, y: 330, w: 190, h: 24, type: 'roof' },
-  { x: 1880, y: 794, w: 180, h: 26, type: 'spike' },
-  { x: 2120, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 2250, y: 680, w: 280, h: 28, type: 'crumble' },
-  { x: 2360, y: 520, w: 150, h: 24, type: 'moving', baseX: 2360, baseY: 520, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 2640, y: 420, w: 150, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2840, y: 340, w: 220, h: 24, type: 'crumble' },
-  { x: 2820, y: 590, w: 160, h: 24, type: 'stone' },
-  { x: 2600, y: 794, w: 150, h: 26, type: 'fire' },
-  { x: 2980, y: 794, w: 140, h: 26, type: 'spike' },
-  { x: 3080, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 3180, y: 680, w: 260, h: 28, type: 'crumble' },
-  { x: 3480, y: 590, w: 150, h: 24, type: 'stone' },
-  { x: 3420, y: 420, w: 150, h: 24, type: 'moving', baseX: 3420, baseY: 420, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0026, movePhase: 0.8 },
-  { x: 3660, y: 540, w: 320, h: 26, type: 'crumble' },
-  { x: 3720, y: 380, w: 250, h: 24, type: 'roof' },
-  { x: 3800, y: 230, w: 180, h: 22, type: 'roof' },
-  { x: 4020, y: 650, w: 220, h: 26, type: 'crumble' },
-  { x: 3500, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 3880, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 4220, y: 560, w: 150, h: 24, type: 'stone' },
-  { x: 4420, y: 480, w: 240, h: 26, type: 'crumble' },
-  { x: 4320, y: 310, w: 190, h: 24, type: 'moving', baseX: 4320, baseY: 310, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.6 },
-  { x: 4620, y: 220, w: 210, h: 24, type: 'roof' },
-  { x: 4720, y: 600, w: 160, h: 24, type: 'stone' },
-  { x: 4860, y: 440, w: 220, h: 26, type: 'crumble' },
-  { x: 4640, y: 640, w: 160, h: 24, type: 'moving', baseX: 4640, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0 },
-  { x: 4360, y: 794, w: 130, h: 26, type: 'fire' },
-  { x: 4540, y: 794, w: 140, h: 26, type: 'spike' },
-  { x: 4780, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 5120, y: 700, w: 400, h: 32, type: 'crumble' },
-  { x: 5180, y: 540, w: 280, h: 26, type: 'roof' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'wood' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'wood' },
+  { x: 520, y: 570, w: 190, h: 26, type: 'crumble' },
+  { x: 760, y: 650, w: 170, h: 24, type: 'moving', baseX: 760, baseY: 650, moveAxis: 'x', moveRange: 120, moveSpeed: 0.002, movePhase: 0 },
+  { x: 990, y: 520, w: 240, h: 24, type: 'wood' },
+  { x: 1280, y: 440, w: 210, h: 24, type: 'crumble' },
+  { x: 1540, y: 530, w: 200, h: 24, type: 'wood' },
+  { x: 1790, y: 620, w: 180, h: 24, type: 'moving', baseX: 1790, baseY: 620, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0022, movePhase: 1.0 },
+  { x: 2030, y: 510, w: 220, h: 26, type: 'wood' },
+  { x: 2310, y: 420, w: 200, h: 24, type: 'crumble' },
+  { x: 2560, y: 520, w: 210, h: 24, type: 'wood' },
+  { x: 2830, y: 610, w: 190, h: 24, type: 'moving', baseX: 2830, baseY: 610, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0023, movePhase: 0 },
+  { x: 3090, y: 500, w: 230, h: 26, type: 'wood' },
+  { x: 3370, y: 410, w: 200, h: 24, type: 'crumble' },
+  { x: 3620, y: 510, w: 210, h: 24, type: 'wood' },
+  { x: 3890, y: 600, w: 180, h: 24, type: 'moving', baseX: 3890, baseY: 600, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0024, movePhase: 1.5 },
+  { x: 4130, y: 490, w: 220, h: 26, type: 'wood' },
+  { x: 4410, y: 400, w: 200, h: 24, type: 'crumble' },
+  { x: 4670, y: 510, w: 220, h: 26, type: 'wood' },
+  { x: 4950, y: 610, w: 200, h: 26, type: 'wood' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'wood' },
 ];
 
 export const STAGE7_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 4490, y: 349 },
-  { x: 4690, y: 106 },
-  { x: 4790, y: 483 },
-  { x: 4950, y: 330 },
-  { x: 360, y: 537 },
-  { x: 590, y: 443 },
-  { x: 800, y: 520 },
-  { x: 1030, y: 407 },
-  { x: 1130, y: 154 },
-  { x: 1260, y: 421 },
-  { x: 1430, y: 338 },
-  { x: 1650, y: 494 },
-  { x: 1830, y: 431 },
-  { x: 1810, y: 208 },
-  { x: 2050, y: 395 },
-  { x: 2430, y: 402 },
-  { x: 2710, y: 319 },
-  { x: 2910, y: 205 },
-  { x: 2890, y: 462 },
-  { x: 3250, y: 549 },
-  { x: 3490, y: 306 },
-  { x: 3730, y: 423 },
-  { x: 3850, y: 140 },
-  { x: 4090, y: 516 },
-  { x: 4290, y: 433 },
+  { x: 360, y: 560 },
+  { x: 580, y: 490 },
+  { x: 820, y: 560 },
+  { x: 1060, y: 440 },
+  { x: 1340, y: 360 },
+  { x: 1600, y: 450 },
+  { x: 1850, y: 530 },
+  { x: 2100, y: 430 },
+  { x: 2370, y: 340 },
+  { x: 2620, y: 440 },
+  { x: 2890, y: 520 },
+  { x: 3150, y: 420 },
+  { x: 3430, y: 330 },
+  { x: 3680, y: 430 },
+  { x: 3950, y: 510 },
+  { x: 4190, y: 410 },
+  { x: 4470, y: 320 },
+  { x: 4730, y: 430 },
+  { x: 5010, y: 530 },
+  { x: 5240, y: 600 },
 ];
 
-// ===================== STAGE 8: Gurun Reruntuhan =====================
+// --- STAGE 8: Kota Roda Gigi (Conveyor Belt & Gir Mesin) ---
 export const STAGE8_PLATFORMS: Platform[] = [
-  // Main ground
   { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-  { x: 40, y: 710, w: 220, h: 28, type: 'roof' },
-  { x: 300, y: 640, w: 160, h: 24, type: 'stone' },
-  { x: 520, y: 580, w: 180, h: 26, type: 'roof' },
-  { x: 720, y: 794, w: 180, h: 26, type: 'spike' },
-  { x: 760, y: 660, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 660, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0022, movePhase: 0 },
-  { x: 980, y: 530, w: 320, h: 22, type: 'roof' },
-  { x: 960, y: 390, w: 360, h: 22, type: 'crumble' },
-  { x: 1060, y: 260, w: 170, h: 22, type: 'crumble' },
-  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1360, y: 460, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 460, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.57 },
-  { x: 1560, y: 794, w: 220, h: 26, type: 'spike' },
-  { x: 1580, y: 640, w: 140, h: 24, type: 'stone' },
-  { x: 1780, y: 570, w: 150, h: 24, type: 'roof' },
-  { x: 1980, y: 500, w: 140, h: 24, type: 'stone' },
-  { x: 1740, y: 330, w: 190, h: 24, type: 'crumble' },
-  { x: 1880, y: 794, w: 180, h: 26, type: 'fire' },
-  { x: 2120, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 2250, y: 680, w: 280, h: 28, type: 'roof' },
-  { x: 2360, y: 520, w: 150, h: 24, type: 'moving', baseX: 2360, baseY: 520, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 2640, y: 420, w: 150, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2840, y: 340, w: 220, h: 24, type: 'roof' },
-  { x: 2820, y: 590, w: 160, h: 24, type: 'stone' },
-  { x: 2600, y: 794, w: 150, h: 26, type: 'spike' },
-  { x: 2980, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 3080, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 3180, y: 680, w: 260, h: 28, type: 'roof' },
-  { x: 3480, y: 590, w: 150, h: 24, type: 'stone' },
-  { x: 3420, y: 420, w: 150, h: 24, type: 'moving', baseX: 3420, baseY: 420, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0026, movePhase: 0.8 },
-  { x: 3660, y: 540, w: 320, h: 26, type: 'roof' },
-  { x: 3720, y: 380, w: 250, h: 24, type: 'crumble' },
-  { x: 3800, y: 230, w: 180, h: 22, type: 'crumble' },
-  { x: 4020, y: 650, w: 220, h: 26, type: 'roof' },
-  { x: 3500, y: 794, w: 140, h: 26, type: 'spike' },
-  { x: 3880, y: 794, w: 110, h: 26, type: 'fire' },
-  { x: 4220, y: 560, w: 150, h: 24, type: 'stone' },
-  { x: 4420, y: 480, w: 240, h: 26, type: 'roof' },
-  { x: 4320, y: 310, w: 190, h: 24, type: 'moving', baseX: 4320, baseY: 310, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.6 },
-  { x: 4620, y: 220, w: 210, h: 24, type: 'crumble' },
-  { x: 4720, y: 600, w: 160, h: 24, type: 'stone' },
-  { x: 4860, y: 440, w: 220, h: 26, type: 'roof' },
-  { x: 4640, y: 640, w: 160, h: 24, type: 'moving', baseX: 4640, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0 },
-  { x: 4360, y: 794, w: 130, h: 26, type: 'spike' },
-  { x: 4540, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 4780, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 5120, y: 700, w: 400, h: 32, type: 'roof' },
-  { x: 5180, y: 540, w: 280, h: 26, type: 'crumble' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 200, h: 26, type: 'conveyor', conveyorDir: 1 },
+  { x: 550, y: 560, w: 180, h: 24, type: 'moving', baseX: 550, baseY: 560, moveAxis: 'x', moveRange: 120, moveSpeed: 0.0022, movePhase: 0 },
+  { x: 790, y: 480, w: 210, h: 26, type: 'conveyor', conveyorDir: -1 },
+  { x: 1060, y: 570, w: 220, h: 26, type: 'stone' },
+  { x: 1340, y: 480, w: 190, h: 24, type: 'moving', baseX: 1340, baseY: 480, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0024, movePhase: 1.0 },
+  { x: 1590, y: 400, w: 210, h: 26, type: 'conveyor', conveyorDir: 1 },
+  { x: 1860, y: 510, w: 200, h: 26, type: 'stone' },
+  { x: 2120, y: 600, w: 220, h: 26, type: 'conveyor', conveyorDir: -1 },
+  { x: 2400, y: 510, w: 190, h: 24, type: 'moving', baseX: 2400, baseY: 510, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0023, movePhase: 0 },
+  { x: 2650, y: 420, w: 220, h: 26, type: 'conveyor', conveyorDir: 1 },
+  { x: 2930, y: 520, w: 210, h: 26, type: 'stone' },
+  { x: 3200, y: 610, w: 220, h: 26, type: 'conveyor', conveyorDir: -1 },
+  { x: 3480, y: 520, w: 190, h: 24, type: 'moving', baseX: 3480, baseY: 520, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.5 },
+  { x: 3730, y: 430, w: 220, h: 26, type: 'conveyor', conveyorDir: 1 },
+  { x: 4010, y: 530, w: 210, h: 26, type: 'stone' },
+  { x: 4280, y: 620, w: 220, h: 26, type: 'conveyor', conveyorDir: -1 },
+  { x: 4560, y: 520, w: 190, h: 24, type: 'moving', baseX: 4560, baseY: 520, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0024, movePhase: 0 },
+  { x: 4810, y: 430, w: 220, h: 26, type: 'conveyor', conveyorDir: 1 },
+  { x: 5080, y: 680, w: 440, h: 32, type: 'stone' },
 ];
 
 export const STAGE8_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 1030, y: 412 },
-  { x: 1130, y: 159 },
-  { x: 1260, y: 426 },
-  { x: 1430, y: 302 },
-  { x: 1650, y: 499 },
-  { x: 1830, y: 436 },
-  { x: 1810, y: 213 },
-  { x: 2050, y: 400 },
-  { x: 2430, y: 407 },
-  { x: 2710, y: 283 },
-  { x: 2910, y: 210 },
-  { x: 2890, y: 467 },
-  { x: 3250, y: 554 },
-  { x: 3490, y: 311 },
-  { x: 3730, y: 428 },
-  { x: 3850, y: 104 },
-  { x: 4090, y: 521 },
-  { x: 4290, y: 438 },
-  { x: 4490, y: 365 },
-  { x: 4690, y: 122 },
-  { x: 4790, y: 499 },
-  { x: 4950, y: 305 },
-  { x: 360, y: 512 },
-  { x: 590, y: 459 },
-  { x: 800, y: 536 },
+  { x: 360, y: 560 },
+  { x: 610, y: 480 },
+  { x: 860, y: 400 },
+  { x: 1120, y: 490 },
+  { x: 1400, y: 400 },
+  { x: 1650, y: 320 },
+  { x: 1920, y: 430 },
+  { x: 2180, y: 520 },
+  { x: 2460, y: 430 },
+  { x: 2710, y: 340 },
+  { x: 2990, y: 440 },
+  { x: 3260, y: 530 },
+  { x: 3540, y: 440 },
+  { x: 3790, y: 350 },
+  { x: 4070, y: 450 },
+  { x: 4340, y: 540 },
+  { x: 4620, y: 440 },
+  { x: 4870, y: 350 },
+  { x: 5140, y: 600 },
+  { x: 5260, y: 440 },
 ];
 
-// ===================== STAGE 9: Sarang Virus =====================
+// --- STAGE 9: Samudra Es Kutub (Es Licin & Runtuhan Gletser) ---
 export const STAGE9_PLATFORMS: Platform[] = [
-  // Main ground
   { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-  { x: 40, y: 710, w: 220, h: 28, type: 'fire' },
-  { x: 300, y: 640, w: 160, h: 24, type: 'crumble' },
-  { x: 520, y: 580, w: 180, h: 26, type: 'fire' },
-  { x: 720, y: 794, w: 180, h: 26, type: 'stone' },
-  { x: 760, y: 660, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 660, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0022, movePhase: 0 },
-  { x: 980, y: 530, w: 320, h: 22, type: 'fire' },
-  { x: 960, y: 390, w: 360, h: 22, type: 'stone' },
-  { x: 1060, y: 260, w: 170, h: 22, type: 'stone' },
-  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1360, y: 460, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 460, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.57 },
-  { x: 1560, y: 794, w: 220, h: 26, type: 'stone' },
-  { x: 1580, y: 640, w: 140, h: 24, type: 'crumble' },
-  { x: 1780, y: 570, w: 150, h: 24, type: 'fire' },
-  { x: 1980, y: 500, w: 140, h: 24, type: 'crumble' },
-  { x: 1740, y: 330, w: 190, h: 24, type: 'stone' },
-  { x: 1880, y: 794, w: 180, h: 26, type: 'spike' },
-  { x: 2120, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 2250, y: 680, w: 280, h: 28, type: 'fire' },
-  { x: 2360, y: 520, w: 150, h: 24, type: 'moving', baseX: 2360, baseY: 520, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 2640, y: 420, w: 150, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2840, y: 340, w: 220, h: 24, type: 'fire' },
-  { x: 2820, y: 590, w: 160, h: 24, type: 'crumble' },
-  { x: 2600, y: 794, w: 150, h: 26, type: 'stone' },
-  { x: 2980, y: 794, w: 140, h: 26, type: 'spike' },
-  { x: 3080, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 3180, y: 680, w: 260, h: 28, type: 'fire' },
-  { x: 3480, y: 590, w: 150, h: 24, type: 'crumble' },
-  { x: 3420, y: 420, w: 150, h: 24, type: 'moving', baseX: 3420, baseY: 420, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0026, movePhase: 0.8 },
-  { x: 3660, y: 540, w: 320, h: 26, type: 'fire' },
-  { x: 3720, y: 380, w: 250, h: 24, type: 'stone' },
-  { x: 3800, y: 230, w: 180, h: 22, type: 'stone' },
-  { x: 4020, y: 650, w: 220, h: 26, type: 'fire' },
-  { x: 3500, y: 794, w: 140, h: 26, type: 'stone' },
-  { x: 3880, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 4220, y: 560, w: 150, h: 24, type: 'crumble' },
-  { x: 4420, y: 480, w: 240, h: 26, type: 'fire' },
-  { x: 4320, y: 310, w: 190, h: 24, type: 'moving', baseX: 4320, baseY: 310, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.6 },
-  { x: 4620, y: 220, w: 210, h: 24, type: 'stone' },
-  { x: 4720, y: 600, w: 160, h: 24, type: 'crumble' },
-  { x: 4860, y: 440, w: 220, h: 26, type: 'fire' },
-  { x: 4640, y: 640, w: 160, h: 24, type: 'moving', baseX: 4640, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0 },
-  { x: 4360, y: 794, w: 130, h: 26, type: 'stone' },
-  { x: 4540, y: 794, w: 140, h: 26, type: 'spike' },
-  { x: 4780, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 5120, y: 700, w: 400, h: 32, type: 'fire' },
-  { x: 5180, y: 540, w: 280, h: 26, type: 'stone' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 630, w: 180, h: 26, type: 'crumble' },
+  { x: 530, y: 550, w: 200, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 2.8 },
+  { x: 790, y: 640, w: 180, h: 24, type: 'moving', baseX: 790, baseY: 640, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0022, movePhase: 0 },
+  { x: 1030, y: 520, w: 220, h: 26, type: 'crumble' },
+  { x: 1310, y: 440, w: 210, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 2.8 },
+  { x: 1580, y: 530, w: 180, h: 24, type: 'moving', baseX: 1580, baseY: 530, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0024, movePhase: 1.0 },
+  { x: 1820, y: 420, w: 200, h: 26, type: 'crumble' },
+  { x: 2080, y: 520, w: 220, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.0 },
+  { x: 2360, y: 610, w: 190, h: 26, type: 'crumble' },
+  { x: 2610, y: 500, w: 210, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.0 },
+  { x: 2880, y: 410, w: 190, h: 26, type: 'crumble' },
+  { x: 3130, y: 510, w: 220, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.0 },
+  { x: 3410, y: 600, w: 180, h: 24, type: 'moving', baseX: 3410, baseY: 600, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.5 },
+  { x: 3650, y: 490, w: 210, h: 26, type: 'crumble' },
+  { x: 3920, y: 400, w: 220, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.0 },
+  { x: 4200, y: 510, w: 190, h: 26, type: 'crumble' },
+  { x: 4450, y: 600, w: 210, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.0 },
+  { x: 4720, y: 490, w: 200, h: 26, type: 'crumble' },
+  { x: 5020, y: 680, w: 460, h: 32, type: 'stone' },
 ];
 
 export const STAGE9_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 2050, y: 405 },
-  { x: 2430, y: 371 },
-  { x: 2710, y: 288 },
-  { x: 2910, y: 215 },
-  { x: 2890, y: 472 },
-  { x: 3250, y: 559 },
-  { x: 3490, y: 316 },
-  { x: 3730, y: 392 },
-  { x: 3850, y: 109 },
-  { x: 4090, y: 526 },
-  { x: 4290, y: 443 },
-  { x: 4490, y: 370 },
-  { x: 4690, y: 127 },
-  { x: 4790, y: 463 },
-  { x: 4950, y: 310 },
-  { x: 360, y: 517 },
-  { x: 590, y: 464 },
-  { x: 800, y: 541 },
-  { x: 1030, y: 428 },
-  { x: 1130, y: 134 },
-  { x: 1260, y: 401 },
-  { x: 1430, y: 318 },
-  { x: 1650, y: 515 },
-  { x: 1830, y: 452 },
-  { x: 1810, y: 229 },
+  { x: 360, y: 550 },
+  { x: 590, y: 470 },
+  { x: 850, y: 560 },
+  { x: 1090, y: 440 },
+  { x: 1370, y: 360 },
+  { x: 1640, y: 450 },
+  { x: 1880, y: 340 },
+  { x: 2140, y: 440 },
+  { x: 2420, y: 530 },
+  { x: 2670, y: 420 },
+  { x: 2940, y: 330 },
+  { x: 3190, y: 430 },
+  { x: 3470, y: 520 },
+  { x: 3710, y: 410 },
+  { x: 3980, y: 320 },
+  { x: 4260, y: 430 },
+  { x: 4510, y: 520 },
+  { x: 4780, y: 410 },
+  { x: 5080, y: 600 },
+  { x: 5250, y: 440 },
 ];
 
-// ===================== STAGE 10: Menara Final Boss =====================
+// --- STAGE 10: Penerbangan Awan Pesawat (Pengenalan Plane Ride / Naik Pesawat Melintasi Awan!) ---
 export const STAGE10_PLATFORMS: Platform[] = [
-  // Main ground
   { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
-  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
-  { x: 300, y: 640, w: 160, h: 24, type: 'crumble' },
-  { x: 520, y: 580, w: 180, h: 26, type: 'stone' },
-  { x: 720, y: 794, w: 180, h: 26, type: 'spike' },
-  { x: 760, y: 660, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 660, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0022, movePhase: 0 },
-  { x: 980, y: 530, w: 320, h: 22, type: 'stone' },
-  { x: 960, y: 390, w: 360, h: 22, type: 'roof' },
-  { x: 1060, y: 260, w: 170, h: 22, type: 'roof' },
-  { x: 900, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 1360, y: 460, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 460, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0025, movePhase: 1.57 },
-  { x: 1560, y: 794, w: 220, h: 26, type: 'spike' },
-  { x: 1580, y: 640, w: 140, h: 24, type: 'crumble' },
-  { x: 1780, y: 570, w: 150, h: 24, type: 'stone' },
-  { x: 1980, y: 500, w: 140, h: 24, type: 'crumble' },
-  { x: 2160, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 1740, y: 330, w: 190, h: 24, type: 'roof' },
-  { x: 1880, y: 794, w: 180, h: 26, type: 'fire' },
-  { x: 2120, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 2250, y: 680, w: 280, h: 28, type: 'conveyor', conveyorDir: -1 },
-  { x: 2360, y: 520, w: 150, h: 24, type: 'moving', baseX: 2360, baseY: 520, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 0 },
-  { x: 2640, y: 420, w: 150, h: 24, type: 'conveyor', conveyorDir: 1 },
-  { x: 2840, y: 340, w: 220, h: 24, type: 'stone' },
-  { x: 2820, y: 590, w: 160, h: 24, type: 'crumble' },
-  { x: 2600, y: 794, w: 150, h: 26, type: 'spike' },
-  { x: 2980, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 3080, y: 798, w: 64, h: 22, type: 'bounce' },
-  { x: 3180, y: 680, w: 260, h: 28, type: 'conveyor', conveyorDir: -1 },
-  { x: 3480, y: 590, w: 150, h: 24, type: 'crumble' },
-  { x: 3420, y: 420, w: 150, h: 24, type: 'moving', baseX: 3420, baseY: 420, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0026, movePhase: 0.8 },
-  { x: 3660, y: 540, w: 320, h: 26, type: 'conveyor', conveyorDir: 1 },
-  { x: 3720, y: 380, w: 250, h: 24, type: 'roof' },
-  { x: 3800, y: 230, w: 180, h: 22, type: 'roof' },
-  { x: 4020, y: 650, w: 220, h: 26, type: 'stone' },
-  { x: 3500, y: 794, w: 140, h: 26, type: 'spike' },
-  { x: 3880, y: 794, w: 110, h: 26, type: 'fire' },
-  { x: 4220, y: 560, w: 150, h: 24, type: 'crumble' },
-  { x: 4420, y: 480, w: 240, h: 26, type: 'conveyor', conveyorDir: -1 },
-  { x: 4320, y: 310, w: 190, h: 24, type: 'moving', baseX: 4320, baseY: 310, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0024, movePhase: 1.6 },
-  { x: 4620, y: 220, w: 210, h: 24, type: 'roof' },
-  { x: 4720, y: 600, w: 160, h: 24, type: 'crumble' },
-  { x: 4860, y: 440, w: 220, h: 26, type: 'stone' },
-  { x: 4640, y: 640, w: 160, h: 24, type: 'moving', baseX: 4640, baseY: 640, moveAxis: 'x', moveRange: 100, moveSpeed: 0.0023, movePhase: 0 },
-  { x: 4360, y: 794, w: 130, h: 26, type: 'spike' },
-  { x: 4540, y: 794, w: 140, h: 26, type: 'fire' },
-  { x: 4780, y: 798, w: 64, h: 22, type: 'bounce' },
-  // Boss arena gauntlet: conveyor + spike + fire pads before the gate
-  { x: 4880, y: 794, w: 110, h: 26, type: 'spike' },
-  { x: 4900, y: 640, w: 200, h: 26, type: 'conveyor', conveyorDir: 1 },
-  { x: 5120, y: 700, w: 400, h: 32, type: 'stone' },
-  { x: 5180, y: 540, w: 280, h: 26, type: 'roof' },
+  // Pijakan awal bandara awan
+  { x: 40, y: 710, w: 260, h: 28, type: 'stone' },
+  { x: 340, y: 650, w: 200, h: 26, type: 'roof' },
+  // PESAWAT 1: Pesawat jelajah awan pertama (bisa diinjak & dinaiki player!)
+  { x: 620, y: 560, w: 220, h: 32, type: 'plane', baseX: 620, baseY: 560, moveAxis: 'x', moveRange: 280, moveSpeed: 0.0018, movePhase: 0 },
+  // Pulau awan penghubung 1
+  { x: 1140, y: 480, w: 220, h: 26, type: 'grass' },
+  { x: 1420, y: 560, w: 200, h: 26, type: 'roof' },
+  // PESAWAT 2: Pesawat tempur supersonik
+  { x: 1700, y: 500, w: 230, h: 32, type: 'plane', baseX: 1700, baseY: 500, moveAxis: 'x', moveRange: 320, moveSpeed: 0.002, movePhase: 1.57 },
+  // Pulau awan penghubung 2
+  { x: 2260, y: 440, w: 240, h: 26, type: 'grass' },
+  { x: 2560, y: 520, w: 210, h: 26, type: 'roof' },
+  // PESAWAT 3: Pesawat jet jelajah tinggi
+  { x: 2860, y: 470, w: 240, h: 32, type: 'plane', baseX: 2860, baseY: 470, moveAxis: 'x', moveRange: 340, moveSpeed: 0.0021, movePhase: 0.5 },
+  // Pulau awan penghubung 3
+  { x: 3440, y: 420, w: 230, h: 26, type: 'grass' },
+  { x: 3740, y: 500, w: 220, h: 26, type: 'stone' },
+  // PESAWAT 4: Pesawat pengangkut akhir
+  { x: 4040, y: 460, w: 250, h: 32, type: 'plane', baseX: 4040, baseY: 460, moveAxis: 'x', moveRange: 350, moveSpeed: 0.0022, movePhase: 2.1 },
+  // Landasan pendaratan akhir
+  { x: 4620, y: 520, w: 260, h: 28, type: 'roof' },
+  { x: 4940, y: 620, w: 260, h: 28, type: 'stone' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'stone' },
 ];
 
 export const STAGE10_QBLOCK_SPOTS: { x: number; y: number }[] = [
-  { x: 3730, y: 397 },
-  { x: 3850, y: 114 },
-  { x: 4090, y: 531 },
-  { x: 4290, y: 448 },
-  { x: 4490, y: 375 },
-  { x: 4690, y: 100 },
-  { x: 4790, y: 468 },
-  { x: 4950, y: 315 },
-  { x: 360, y: 522 },
-  { x: 590, y: 469 },
-  { x: 800, y: 546 },
-  { x: 1030, y: 392 },
-  { x: 1130, y: 139 },
-  { x: 1260, y: 406 },
-  { x: 1430, y: 323 },
-  { x: 1650, y: 520 },
-  { x: 1830, y: 457 },
-  { x: 1810, y: 193 },
-  { x: 2050, y: 380 },
-  { x: 2430, y: 387 },
-  { x: 2710, y: 304 },
-  { x: 2910, y: 231 },
-  { x: 2890, y: 488 },
-  { x: 3250, y: 534 },
-  { x: 3490, y: 291 },
+  { x: 380, y: 570 },
+  { x: 730, y: 460 },
+  { x: 920, y: 460 },
+  { x: 1200, y: 400 },
+  { x: 1480, y: 480 },
+  { x: 1810, y: 400 },
+  { x: 2010, y: 400 },
+  { x: 2320, y: 360 },
+  { x: 2620, y: 440 },
+  { x: 2970, y: 370 },
+  { x: 3170, y: 370 },
+  { x: 3500, y: 340 },
+  { x: 3800, y: 420 },
+  { x: 4150, y: 360 },
+  { x: 4350, y: 360 },
+  { x: 4680, y: 440 },
+  { x: 5000, y: 540 },
+  { x: 5240, y: 600 },
+  { x: 5180, y: 450 },
+  { x: 150, y: 630 },
 ];
 
+// =========================================================================
+// TIER 3: RINTANGAN SULIT (STAGE 11 - 15)
+// =========================================================================
+
+// --- STAGE 11: Badai Petir Angkasa (Awan Petir Mematikan & Kipas Badai) ---
+export const STAGE11_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'stone' },
+  // AWAN PETIR 1 (Menghindar sambaran listrik!)
+  { x: 540, y: 560, w: 140, h: 36, type: 'thunder' },
+  // Kipas untuk melompati petir
+  { x: 460, y: 796, w: 76, h: 24, type: 'fan', moveRange: 460 },
+  { x: 740, y: 460, w: 200, h: 26, type: 'stone' },
+  { x: 1000, y: 560, w: 190, h: 26, type: 'crumble' },
+  // AWAN PETIR 2
+  { x: 1250, y: 480, w: 150, h: 36, type: 'thunder' },
+  { x: 1180, y: 796, w: 76, h: 24, type: 'fan', moveRange: 480 },
+  { x: 1460, y: 390, w: 210, h: 26, type: 'stone' },
+  { x: 1730, y: 490, w: 190, h: 26, type: 'moving', baseX: 1730, baseY: 490, moveAxis: 'y', moveRange: 130, moveSpeed: 0.0024, movePhase: 1.0 },
+  // AWAN PETIR 3
+  { x: 1980, y: 420, w: 150, h: 36, type: 'thunder' },
+  { x: 2190, y: 360, w: 220, h: 26, type: 'stone' },
+  { x: 2470, y: 460, w: 190, h: 26, type: 'crumble' },
+  // AWAN PETIR 4
+  { x: 2720, y: 400, w: 160, h: 36, type: 'thunder' },
+  { x: 2640, y: 796, w: 76, h: 24, type: 'fan', moveRange: 480 },
+  { x: 2940, y: 330, w: 220, h: 26, type: 'stone' },
+  { x: 3220, y: 440, w: 190, h: 26, type: 'moving', baseX: 3220, baseY: 440, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0023, movePhase: 0 },
+  // AWAN PETIR 5
+  { x: 3480, y: 380, w: 160, h: 36, type: 'thunder' },
+  { x: 3700, y: 330, w: 220, h: 26, type: 'stone' },
+  { x: 3980, y: 440, w: 190, h: 26, type: 'crumble' },
+  // AWAN PETIR 6
+  { x: 4230, y: 380, w: 160, h: 36, type: 'thunder' },
+  { x: 4160, y: 796, w: 76, h: 24, type: 'fan', moveRange: 500 },
+  { x: 4450, y: 330, w: 220, h: 26, type: 'stone' },
+  { x: 4730, y: 450, w: 200, h: 26, type: 'moving', baseX: 4730, baseY: 450, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0025, movePhase: 0.5 },
+  { x: 5040, y: 680, w: 440, h: 32, type: 'stone' },
+];
+
+export const STAGE11_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 560 },
+  { x: 800, y: 380 },
+  { x: 1060, y: 480 },
+  { x: 1520, y: 310 },
+  { x: 1790, y: 410 },
+  { x: 2250, y: 280 },
+  { x: 2530, y: 380 },
+  { x: 3000, y: 250 },
+  { x: 3280, y: 360 },
+  { x: 3760, y: 250 },
+  { x: 4040, y: 360 },
+  { x: 4510, y: 250 },
+  { x: 4790, y: 370 },
+  { x: 5100, y: 600 },
+  { x: 5260, y: 450 },
+  { x: 920, y: 620 },
+  { x: 1650, y: 620 },
+  { x: 2380, y: 620 },
+  { x: 3100, y: 620 },
+  { x: 3840, y: 620 },
+];
+
+// --- STAGE 12: Gurun Reruntuhan Kuno (Pasir Hisap, Reruntuhan Batu & Jurang) ---
+export const STAGE12_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 2.5 },
+  { x: 540, y: 560, w: 190, h: 24, type: 'crumble' },
+  { x: 790, y: 470, w: 210, h: 26, type: 'stone' },
+  { x: 1060, y: 570, w: 180, h: 24, type: 'moving', baseX: 1060, baseY: 570, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0024, movePhase: 0 },
+  { x: 1310, y: 480, w: 210, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 2.6 },
+  { x: 1580, y: 390, w: 200, h: 24, type: 'crumble' },
+  { x: 1840, y: 490, w: 220, h: 26, type: 'stone' },
+  { x: 2120, y: 590, w: 190, h: 24, type: 'moving', baseX: 2120, baseY: 590, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0025, movePhase: 1.0 },
+  { x: 2370, y: 490, w: 210, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 2.8 },
+  { x: 2640, y: 400, w: 200, h: 24, type: 'crumble' },
+  { x: 2900, y: 500, w: 220, h: 26, type: 'stone' },
+  { x: 3180, y: 600, w: 190, h: 24, type: 'moving', baseX: 3180, baseY: 600, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0026, movePhase: 0 },
+  { x: 3430, y: 500, w: 210, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.0 },
+  { x: 3700, y: 410, w: 200, h: 24, type: 'crumble' },
+  { x: 3960, y: 510, w: 220, h: 26, type: 'stone' },
+  { x: 4240, y: 610, w: 190, h: 24, type: 'moving', baseX: 4240, baseY: 610, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0026, movePhase: 1.5 },
+  { x: 4490, y: 500, w: 220, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.0 },
+  { x: 4770, y: 410, w: 200, h: 24, type: 'crumble' },
+  { x: 5040, y: 680, w: 440, h: 32, type: 'stone' },
+];
+
+export const STAGE12_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 560 },
+  { x: 600, y: 480 },
+  { x: 850, y: 390 },
+  { x: 1120, y: 490 },
+  { x: 1370, y: 400 },
+  { x: 1640, y: 310 },
+  { x: 1900, y: 410 },
+  { x: 2180, y: 510 },
+  { x: 2430, y: 410 },
+  { x: 2700, y: 320 },
+  { x: 2960, y: 420 },
+  { x: 3240, y: 520 },
+  { x: 3490, y: 420 },
+  { x: 3760, y: 330 },
+  { x: 4020, y: 430 },
+  { x: 4300, y: 530 },
+  { x: 4550, y: 420 },
+  { x: 4830, y: 330 },
+  { x: 5100, y: 600 },
+  { x: 5260, y: 450 },
+];
+
+// --- STAGE 13: Lab Drone Pengintai (Musuh Drone Patroli Udara & Laser) ---
+export const STAGE13_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'stone' },
+  { x: 540, y: 560, w: 190, h: 24, type: 'moving', baseX: 540, baseY: 560, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0024, movePhase: 0 },
+  { x: 800, y: 480, w: 210, h: 26, type: 'stone' },
+  { x: 1070, y: 570, w: 190, h: 24, type: 'moving', baseX: 1070, baseY: 570, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0026, movePhase: 1.0 },
+  { x: 1330, y: 470, w: 210, h: 26, type: 'stone' },
+  { x: 1600, y: 390, w: 200, h: 24, type: 'crumble' },
+  { x: 1860, y: 490, w: 220, h: 26, type: 'stone' },
+  { x: 2140, y: 580, w: 190, h: 24, type: 'moving', baseX: 2140, baseY: 580, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0025, movePhase: 0.5 },
+  { x: 2400, y: 480, w: 210, h: 26, type: 'stone' },
+  { x: 2670, y: 390, w: 200, h: 24, type: 'crumble' },
+  { x: 2930, y: 490, w: 220, h: 26, type: 'stone' },
+  { x: 3210, y: 580, w: 190, h: 24, type: 'moving', baseX: 3210, baseY: 580, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0027, movePhase: 1.5 },
+  { x: 3460, y: 480, w: 210, h: 26, type: 'stone' },
+  { x: 3730, y: 390, w: 200, h: 24, type: 'crumble' },
+  { x: 3990, y: 490, w: 220, h: 26, type: 'stone' },
+  { x: 4270, y: 580, w: 190, h: 24, type: 'moving', baseX: 4270, baseY: 580, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0026, movePhase: 0 },
+  { x: 4520, y: 480, w: 210, h: 26, type: 'stone' },
+  { x: 4790, y: 390, w: 200, h: 24, type: 'crumble' },
+  { x: 5040, y: 680, w: 440, h: 32, type: 'stone' },
+];
+
+export const STAGE13_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 560 },
+  { x: 600, y: 480 },
+  { x: 860, y: 400 },
+  { x: 1130, y: 490 },
+  { x: 1390, y: 390 },
+  { x: 1660, y: 310 },
+  { x: 1920, y: 410 },
+  { x: 2200, y: 500 },
+  { x: 2460, y: 400 },
+  { x: 2730, y: 310 },
+  { x: 2990, y: 410 },
+  { x: 3270, y: 500 },
+  { x: 3520, y: 400 },
+  { x: 3790, y: 310 },
+  { x: 4050, y: 410 },
+  { x: 4330, y: 500 },
+  { x: 4580, y: 400 },
+  { x: 4850, y: 310 },
+  { x: 5100, y: 600 },
+  { x: 5260, y: 450 },
+];
+
+// --- STAGE 14: Sarang Mutasi Biohazard (Lumpur Beracun, Kipas Berbahaya & Duri) ---
+export const STAGE14_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 630, w: 170, h: 24, type: 'fire' },
+  { x: 530, y: 550, w: 180, h: 24, type: 'crumble' },
+  { x: 770, y: 640, w: 160, h: 24, type: 'moving', baseX: 770, baseY: 640, moveAxis: 'x', moveRange: 130, moveSpeed: 0.0024, movePhase: 0 },
+  { x: 990, y: 510, w: 220, h: 26, type: 'fire' },
+  { x: 1260, y: 420, w: 190, h: 24, type: 'crumble' },
+  { x: 1520, y: 520, w: 180, h: 24, type: 'moving', baseX: 1520, baseY: 520, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0026, movePhase: 1.0 },
+  { x: 1760, y: 410, w: 210, h: 26, type: 'fire' },
+  { x: 2040, y: 500, w: 180, h: 24, type: 'crumble' },
+  { x: 2290, y: 600, w: 220, h: 26, type: 'stone' },
+  { x: 2570, y: 500, w: 180, h: 24, type: 'moving', baseX: 2570, baseY: 500, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0025, movePhase: 0 },
+  { x: 2820, y: 400, w: 210, h: 26, type: 'fire' },
+  { x: 3090, y: 490, w: 180, h: 24, type: 'crumble' },
+  { x: 3340, y: 590, w: 220, h: 26, type: 'stone' },
+  { x: 3620, y: 490, w: 180, h: 24, type: 'moving', baseX: 3620, baseY: 490, moveAxis: 'y', moveRange: 140, moveSpeed: 0.0027, movePhase: 1.5 },
+  { x: 3870, y: 390, w: 210, h: 26, type: 'fire' },
+  { x: 4140, y: 490, w: 180, h: 24, type: 'crumble' },
+  { x: 4390, y: 590, w: 220, h: 26, type: 'stone' },
+  { x: 4670, y: 490, w: 180, h: 24, type: 'moving', baseX: 4670, baseY: 490, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0026, movePhase: 0 },
+  { x: 4920, y: 390, w: 210, h: 26, type: 'fire' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'stone' },
+];
+
+export const STAGE14_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 550 },
+  { x: 590, y: 470 },
+  { x: 830, y: 560 },
+  { x: 1050, y: 430 },
+  { x: 1320, y: 340 },
+  { x: 1580, y: 440 },
+  { x: 1820, y: 330 },
+  { x: 2100, y: 420 },
+  { x: 2350, y: 520 },
+  { x: 2630, y: 420 },
+  { x: 2880, y: 320 },
+  { x: 3150, y: 410 },
+  { x: 3400, y: 510 },
+  { x: 3680, y: 410 },
+  { x: 3930, y: 310 },
+  { x: 4200, y: 410 },
+  { x: 4450, y: 510 },
+  { x: 4730, y: 410 },
+  { x: 4980, y: 310 },
+  { x: 5240, y: 600 },
+];
+
+// --- STAGE 15: Benteng Magma Neraka (Lautan Lahar Luas & Lift Vulkanik Sempit) ---
+export const STAGE15_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'fire' },
+  { x: 540, y: 560, w: 150, h: 24, type: 'moving', baseX: 540, baseY: 560, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0026, movePhase: 0 },
+  { x: 790, y: 470, w: 200, h: 26, type: 'fire' },
+  { x: 1060, y: 570, w: 150, h: 24, type: 'moving', baseX: 1060, baseY: 570, moveAxis: 'y', moveRange: 150, moveSpeed: 0.0028, movePhase: 1.0 },
+  { x: 1300, y: 460, w: 210, h: 26, type: 'fire' },
+  { x: 1580, y: 370, w: 170, h: 24, type: 'crumble' },
+  { x: 1840, y: 480, w: 200, h: 26, type: 'fire' },
+  { x: 2120, y: 580, w: 150, h: 24, type: 'moving', baseX: 2120, baseY: 580, moveAxis: 'x', moveRange: 150, moveSpeed: 0.0027, movePhase: 0.5 },
+  { x: 2370, y: 470, w: 210, h: 26, type: 'fire' },
+  { x: 2650, y: 370, w: 170, h: 24, type: 'crumble' },
+  { x: 2900, y: 480, w: 200, h: 26, type: 'fire' },
+  { x: 3180, y: 580, w: 150, h: 24, type: 'moving', baseX: 3180, baseY: 580, moveAxis: 'y', moveRange: 150, moveSpeed: 0.0029, movePhase: 1.5 },
+  { x: 3430, y: 470, w: 210, h: 26, type: 'fire' },
+  { x: 3710, y: 370, w: 170, h: 24, type: 'crumble' },
+  { x: 3960, y: 480, w: 200, h: 26, type: 'fire' },
+  { x: 4240, y: 580, w: 150, h: 24, type: 'moving', baseX: 4240, baseY: 580, moveAxis: 'x', moveRange: 150, moveSpeed: 0.0028, movePhase: 0 },
+  { x: 4490, y: 470, w: 210, h: 26, type: 'fire' },
+  { x: 4770, y: 370, w: 170, h: 24, type: 'crumble' },
+  { x: 5040, y: 680, w: 440, h: 32, type: 'stone' },
+];
+
+export const STAGE15_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 560 },
+  { x: 600, y: 480 },
+  { x: 850, y: 390 },
+  { x: 1120, y: 490 },
+  { x: 1360, y: 380 },
+  { x: 1640, y: 290 },
+  { x: 1900, y: 400 },
+  { x: 2180, y: 500 },
+  { x: 2430, y: 390 },
+  { x: 2710, y: 290 },
+  { x: 2960, y: 400 },
+  { x: 3240, y: 500 },
+  { x: 3490, y: 390 },
+  { x: 3770, y: 290 },
+  { x: 4020, y: 400 },
+  { x: 4300, y: 500 },
+  { x: 4550, y: 390 },
+  { x: 4830, y: 290 },
+  { x: 5100, y: 600 },
+  { x: 5260, y: 450 },
+];
+
+// =========================================================================
+// TIER 4: RINTANGAN GAK MASUK AKAL / EKSTREM (STAGE 16 - 20)
+// =========================================================================
+
+// --- STAGE 16: Formasi Tempur Pesawat Langit (Parkour Antar-Pesawat Cepat & Awan Petir di Jurang Langit!) ---
+export const STAGE16_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  // Pijakan lepas landas
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 630, w: 180, h: 26, type: 'crumble' },
+  // PESAWAT TEMPUR 1 (Bergerak cepat melintasi langit)
+  { x: 580, y: 520, w: 220, h: 32, type: 'plane', baseX: 580, baseY: 520, moveAxis: 'x', moveRange: 320, moveSpeed: 0.0028, movePhase: 0 },
+  // Rintangan badai petir di antara jalur pesawat
+  { x: 1100, y: 450, w: 140, h: 36, type: 'thunder' },
+  // PESAWAT TEMPUR 2
+  { x: 1350, y: 480, w: 230, h: 32, type: 'plane', baseX: 1350, baseY: 480, moveAxis: 'x', moveRange: 340, moveSpeed: 0.003, movePhase: 1.57 },
+  // Awan petir kedua
+  { x: 1920, y: 420, w: 150, h: 36, type: 'thunder' },
+  // Kipas darurat di awan bawah
+  { x: 2000, y: 796, w: 80, h: 24, type: 'fan', moveRange: 520 },
+  // PESAWAT TEMPUR 3
+  { x: 2200, y: 440, w: 240, h: 32, type: 'plane', baseX: 2200, baseY: 440, moveAxis: 'x', moveRange: 360, moveSpeed: 0.0032, movePhase: 0.8 },
+  // Awan petir ketiga
+  { x: 2800, y: 380, w: 160, h: 36, type: 'thunder' },
+  // PESAWAT TEMPUR 4
+  { x: 3060, y: 420, w: 240, h: 32, type: 'plane', baseX: 3060, baseY: 420, moveAxis: 'x', moveRange: 360, moveSpeed: 0.0033, movePhase: 2.1 },
+  // Awan petir keempat
+  { x: 3680, y: 370, w: 160, h: 36, type: 'thunder' },
+  // Kipas darurat kedua
+  { x: 3740, y: 796, w: 80, h: 24, type: 'fan', moveRange: 520 },
+  // PESAWAT TEMPUR 5
+  { x: 3950, y: 400, w: 250, h: 32, type: 'plane', baseX: 3950, baseY: 400, moveAxis: 'x', moveRange: 380, moveSpeed: 0.0034, movePhase: 1.2 },
+  // Pendaratan akhir
+  { x: 4620, y: 480, w: 220, h: 28, type: 'crumble' },
+  { x: 4920, y: 580, w: 220, h: 28, type: 'stone' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'stone' },
+];
+
+export const STAGE16_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 550 },
+  { x: 700, y: 420 },
+  { x: 920, y: 420 },
+  { x: 1470, y: 380 },
+  { x: 1720, y: 380 },
+  { x: 2320, y: 340 },
+  { x: 2580, y: 340 },
+  { x: 3180, y: 320 },
+  { x: 3440, y: 320 },
+  { x: 4070, y: 300 },
+  { x: 4330, y: 300 },
+  { x: 4680, y: 400 },
+  { x: 4980, y: 500 },
+  { x: 5240, y: 600 },
+  { x: 5180, y: 440 },
+  { x: 1200, y: 620 },
+  { x: 2100, y: 620 },
+  { x: 3000, y: 620 },
+  { x: 3880, y: 620 },
+  { x: 150, y: 630 },
+];
+
+// --- STAGE 17: Koridor Robot Mecha (Patroli Robot Mecha & Conveyor Maut) ---
+export const STAGE17_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 180, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.5 },
+  { x: 540, y: 550, w: 170, h: 24, type: 'moving', baseX: 540, baseY: 550, moveAxis: 'x', moveRange: 140, moveSpeed: 0.0028, movePhase: 0 },
+  { x: 790, y: 460, w: 210, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.5 },
+  { x: 1070, y: 550, w: 170, h: 24, type: 'moving', baseX: 1070, baseY: 550, moveAxis: 'y', moveRange: 150, moveSpeed: 0.003, movePhase: 1.0 },
+  { x: 1320, y: 450, w: 210, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.5 },
+  { x: 1600, y: 360, w: 180, h: 24, type: 'crumble' },
+  { x: 1860, y: 460, w: 210, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.5 },
+  { x: 2140, y: 560, w: 170, h: 24, type: 'moving', baseX: 2140, baseY: 560, moveAxis: 'x', moveRange: 150, moveSpeed: 0.0029, movePhase: 0.5 },
+  { x: 2390, y: 460, w: 210, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.6 },
+  { x: 2670, y: 360, w: 180, h: 24, type: 'crumble' },
+  { x: 2930, y: 460, w: 210, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.6 },
+  { x: 3210, y: 560, w: 170, h: 24, type: 'moving', baseX: 3210, baseY: 560, moveAxis: 'y', moveRange: 150, moveSpeed: 0.0031, movePhase: 1.5 },
+  { x: 3460, y: 460, w: 210, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.8 },
+  { x: 3740, y: 360, w: 180, h: 24, type: 'crumble' },
+  { x: 4000, y: 460, w: 210, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.8 },
+  { x: 4280, y: 560, w: 170, h: 24, type: 'moving', baseX: 4280, baseY: 560, moveAxis: 'x', moveRange: 150, moveSpeed: 0.003, movePhase: 0 },
+  { x: 4530, y: 460, w: 210, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 3.8 },
+  { x: 4810, y: 360, w: 180, h: 24, type: 'crumble' },
+  { x: 5040, y: 680, w: 440, h: 32, type: 'stone' },
+];
+
+export const STAGE17_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 560 },
+  { x: 600, y: 470 },
+  { x: 850, y: 380 },
+  { x: 1130, y: 470 },
+  { x: 1380, y: 370 },
+  { x: 1660, y: 280 },
+  { x: 1920, y: 380 },
+  { x: 2200, y: 480 },
+  { x: 2450, y: 380 },
+  { x: 2730, y: 280 },
+  { x: 2990, y: 380 },
+  { x: 3270, y: 480 },
+  { x: 3520, y: 380 },
+  { x: 3800, y: 280 },
+  { x: 4060, y: 380 },
+  { x: 4340, y: 480 },
+  { x: 4590, y: 380 },
+  { x: 4870, y: 280 },
+  { x: 5100, y: 600 },
+  { x: 5260, y: 450 },
+];
+
+// --- STAGE 18: Dimensi Void Berputar (85% Crumble & Jurang Kehampaan / Void Pits) ---
+export const STAGE18_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 200, h: 28, type: 'stone' },
+  { x: 280, y: 630, w: 150, h: 24, type: 'crumble' },
+  { x: 480, y: 540, w: 150, h: 24, type: 'crumble' },
+  // Fan booster di atas void
+  { x: 680, y: 796, w: 76, h: 24, type: 'fan', moveRange: 520 },
+  { x: 700, y: 420, w: 150, h: 24, type: 'crumble' },
+  { x: 920, y: 490, w: 150, h: 24, type: 'crumble' },
+  { x: 1140, y: 560, w: 150, h: 24, type: 'crumble' },
+  { x: 1360, y: 470, w: 150, h: 24, type: 'crumble' },
+  { x: 1580, y: 380, w: 150, h: 24, type: 'crumble' },
+  // Fan booster kedua
+  { x: 1780, y: 796, w: 76, h: 24, type: 'fan', moveRange: 520 },
+  { x: 1800, y: 460, w: 150, h: 24, type: 'crumble' },
+  { x: 2020, y: 530, w: 150, h: 24, type: 'crumble' },
+  { x: 2240, y: 440, w: 150, h: 24, type: 'crumble' },
+  { x: 2460, y: 350, w: 150, h: 24, type: 'crumble' },
+  // Fan booster ketiga
+  { x: 2680, y: 796, w: 76, h: 24, type: 'fan', moveRange: 520 },
+  { x: 2700, y: 430, w: 150, h: 24, type: 'crumble' },
+  { x: 2920, y: 500, w: 150, h: 24, type: 'crumble' },
+  { x: 3140, y: 410, w: 150, h: 24, type: 'crumble' },
+  { x: 3360, y: 320, w: 150, h: 24, type: 'crumble' },
+  // Fan booster keempat
+  { x: 3580, y: 796, w: 76, h: 24, type: 'fan', moveRange: 520 },
+  { x: 3600, y: 420, w: 150, h: 24, type: 'crumble' },
+  { x: 3820, y: 490, w: 150, h: 24, type: 'crumble' },
+  { x: 4040, y: 400, w: 150, h: 24, type: 'crumble' },
+  { x: 4260, y: 310, w: 150, h: 24, type: 'crumble' },
+  // Fan booster kelima
+  { x: 4480, y: 796, w: 76, h: 24, type: 'fan', moveRange: 520 },
+  { x: 4500, y: 420, w: 150, h: 24, type: 'crumble' },
+  { x: 4720, y: 510, w: 150, h: 24, type: 'crumble' },
+  { x: 4940, y: 600, w: 180, h: 26, type: 'stone' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'stone' },
+];
+
+export const STAGE18_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 340, y: 550 },
+  { x: 540, y: 460 },
+  { x: 760, y: 340 },
+  { x: 980, y: 410 },
+  { x: 1200, y: 480 },
+  { x: 1420, y: 390 },
+  { x: 1640, y: 300 },
+  { x: 1860, y: 380 },
+  { x: 2080, y: 450 },
+  { x: 2300, y: 360 },
+  { x: 2520, y: 270 },
+  { x: 2760, y: 350 },
+  { x: 2980, y: 420 },
+  { x: 3200, y: 330 },
+  { x: 3420, y: 240 },
+  { x: 3660, y: 340 },
+  { x: 3880, y: 410 },
+  { x: 4100, y: 320 },
+  { x: 4320, y: 230 },
+  { x: 4560, y: 340 },
+  { x: 4780, y: 430 },
+  { x: 5000, y: 520 },
+  { x: 5240, y: 600 },
+];
+
+// --- STAGE 19: Neraka Virus Cyber Matrix (Drone Swarms, Api Cepat & Sabuk Terbalik) ---
+export const STAGE19_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'fire' },
+  { x: 300, y: 630, w: 160, h: 24, type: 'crumble' },
+  { x: 520, y: 550, w: 180, h: 26, type: 'fire' },
+  { x: 760, y: 640, w: 160, h: 24, type: 'moving', baseX: 760, baseY: 640, moveAxis: 'x', moveRange: 150, moveSpeed: 0.003, movePhase: 0 },
+  { x: 980, y: 510, w: 280, h: 22, type: 'fire' },
+  { x: 960, y: 370, w: 320, h: 22, type: 'stone' },
+  { x: 1060, y: 240, w: 160, h: 22, type: 'stone' },
+  { x: 1360, y: 440, w: 150, h: 24, type: 'moving', baseX: 1360, baseY: 440, moveAxis: 'y', moveRange: 150, moveSpeed: 0.0032, movePhase: 1.57 },
+  { x: 1580, y: 620, w: 140, h: 24, type: 'crumble' },
+  { x: 1780, y: 540, w: 150, h: 24, type: 'fire' },
+  { x: 1980, y: 460, w: 140, h: 24, type: 'crumble' },
+  { x: 2250, y: 650, w: 260, h: 28, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 4.0 },
+  { x: 2560, y: 500, w: 150, h: 24, type: 'moving', baseX: 2560, baseY: 500, moveAxis: 'x', moveRange: 150, moveSpeed: 0.0031, movePhase: 0 },
+  { x: 2800, y: 400, w: 200, h: 24, type: 'fire' },
+  { x: 3080, y: 310, w: 170, h: 24, type: 'stone' },
+  { x: 3340, y: 650, w: 260, h: 28, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 4.0 },
+  { x: 3640, y: 540, w: 150, h: 24, type: 'moving', baseX: 3640, baseY: 540, moveAxis: 'y', moveRange: 150, moveSpeed: 0.0033, movePhase: 1.0 },
+  { x: 3880, y: 440, w: 200, h: 24, type: 'fire' },
+  { x: 4130, y: 340, w: 180, h: 24, type: 'stone' },
+  { x: 4380, y: 630, w: 260, h: 28, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 4.0 },
+  { x: 4680, y: 520, w: 150, h: 24, type: 'moving', baseX: 4680, baseY: 520, moveAxis: 'x', moveRange: 150, moveSpeed: 0.0032, movePhase: 0 },
+  { x: 4920, y: 410, w: 200, h: 24, type: 'fire' },
+  { x: 5120, y: 680, w: 400, h: 32, type: 'fire' },
+  { x: 5180, y: 520, w: 280, h: 26, type: 'stone' },
+];
+
+export const STAGE19_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 550 },
+  { x: 580, y: 470 },
+  { x: 820, y: 560 },
+  { x: 1040, y: 430 },
+  { x: 1120, y: 160 },
+  { x: 1420, y: 360 },
+  { x: 1640, y: 540 },
+  { x: 1840, y: 460 },
+  { x: 2040, y: 380 },
+  { x: 2320, y: 570 },
+  { x: 2620, y: 420 },
+  { x: 2860, y: 320 },
+  { x: 3140, y: 230 },
+  { x: 3400, y: 570 },
+  { x: 3700, y: 460 },
+  { x: 3940, y: 360 },
+  { x: 4190, y: 260 },
+  { x: 4440, y: 550 },
+  { x: 4740, y: 440 },
+  { x: 4980, y: 330 },
+  { x: 5240, y: 440 },
+];
+
+// --- STAGE 20: Puncak Tahta Primordial Void (Gak Masuk Akal: Gabungan Pesawat, Kipas, Petir, Mecha & Final Boss Void!) ---
+export const STAGE20_PLATFORMS: Platform[] = [
+  { x: 0, y: 820, w: 5600, h: 280, type: 'ground' },
+  { x: 40, y: 710, w: 220, h: 28, type: 'stone' },
+  { x: 300, y: 640, w: 160, h: 24, type: 'crumble' },
+  // PESAWAT VOID 1 (Membawa player melewati badai kehampaan)
+  { x: 540, y: 540, w: 240, h: 32, type: 'plane', baseX: 540, baseY: 540, moveAxis: 'x', moveRange: 320, moveSpeed: 0.003, movePhase: 0 },
+  // Awan petir di atas pesawat
+  { x: 1040, y: 440, w: 150, h: 36, type: 'thunder' },
+  // Kipas angin badai
+  { x: 1100, y: 796, w: 80, h: 24, type: 'fan', moveRange: 520 },
+  { x: 1260, y: 380, w: 160, h: 24, type: 'crumble' },
+  // PESAWAT VOID 2
+  { x: 1520, y: 480, w: 240, h: 32, type: 'plane', baseX: 1520, baseY: 480, moveAxis: 'x', moveRange: 340, moveSpeed: 0.0032, movePhase: 1.57 },
+  // Awan petir kedua
+  { x: 2060, y: 400, w: 160, h: 36, type: 'thunder' },
+  // Kipas angin badai kedua
+  { x: 2120, y: 796, w: 80, h: 24, type: 'fan', moveRange: 520 },
+  { x: 2280, y: 340, w: 170, h: 24, type: 'crumble' },
+  // Conveyor maut super cepat
+  { x: 2540, y: 440, w: 240, h: 26, type: 'conveyor', conveyorDir: -1, conveyorSpeed: 4.2 },
+  // PESAWAT VOID 3
+  { x: 2880, y: 480, w: 250, h: 32, type: 'plane', baseX: 2880, baseY: 480, moveAxis: 'x', moveRange: 360, moveSpeed: 0.0034, movePhase: 0.8 },
+  // Awan petir ketiga
+  { x: 3440, y: 390, w: 160, h: 36, type: 'thunder' },
+  // Kipas badai ketiga
+  { x: 3500, y: 796, w: 80, h: 24, type: 'fan', moveRange: 540 },
+  { x: 3660, y: 320, w: 180, h: 24, type: 'crumble' },
+  // PESAWAT VOID 4 (Pesawat menuju tahta)
+  { x: 3940, y: 420, w: 260, h: 32, type: 'plane', baseX: 3940, baseY: 420, moveAxis: 'x', moveRange: 380, moveSpeed: 0.0035, movePhase: 2.1 },
+  // Gerbang arena boss Primordial Void God
+  { x: 4520, y: 480, w: 240, h: 26, type: 'crumble' },
+  { x: 4820, y: 580, w: 240, h: 26, type: 'conveyor', conveyorDir: 1, conveyorSpeed: 3.5 },
+  { x: 5080, y: 680, w: 460, h: 36, type: 'stone' },
+  { x: 5160, y: 500, w: 300, h: 28, type: 'roof' },
+];
+
+export const STAGE20_QBLOCK_SPOTS: { x: number; y: number }[] = [
+  { x: 360, y: 560 },
+  { x: 680, y: 440 },
+  { x: 900, y: 440 },
+  { x: 1320, y: 300 },
+  { x: 1660, y: 380 },
+  { x: 1900, y: 380 },
+  { x: 2340, y: 260 },
+  { x: 2640, y: 360 },
+  { x: 3020, y: 380 },
+  { x: 3260, y: 380 },
+  { x: 3720, y: 240 },
+  { x: 4080, y: 320 },
+  { x: 4320, y: 320 },
+  { x: 4600, y: 400 },
+  { x: 4900, y: 500 },
+  { x: 5180, y: 420 },
+  { x: 5280, y: 600 },
+  { x: 1160, y: 620 },
+  { x: 2180, y: 620 },
+  { x: 3560, y: 620 },
+];
+
+// =========================================================================
+// MAPPING STAGE 1 - 20 (Platforms & Question Spots)
+// =========================================================================
+
 export const STAGE_PLATFORM_MAP: Record<number, Platform[]> = {
+  1: STAGE1_PLATFORMS,
+  2: STAGE2_PLATFORMS,
+  3: STAGE3_PLATFORMS,
+  4: STAGE4_PLATFORMS,
   5: STAGE5_PLATFORMS,
   6: STAGE6_PLATFORMS,
   7: STAGE7_PLATFORMS,
   8: STAGE8_PLATFORMS,
   9: STAGE9_PLATFORMS,
   10: STAGE10_PLATFORMS,
+  11: STAGE11_PLATFORMS,
+  12: STAGE12_PLATFORMS,
+  13: STAGE13_PLATFORMS,
+  14: STAGE14_PLATFORMS,
+  15: STAGE15_PLATFORMS,
+  16: STAGE16_PLATFORMS,
+  17: STAGE17_PLATFORMS,
+  18: STAGE18_PLATFORMS,
+  19: STAGE19_PLATFORMS,
+  20: STAGE20_PLATFORMS,
 };
 
 export const STAGE_QBLOCK_MAP: Record<number, { x: number; y: number }[]> = {
+  1: QBLOCK_CANDIDATE_SPOTS,
+  2: STAGE2_QBLOCK_SPOTS,
+  3: STAGE3_QBLOCK_SPOTS,
+  4: STAGE4_QBLOCK_SPOTS,
   5: STAGE5_QBLOCK_SPOTS,
   6: STAGE6_QBLOCK_SPOTS,
   7: STAGE7_QBLOCK_SPOTS,
   8: STAGE8_QBLOCK_SPOTS,
   9: STAGE9_QBLOCK_SPOTS,
   10: STAGE10_QBLOCK_SPOTS,
+  11: STAGE11_QBLOCK_SPOTS,
+  12: STAGE12_QBLOCK_SPOTS,
+  13: STAGE13_QBLOCK_SPOTS,
+  14: STAGE14_QBLOCK_SPOTS,
+  15: STAGE15_QBLOCK_SPOTS,
+  16: STAGE16_QBLOCK_SPOTS,
+  17: STAGE17_QBLOCK_SPOTS,
+  18: STAGE18_QBLOCK_SPOTS,
+  19: STAGE19_QBLOCK_SPOTS,
+  20: STAGE20_QBLOCK_SPOTS,
 };
 
-export const MAX_STAGE = 10;
+export const MAX_STAGE = 20;
 
+export type StageTier = {
+  id: number;
+  name: string;
+  color: string;
+  badge: string;
+};
 
-export function createStagePowerUps(stage: number): StagePowerUp[] {
-  if (stage <= 1) return [];
-  if (stage >= 5 && stage <= MAX_STAGE) {
-    const kinds: Array<'blaster' | 'star'> = ['blaster', 'star', 'blaster', 'star', 'blaster'];
-    const posList: Array<[number, number]> = [[360, 580], [1810, 270], [2840, 280], [3720, 320], [4620, 160]];
-    return posList.map((pos, i) => ({ id: `pu_s${stage}_${i + 1}`, stage, kind: kinds[i], x: pos[0], y: pos[1], w: 34, h: 34 }));
-  }
-  if (stage === 4) {
-    return [
-      { id: 'pu_s4_1', stage: 4, kind: 'blaster', x: 360, y: 580, w: 34, h: 34 },
-      { id: 'pu_s4_2', stage: 4, kind: 'star', x: 1810, y: 270, w: 34, h: 34 },
-      { id: 'pu_s4_3', stage: 4, kind: 'blaster', x: 2840, y: 280, w: 34, h: 34 },
-      { id: 'pu_s4_4', stage: 4, kind: 'star', x: 3720, y: 320, w: 34, h: 34 },
-      { id: 'pu_s4_5', stage: 4, kind: 'blaster', x: 4620, y: 160, w: 34, h: 34 },
-    ];
-  }
-  if (stage === 3) {
-    return [
-      { id: 'pu_s3_1', stage: 3, kind: 'blaster', x: 1060, y: 200, w: 34, h: 34 },
-      { id: 'pu_s3_2', stage: 3, kind: 'blaster', x: 3800, y: 170, w: 34, h: 34 },
-    ];
-  }
-  if (stage === 2) {
-    return [
-      { id: 'pu_s2_1', stage: 2, kind: 'blaster', x: 1620, y: 190, w: 34, h: 34 },
-      { id: 'pu_s2_2', stage: 2, kind: 'blaster', x: 3780, y: 220, w: 34, h: 34 },
-    ];
-  }
-  return [];
-}
+export type StageDefinition = {
+  id: number;
+  tier: number;
+  icon: string;
+  shortName: string;
+  name: string;
+  theme: string;
+  feature: string;
+};
 
-export function createStageEnemies(stage: number): StageEnemy[] {
-  if (stage <= 1) return [];
-  if (stage >= 5 && stage <= MAX_STAGE) {
-    const spd = 1 + (stage - 4) * 0.08;
-    const tpl: Array<[string, number, number, number, number, number, number, number, number]> = [
-      ['virus', 440, 780, 38, 40, 310, 690, 2.3, 1],
-      ['virus', 1120, 490, 38, 40, 1010, 1340, 2.2, -1],
-      ['virus', 2360, 640, 38, 40, 2270, 2520, 2.4, 1],
-      ['virus', 3740, 500, 38, 40, 3680, 4020, 2.3, -1],
-      ['virus', 4620, 590, 38, 40, 4520, 4780, 2.2, 1],
-      ['fireball', 1220, 786, 34, 34, 1050, 1470, 3.2, 1],
-      ['fireball', 2020, 786, 34, 34, 1860, 2220, 3.2, -1],
-      ['fireball', 2840, 300, 34, 34, 2740, 2980, 3.0, 1],
-      ['fireball', 3960, 786, 34, 34, 3840, 4180, 3.3, -1],
-      ['fireball', 4960, 786, 34, 34, 4840, 5140, 3.2, -1],
-    ];
-    return tpl.map((e, i) => ({ id: `x${stage}_${i}`, kind: e[0] as 'virus' | 'fireball', x: e[1], y: e[2], w: e[3], h: e[4], minX: e[5], maxX: e[6], speed: Math.round(e[7] * spd * 10) / 10, dir: e[8] as 1 | -1 }));
-  }
-  if (stage === 2) {
-    return [
-      // Ground & platform patrolling Viruses (can be dodged or stomped from above!)
-      { id: 'v1', kind: 'virus', x: 420, y: 780, w: 38, h: 40, minX: 290, maxX: 670, speed: 1.9, dir: 1 },
-      { id: 'v2', kind: 'virus', x: 1120, y: 480, w: 38, h: 40, minX: 975, maxX: 1270, speed: 1.7, dir: -1 },
-      { id: 'v3', kind: 'virus', x: 2340, y: 640, w: 38, h: 40, minX: 2255, maxX: 2510, speed: 1.8, dir: 1 },
-      { id: 'v4', kind: 'virus', x: 3280, y: 650, w: 38, h: 40, minX: 3195, maxX: 3410, speed: 2.0, dir: -1 },
-      { id: 'v5', kind: 'virus', x: 4560, y: 460, w: 38, h: 40, minX: 4495, maxX: 4690, speed: 1.9, dir: 1 },
-      // Fast rolling Fireballs on ground/ledges (must jump over!)
-      { id: 'f1', kind: 'fireball', x: 1820, y: 786, w: 34, h: 34, minX: 1660, maxX: 2090, speed: 2.6, dir: 1 },
-      { id: 'f2', kind: 'fireball', x: 2880, y: 786, w: 34, h: 34, minX: 2750, maxX: 3030, speed: 2.7, dir: -1 },
-      { id: 'f3', kind: 'fireball', x: 3720, y: 786, w: 34, h: 34, minX: 3670, maxX: 3860, speed: 2.5, dir: 1 },
-      { id: 'f4', kind: 'fireball', x: 4920, y: 786, w: 34, h: 34, minX: 4810, maxX: 5090, speed: 2.8, dir: -1 },
-    ];
-  }
+export const STAGE_TIERS: StageTier[] = [
+  { id: 1, name: 'Tier 1: Rintangan Mudah (Stage 1-5)', color: 'border-emerald-300 bg-emerald-50/60 text-emerald-900', badge: 'bg-emerald-600 text-white' },
+  { id: 2, name: 'Tier 2: Rintangan Sedang (Stage 6-10)', color: 'border-amber-300 bg-amber-50/60 text-amber-900', badge: 'bg-amber-600 text-white' },
+  { id: 3, name: 'Tier 3: Rintangan Sulit (Stage 11-15)', color: 'border-rose-300 bg-rose-50/60 text-rose-900', badge: 'bg-rose-600 text-white' },
+  { id: 4, name: 'Tier 4: Rintangan Gak Masuk Akal (Stage 16-20)', color: 'border-purple-300 bg-purple-50/60 text-purple-900', badge: 'bg-purple-600 text-white' },
+];
 
-  if (stage === 3) {
-    return [
-      { id: 'm_v1', kind: 'virus', x: 460, y: 780, w: 38, h: 40, minX: 320, maxX: 680, speed: 2.1, dir: 1 },
-      { id: 'm_v2', kind: 'virus', x: 1140, y: 490, w: 38, h: 40, minX: 1030, maxX: 1330, speed: 2.0, dir: -1 },
-      { id: 'm_v3', kind: 'virus', x: 2320, y: 540, w: 38, h: 40, minX: 2260, maxX: 2480, speed: 2.2, dir: 1 },
-      { id: 'm_v4', kind: 'virus', x: 3760, y: 520, w: 38, h: 40, minX: 3710, maxX: 4010, speed: 2.2, dir: -1 },
-      { id: 'm_v5', kind: 'virus', x: 4650, y: 600, w: 38, h: 40, minX: 4550, maxX: 4770, speed: 2.0, dir: 1 },
-      { id: 'm_f1', kind: 'fireball', x: 1200, y: 786, w: 34, h: 34, minX: 1040, maxX: 1450, speed: 2.9, dir: 1 },
-      { id: 'm_f2', kind: 'fireball', x: 2000, y: 786, w: 34, h: 34, minX: 1850, maxX: 2200, speed: 3.0, dir: -1 },
-      { id: 'm_f3', kind: 'fireball', x: 2800, y: 346, w: 34, h: 34, minX: 2730, maxX: 2930, speed: 2.8, dir: 1 },
-      { id: 'm_f4', kind: 'fireball', x: 3950, y: 786, w: 34, h: 34, minX: 3820, maxX: 4150, speed: 3.1, dir: -1 },
-      { id: 'm_f5', kind: 'fireball', x: 4950, y: 786, w: 34, h: 34, minX: 4830, maxX: 5120, speed: 3.0, dir: -1 },
-    ];
-  }
+export const STAGE_DEFINITIONS: StageDefinition[] = [
+  // TIER 1: MUDAH (1 - 5)
+  { id: 1, tier: 1, icon: '🏞️', shortName: 'Stage 1', name: 'Lembah Kampus', theme: 'Dasar & Jalur Hijau', feature: 'Santai' },
+  { id: 2, tier: 1, icon: '🌅', shortName: 'Stage 2', name: 'Menara Sunset', theme: 'Sunset & Tangga Batu', feature: 'Patroli Virus' },
+  { id: 3, tier: 1, icon: '💨', shortName: 'Stage 3', name: 'Lembah Kipas Angin', theme: 'Hembusan Angin ke Langit', feature: '💨 Kipas Angin' },
+  { id: 4, tier: 1, icon: '🎈', shortName: 'Stage 4', name: 'Bukit Balon Udara', theme: 'Awan & Super Trampolin', feature: 'Trampolin' },
+  { id: 5, tier: 1, icon: '⚡', shortName: 'Stage 5', name: 'Galaksi Cyber Pemula', theme: 'Grid Cyber & Senjata Laser', feature: 'Laser Blaster' },
 
-  // Stage 4: Galaksi Cyber & Pertahanan Orbit (Ultimate Speed & Firepower!)
+  // TIER 2: SEDANG (6 - 10)
+  { id: 6, tier: 2, icon: '🔥', shortName: 'Stage 6', name: 'Kastil Magma', theme: 'Lahar Panas & Lift Vulkanik', feature: 'Lift Vulkanik' },
+  { id: 7, tier: 2, icon: '🌿', shortName: 'Stage 7', name: 'Hutan Neon Biolumin', theme: 'Rimba Neon & Spora Biolumin', feature: 'Pijakan Rapuh' },
+  { id: 8, tier: 2, icon: '⚙️', shortName: 'Stage 8', name: 'Kota Roda Gigi', theme: 'Conveyor Sabuk & Mesin Gir', feature: 'Conveyor Belt' },
+  { id: 9, tier: 2, icon: '❄️', shortName: 'Stage 9', name: 'Samudra Es', theme: 'Es Licin & Runtuhan Gletser', feature: 'Pijakan Licin' },
+  { id: 10, tier: 2, icon: '✈️', shortName: 'Stage 10', name: 'Penerbangan Awan', theme: 'Naik Pesawat Melintasi Awan!', feature: '✈️ Naik Pesawat' },
+
+  // TIER 3: SULIT (11 - 15)
+  { id: 11, tier: 3, icon: '⛈️', shortName: 'Stage 11', name: 'Badai Petir Angkasa', theme: 'Awan Petir Mematikan & Kipas', feature: '⚡ Badai Petir' },
+  { id: 12, tier: 3, icon: '🏜️', shortName: 'Stage 12', name: 'Gurun Reruntuhan', theme: 'Pasir Hisap & Jurang Terjal', feature: 'Pasir Hisap' },
+  { id: 13, tier: 3, icon: '🛸', shortName: 'Stage 13', name: 'Lab Drone Pengintai', theme: 'Patroli Drone Udara & Laser', feature: '🛸 Drone Udara' },
+  { id: 14, tier: 3, icon: '🧪', shortName: 'Stage 14', name: 'Mutasi Biohazard', theme: 'Lumpur Beracun & Mutan Virus', feature: 'Biohazard' },
+  { id: 15, tier: 3, icon: '🌋', shortName: 'Stage 15', name: 'Benteng Magma Neraka', theme: 'Lautan Lahar Luas & Lift Sempit', feature: 'Lahar Neraka' },
+
+  // TIER 4: GAK MASUK AKAL / EKSTREM (16 - 20)
+  { id: 16, tier: 4, icon: '🛩️', shortName: 'Stage 16', name: 'Formasi Tempur Pesawat', theme: 'Parkour Pesawat Cepat & Petir', feature: '🛩️ Parkour Pesawat' },
+  { id: 17, tier: 4, icon: '🤖', shortName: 'Stage 17', name: 'Koridor Robot Mecha', theme: 'Patroli Mecha & Conveyor Maut', feature: '🤖 Robot Mecha' },
+  { id: 18, tier: 4, icon: '🌪️', shortName: 'Stage 18', name: 'Dimensi Void Berputar', theme: '85% Pijakan Runtuh & Jurang Void', feature: 'Full Crumble' },
+  { id: 19, tier: 4, icon: '🦠', shortName: 'Stage 19', name: 'Neraka Virus Matrix', theme: 'Drone Swarm & Semburan Api Cepat', feature: 'Virus Swarm' },
+  { id: 20, tier: 4, icon: '👑', shortName: 'Stage 20', name: 'Tahta Void Overlord', theme: 'Pesawat, Kipas, Petir & Void God!', feature: '👑 OVERLORD FINAL' },
+];
+
+// =========================================================================
+// BOSS DEFINITIONS FOR ALL 20 STAGES
+// =========================================================================
+
+const BOSS_KINDS: Record<number, { kind: string; name: string }> = {
+  1: { kind: 'guardian', name: 'Penjaga Pintu' },
+  2: { kind: 'guardian', name: 'Raja Sunset' },
+  3: { kind: 'guardian', name: 'Raja Angin Zephyr' },
+  4: { kind: 'guardian', name: 'Penjaga Balon Udara' },
+  5: { kind: 'guardian', name: 'Mekanik Cyber Pemula' },
+  6: { kind: 'guardian', name: 'Ratu Magma Vulkanik' },
+  7: { kind: 'golem', name: 'Golem Neon Biolumin' },
+  8: { kind: 'tank', name: 'Tank Roda Gigi Baja' },
+  9: { kind: 'crab', name: 'Kepiting Es Raksasa' },
+  10: { kind: 'planeboss', name: 'Kapten Tempur SkyAce' },
+  11: { kind: 'thunderbird', name: 'Burung Petir Thunderbird' },
+  12: { kind: 'scorpion', name: 'Kalajengking Gurun Pasir' },
+  13: { kind: 'droneboss', name: 'Drone Induk Pengintai Alpha' },
+  14: { kind: 'queen', name: 'Ratu Virus Mutan Biohazard' },
+  15: { kind: 'vulcan', name: 'Dewa Api Neraka Vulcan' },
+  16: { kind: 'zeppelin', name: 'Zeppelin Tempur Titania' },
+  17: { kind: 'robotboss', name: 'Mecha Kolosus Titania MK-IV' },
+  18: { kind: 'voidphantom', name: 'Hantu Dimensi Void Abadi' },
+  19: { kind: 'queenomega', name: 'Ratu Virus Cyber Omega' },
+  20: { kind: 'overlord', name: 'PRIMORDIAL VOID OVERLORD' },
+};
+
+export function createStageBosses(stage: number): StageBoss[] {
+  const meta = BOSS_KINDS[stage] ?? { kind: 'guardian', name: 'Penjaga Pintu' };
+  // Minimal HP 50 agar bisa ditembakin bareng temen-temen
+  const hp = stage >= 16 ? 130 : stage >= 11 ? 95 : stage >= 6 ? 70 : 50;
   return [
-    { id: 'c_v1', kind: 'virus', x: 440, y: 780, w: 38, h: 40, minX: 310, maxX: 690, speed: 2.3, dir: 1 },
-    { id: 'c_v2', kind: 'virus', x: 1120, y: 490, w: 38, h: 40, minX: 1010, maxX: 1340, speed: 2.2, dir: -1 },
-    { id: 'c_v3', kind: 'virus', x: 2360, y: 640, w: 38, h: 40, minX: 2270, maxX: 2520, speed: 2.4, dir: 1 },
-    { id: 'c_v4', kind: 'virus', x: 3740, y: 500, w: 38, h: 40, minX: 3680, maxX: 4020, speed: 2.3, dir: -1 },
-    { id: 'c_v5', kind: 'virus', x: 4620, y: 590, w: 38, h: 40, minX: 4520, maxX: 4780, speed: 2.2, dir: 1 },
-    { id: 'c_f1', kind: 'fireball', x: 1220, y: 786, w: 34, h: 34, minX: 1050, maxX: 1470, speed: 3.2, dir: 1 },
-    { id: 'c_f2', kind: 'fireball', x: 2020, y: 786, w: 34, h: 34, minX: 1860, maxX: 2220, speed: 3.2, dir: -1 },
-    { id: 'c_f3', kind: 'fireball', x: 2840, y: 300, w: 34, h: 34, minX: 2740, maxX: 2980, speed: 3.0, dir: 1 },
-    { id: 'c_f4', kind: 'fireball', x: 3960, y: 786, w: 34, h: 34, minX: 3840, maxX: 4180, speed: 3.3, dir: -1 },
-    { id: 'c_f5', kind: 'fireball', x: 4960, y: 786, w: 34, h: 34, minX: 4840, maxX: 5140, speed: 3.2, dir: -1 },
+    {
+      id: `boss_s${stage}`,
+      stage,
+      kind: meta.kind,
+      name: meta.name,
+      // Boss menjaga tepat di depan area pintu checkpoint pojok kanan (x: 5380)
+      x: 5080,
+      y: 700,
+      w: 130,
+      h: 118,
+      minX: 4920,
+      maxX: 5320,
+      maxHp: hp,
+      hp,
+      alive: true,
+      dir: -1,
+    },
   ];
 }
 
+// =========================================================================
+// POWER-UPS FOR ALL 20 STAGES
+// =========================================================================
+
+export function createStagePowerUps(stage: number): StagePowerUp[] {
+  const kinds: Array<'blaster' | 'star' | 'speed'> =
+    stage >= 16
+      ? ['blaster', 'star', 'speed', 'star', 'blaster']
+      : stage >= 11
+      ? ['blaster', 'speed', 'star', 'blaster', 'speed']
+      : ['blaster', 'star', 'blaster', 'star', 'blaster'];
+  const posList: Array<[number, number]> = [
+    [360, 580],
+    [1810, 270],
+    [2840, 280],
+    [3720, 320],
+    [4620, 160],
+    [4760, 760],
+  ];
+  return posList.map((pos, i) => ({
+    id: `pu_s${stage}_${i + 1}`,
+    stage,
+    kind: kinds[i % kinds.length],
+    x: pos[0],
+    y: pos[1],
+    w: 36,
+    h: 36,
+  }));
+}
+
+// =========================================================================
+// ENEMIES FOR ALL 20 STAGES
+// =========================================================================
+
+export function createStageEnemies(stage: number): StageEnemy[] {
+  if (stage <= 1) return [];
+
+  // Stage 16-20: Ekstrem (Drone, Robot Mecha, Fireball cepat, Virus swarm)
+  if (stage >= 16) {
+    return [
+      { id: `e${stage}_1`, kind: 'robot', x: 480, y: 776, w: 42, h: 44, minX: 300, maxX: 700, speed: 2.8, dir: 1 },
+      { id: `e${stage}_2`, kind: 'drone', x: 1200, y: 460, w: 40, h: 36, minX: 1050, maxX: 1450, speed: 3.2, dir: -1 },
+      { id: `e${stage}_3`, kind: 'robot', x: 2300, y: 776, w: 42, h: 44, minX: 2150, maxX: 2550, speed: 3.0, dir: 1 },
+      { id: `e${stage}_4`, kind: 'drone', x: 3100, y: 440, w: 40, h: 36, minX: 2950, maxX: 3350, speed: 3.3, dir: -1 },
+      { id: `e${stage}_5`, kind: 'robot', x: 4100, y: 776, w: 42, h: 44, minX: 3950, maxX: 4350, speed: 3.2, dir: 1 },
+      { id: `e${stage}_6`, kind: 'fireball', x: 1700, y: 786, w: 34, h: 34, minX: 1550, maxX: 1950, speed: 3.8, dir: 1 },
+      { id: `e${stage}_7`, kind: 'fireball', x: 2700, y: 786, w: 34, h: 34, minX: 2550, maxX: 2950, speed: 3.8, dir: -1 },
+      { id: `e${stage}_8`, kind: 'drone', x: 3800, y: 420, w: 40, h: 36, minX: 3650, maxX: 4050, speed: 3.4, dir: 1 },
+      { id: `e${stage}_9`, kind: 'virus', x: 4700, y: 780, w: 38, h: 40, minX: 4550, maxX: 4850, speed: 3.0, dir: -1 },
+    ];
+  }
+
+  // Stage 11-15: Sulit (Drone, Fireball, Virus patroli)
+  if (stage >= 11) {
+    return [
+      { id: `e${stage}_1`, kind: 'drone', x: 520, y: 520, w: 40, h: 36, minX: 350, maxX: 750, speed: 2.6, dir: 1 },
+      { id: `e${stage}_2`, kind: 'virus', x: 1140, y: 490, w: 38, h: 40, minX: 1010, maxX: 1340, speed: 2.4, dir: -1 },
+      { id: `e${stage}_3`, kind: 'drone', x: 2360, y: 500, w: 40, h: 36, minX: 2200, maxX: 2550, speed: 2.8, dir: 1 },
+      { id: `e${stage}_4`, kind: 'virus', x: 3740, y: 500, w: 38, h: 40, minX: 3600, maxX: 3950, speed: 2.5, dir: -1 },
+      { id: `e${stage}_5`, kind: 'fireball', x: 1650, y: 786, w: 34, h: 34, minX: 1500, maxX: 1850, speed: 3.2, dir: 1 },
+      { id: `e${stage}_6`, kind: 'fireball', x: 2850, y: 786, w: 34, h: 34, minX: 2700, maxX: 3050, speed: 3.2, dir: -1 },
+      { id: `e${stage}_7`, kind: 'fireball', x: 4200, y: 786, w: 34, h: 34, minX: 4050, maxX: 4400, speed: 3.3, dir: 1 },
+    ];
+  }
+
+  // Stage 6-10: Sedang
+  if (stage >= 6) {
+    return [
+      { id: `e${stage}_1`, kind: 'virus', x: 460, y: 780, w: 38, h: 40, minX: 320, maxX: 680, speed: 2.2, dir: 1 },
+      { id: `e${stage}_2`, kind: 'virus', x: 1140, y: 490, w: 38, h: 40, minX: 1030, maxX: 1330, speed: 2.1, dir: -1 },
+      { id: `e${stage}_3`, kind: 'fireball', x: 1820, y: 786, w: 34, h: 34, minX: 1660, maxX: 2090, speed: 2.8, dir: 1 },
+      { id: `e${stage}_4`, kind: 'virus', x: 2340, y: 640, w: 38, h: 40, minX: 2250, maxX: 2510, speed: 2.2, dir: -1 },
+      { id: `e${stage}_5`, kind: 'fireball', x: 2980, y: 786, w: 34, h: 34, minX: 2800, maxX: 3150, speed: 2.9, dir: 1 },
+      { id: `e${stage}_6`, kind: 'virus', x: 3740, y: 500, w: 38, h: 40, minX: 3680, maxX: 4020, speed: 2.2, dir: -1 },
+      { id: `e${stage}_7`, kind: 'fireball', x: 4600, y: 786, w: 34, h: 34, minX: 4450, maxX: 4800, speed: 3.0, dir: -1 },
+    ];
+  }
+
+  // Stage 2-5: Mudah
+  return [
+    { id: `e${stage}_1`, kind: 'virus', x: 420, y: 780, w: 38, h: 40, minX: 290, maxX: 670, speed: 1.8, dir: 1 },
+    { id: `e${stage}_2`, kind: 'virus', x: 1120, y: 480, w: 38, h: 40, minX: 975, maxX: 1270, speed: 1.7, dir: -1 },
+    { id: `e${stage}_3`, kind: 'fireball', x: 1820, y: 786, w: 34, h: 34, minX: 1660, maxX: 2090, speed: 2.4, dir: 1 },
+    { id: `e${stage}_4`, kind: 'virus', x: 2340, y: 640, w: 38, h: 40, minX: 2255, maxX: 2510, speed: 1.8, dir: 1 },
+    { id: `e${stage}_5`, kind: 'fireball', x: 2880, y: 786, w: 34, h: 34, minX: 2750, maxX: 3030, speed: 2.5, dir: -1 },
+    { id: `e${stage}_6`, kind: 'virus', x: 3280, y: 650, w: 38, h: 40, minX: 3195, maxX: 3410, speed: 1.9, dir: -1 },
+    { id: `e${stage}_7`, kind: 'fireball', x: 4920, y: 786, w: 34, h: 34, minX: 4810, maxX: 5090, speed: 2.6, dir: -1 },
+  ];
+}
+
+// =========================================================================
+// UTILITIES
+// =========================================================================
+
 export function getStageBasePlatforms(stage: number): Platform[] {
-  const src = STAGE_PLATFORM_MAP[stage] ?? (stage === 4 ? STAGE4_PLATFORMS : stage === 3 ? STAGE3_PLATFORMS : stage === 2 ? STAGE2_PLATFORMS : PLATFORMS);
+  const src = STAGE_PLATFORM_MAP[stage] ?? STAGE1_PLATFORMS;
   return src.map((p) => ({ ...p }));
 }
 
@@ -1230,7 +1568,7 @@ export function generateQuestionBlocks(questionIds: string[], seedStr: string, s
     return seed / 4294967296;
   };
 
-  const baseSpots = STAGE_QBLOCK_MAP[stage] ?? (stage === 4 ? STAGE4_QBLOCK_SPOTS : stage === 3 ? STAGE3_QBLOCK_SPOTS : stage === 2 ? STAGE2_QBLOCK_SPOTS : QBLOCK_CANDIDATE_SPOTS);
+  const baseSpots = STAGE_QBLOCK_MAP[stage] ?? QBLOCK_CANDIDATE_SPOTS;
   const pool = [...baseSpots];
   for (let i = pool.length - 1; i > 0; i -= 1) {
     const j = Math.floor(nextRand() * (i + 1));
@@ -1244,10 +1582,9 @@ export function generateQuestionBlocks(questionIds: string[], seedStr: string, s
     const jitterX = Math.round((nextRand() - 0.5) * 16);
     const jitterY = Math.round((nextRand() - 0.5) * 10);
     const tierOffset = Math.floor(idx / pool.length) * 64;
-    // Kotak soal dibuat jangan terlalu tinggi (agar mudah dijangkau saat melompat player):
-    // y dijaga di rentang nyaman jangkauan lompat (540 s/d 680)
-    const spotY = spot.y < 520 ? 540 + (spot.y % 120) : spot.y;
-    const finalY = Math.max(520, Math.min(WORLD.groundY - 140, spotY + jitterY));
+    // Kotak soal dijaga pada rentang nyaman jangkauan lompat
+    const spotY = spot.y < 300 ? 340 + (spot.y % 120) : spot.y;
+    const finalY = Math.max(280, Math.min(WORLD.groundY - 140, spotY + jitterY));
     return {
       x: Math.max(260, Math.min(5080, spot.x + jitterX + tierOffset)),
       y: finalY,

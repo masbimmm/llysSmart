@@ -17,6 +17,13 @@ const AVATAR_COLORS: Record<string, { body: string; belly: string; ear: string }
   'cat-green': { body: '#22c55e', belly: '#bbf7d0', ear: '#15803d' },
   'cat-orange': { body: '#f97316', belly: '#fed7aa', ear: '#c2410c' },
   'cat-purple': { body: '#a855f7', belly: '#e9d5ff', ear: '#7e22ce' },
+  'virus': { body: '#9333ea', belly: '#a855f7', ear: '#581c87' },
+  'cacing': { body: '#84cc16', belly: '#bef264', ear: '#4d7c0f' },
+  'ulat': { body: '#84cc16', belly: '#bef264', ear: '#4d7c0f' },
+  'burung': { body: '#38bdf8', belly: '#bae6fd', ear: '#0284c7' },
+  'ayam': { body: '#f8fafc', belly: '#e2e8f0', ear: '#ef4444' },
+  'sapi': { body: '#ffffff', belly: '#f472b6', ear: '#1e293b' },
+  'domba': { body: '#f1f5f9', belly: '#e2e8f0', ear: '#334155' },
 };
 
 function hashHue(seed: string) {
@@ -40,7 +47,11 @@ export type CatHazardState = {
   velocity?: { vx?: number; vy?: number };
   gun?: string | null;
   tag?: string | null;
-  colors?: { body?: string; tag?: string; nick?: string } | null;
+  tag1?: string | null;
+  tag2?: string | null;
+  tag3?: string | null;
+  customNick?: string | null;
+  colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null;
 };
 
 function drawCat(
@@ -72,6 +83,7 @@ function drawCat(
   const bodySpec = hazard?.colors?.body;
   const bodyOverride = bodySpec ? toHexColor(resolvePlayerColor(bodySpec, now) ?? bodySpec) : null;
   const effRole = role;
+  const isCustomAnimal = avatar === 'virus' || avatar === 'cacing' || avatar === 'ulat' || avatar === 'burung' || avatar === 'ayam' || avatar === 'sapi' || avatar === 'domba';
   const colors = bodyOverride
     ? { body: bodyOverride, belly: bodyOverride, ear: bodyOverride }
     : isFrozen
@@ -84,9 +96,11 @@ function drawCat(
     ? flickerFire
       ? { body: '#ea580c', belly: '#fed7aa', ear: '#9a3412' }
       : { body: '#451a03', belly: '#fdba74', ear: '#dc2626' }
-    : effRole === 'admin'
-      ? { body: '#e11d48', belly: '#fecdd3', ear: '#9f1239' }
-      : effRole === 'teacher'
+    : (isCustomAnimal && AVATAR_COLORS[avatar])
+      ? AVATAR_COLORS[avatar]
+      : effRole === 'admin'
+        ? { body: '#e11d48', belly: '#fecdd3', ear: '#9f1239' }
+        : effRole === 'teacher'
         ? { body: 'hsl(45, 90%, 55%)', belly: 'hsl(45, 95%, 80%)', ear: 'hsl(40, 85%, 40%)' }
         : { body: `hsl(${hue}, 70%, 55%)`, belly: `hsl(${hue}, 75%, 82%)`, ear: `hsl(${hue}, 70%, 38%)` };
   void base;
@@ -179,64 +193,491 @@ function drawCat(
   ctx.scale(facing, 1);
   ctx.translate(-w / 2, -h / 2);
 
-  ctx.fillStyle = colors.ear;
-  ctx.beginPath();
-  ctx.moveTo(4, 14); ctx.lineTo(10, 0); ctx.lineTo(16, 14); ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(w - 16, 14); ctx.lineTo(w - 10, 0); ctx.lineTo(w - 4, 14); ctx.closePath();
-  ctx.fill();
+  const isMoving = Math.abs(hazard?.velocity?.vx ?? 0) > 0.1;
+  const isAirborne = Math.abs(hazard?.velocity?.vy ?? 0) > 0.5;
 
-  ctx.fillStyle = colors.body;
-  roundRect(ctx, 2, 10, w - 4, h - 10, 10);
-  ctx.fill();
+  if (avatar === 'virus') {
+    // ----------------------------------------------------
+    // VIRUS (Rolling Spiky Ball with Angry/Cute Eyes)
+    // ----------------------------------------------------
+    const cx = w / 2;
+    const cy = h * 0.58;
+    const r = 13;
+    // Rolling animation: rolling angle spins as player moves along X!
+    const rollAngle = (drawX / r) * facing;
 
-  ctx.fillStyle = colors.belly;
-  roundRect(ctx, w / 2 - 8, h * 0.55, 16, h * 0.35, 6);
-  ctx.fill();
+    // 8 spikes around body rotating as player walks!
+    ctx.strokeStyle = colors.ear || '#581c87';
+    ctx.lineWidth = 3;
+    for (let a = 0; a < 8; a += 1) {
+      const ang = (a / 8) * Math.PI * 2 + rollAngle;
+      const x1 = cx + Math.cos(ang) * (r - 2);
+      const y1 = cy + Math.sin(ang) * (r - 2);
+      const x2 = cx + Math.cos(ang) * (r + 6);
+      const y2 = cy + Math.sin(ang) * (r + 6);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.arc(x2, y2, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-  if (isDying) {
-    // X_X knocked-out Mario Bros eyes
-    ctx.strokeStyle = '#111827';
+    // Virus core body
+    ctx.fillStyle = colors.body;
+    ctx.strokeStyle = '#3b0764';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Inner glow
+    ctx.fillStyle = colors.belly || '#a855f7';
+    ctx.beginPath();
+    ctx.arc(cx - 2, cy - 2, r * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (isDying) {
+      ctx.fillStyle = '#fef08a';
+      ctx.font = 'bold 9px Nunito, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('X _ X', cx, cy + 3);
+    } else if (isBurning) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx - 5.5, cy - 2, 4, 0, Math.PI * 2);
+      ctx.arc(cx + 5.5, cy - 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(cx - 5.5, cy - 2, 2, 0, Math.PI * 2);
+      ctx.arc(cx + 5.5, cy - 2, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(cx - 5.5, cy - 2, 4, 0, Math.PI * 2);
+      ctx.arc(cx + 5.5, cy - 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(cx - 5.5 + 1.2, cy - 2, 1.8, 0, Math.PI * 2);
+      ctx.arc(cx + 5.5 + 1.2, cy - 2, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (avatar === 'cacing' || avatar === 'ulat') {
+    // ----------------------------------------------------
+    // CACING / ULAT (Inchworm Accordion Stretch & Wiggle)
+    // ----------------------------------------------------
+    const inch = isMoving ? Math.sin(now * 0.016) : 0;
+    const segCount = 4;
+    const headX = w * 0.65 + (isMoving ? inch * 3 : 0);
+    const headY = h * 0.58 - (isMoving ? Math.abs(inch) * 4 : 0);
+
+    // Antennae on head
+    ctx.strokeStyle = colors.ear || '#4d7c0f';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(headX - 2, headY - 6);
+    ctx.quadraticCurveTo(headX - 5 + Math.sin(now * 0.01) * 2, headY - 14, headX - 3, headY - 14);
+    ctx.moveTo(headX + 2, headY - 6);
+    ctx.quadraticCurveTo(headX + 4 + Math.sin(now * 0.01 + 1) * 2, headY - 14, headX + 6, headY - 14);
+    ctx.stroke();
+    ctx.fillStyle = '#fde047';
+    ctx.beginPath();
+    ctx.arc(headX - 3, headY - 14, 2.2, 0, Math.PI * 2);
+    ctx.arc(headX + 6, headY - 14, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body segments
+    for (let s = 0; s < segCount; s++) {
+      const t = s / (segCount - 1);
+      const segX = (w * 0.2) + t * (headX - w * 0.2);
+      const arch = Math.sin(t * Math.PI) * (isMoving ? Math.abs(inch) * 7 : 0);
+      const segY = h * 0.72 - arch;
+      const sr = s === segCount - 1 ? 8 : 6.5;
+
+      ctx.fillStyle = s % 2 === 0 ? colors.body : (colors.belly || '#bef264');
+      ctx.strokeStyle = '#365314';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(segX, segY, sr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    if (isDying) {
+      ctx.strokeStyle = '#111827';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(headX, headY - 3); ctx.lineTo(headX + 4, headY + 1);
+      ctx.moveTo(headX + 4, headY - 3); ctx.lineTo(headX, headY + 1);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#111827';
+      ctx.beginPath();
+      ctx.arc(headX + 2, headY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(headX + 3, headY - 0.8, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(244, 114, 182, 0.75)';
+      ctx.beginPath();
+      ctx.arc(headX - 1, headY + 3.5, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (avatar === 'burung') {
+    // ----------------------------------------------------
+    // BURUNG (Flapping Wings in Air, Stepping Feet)
+    // ----------------------------------------------------
+    const flap = isAirborne ? Math.sin(now * 0.035) * 16 : isMoving ? Math.sin(now * 0.02) * 5 : 0;
+    const bodyCx = w * 0.45;
+    const bodyCy = h * 0.62;
+    const footStep = isMoving ? Math.sin(now * 0.018) * 4 : 0;
+
+    // Feet
+    ctx.strokeStyle = '#ea580c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bodyCx - 4, bodyCy + 10); ctx.lineTo(bodyCx - 4 - footStep, bodyCy + 15);
+    ctx.moveTo(bodyCx + 4, bodyCy + 10); ctx.lineTo(bodyCx + 4 + footStep, bodyCy + 15);
+    ctx.stroke();
+
+    // Tail
+    ctx.fillStyle = colors.ear || '#0284c7';
+    ctx.beginPath();
+    ctx.moveTo(bodyCx - 10, bodyCy);
+    ctx.lineTo(bodyCx - 18, bodyCy - 4);
+    ctx.lineTo(bodyCx - 16, bodyCy + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Plump body
+    ctx.fillStyle = colors.body;
+    ctx.strokeStyle = '#0369a1';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(bodyCx, bodyCy, 12, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Belly
+    ctx.fillStyle = colors.belly || '#bae6fd';
+    ctx.beginPath();
+    ctx.ellipse(bodyCx + 2, bodyCy + 3, 7, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Flapping wing
+    ctx.save();
+    ctx.translate(bodyCx - 2, bodyCy - 1);
+    ctx.rotate((flap * Math.PI) / 180);
+    ctx.fillStyle = colors.ear || '#0284c7';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 7, 4.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Beak
+    ctx.fillStyle = '#f97316';
+    ctx.beginPath();
+    ctx.moveTo(bodyCx + 10, bodyCy - 3);
+    ctx.lineTo(bodyCx + 18, bodyCy - 1);
+    ctx.lineTo(bodyCx + 10, bodyCy + 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Eye
+    if (isDying) {
+      ctx.strokeStyle = '#111827';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(bodyCx + 4, bodyCy - 5); ctx.lineTo(bodyCx + 8, bodyCy - 1);
+      ctx.moveTo(bodyCx + 8, bodyCy - 5); ctx.lineTo(bodyCx + 4, bodyCy - 1);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#111827';
+      ctx.beginPath();
+      ctx.arc(bodyCx + 6, bodyCy - 3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(bodyCx + 7, bodyCy - 4, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (avatar === 'ayam') {
+    // ----------------------------------------------------
+    // AYAM (Head-Bobbing Chicken with Red Comb & Wattle)
+    // ----------------------------------------------------
+    const headBob = isMoving ? Math.sin(now * 0.02) * 3 : 0;
+    const bodyX = w * 0.44;
+    const bodyY = h * 0.64;
+    const chkHeadX = bodyX + 8 + headBob;
+    const chkHeadY = bodyY - 10;
+    const chkStep = isMoving ? Math.sin(now * 0.018) * 4 : 0;
+
+    // Feet
+    ctx.strokeStyle = '#ea580c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bodyX - 4, bodyY + 10); ctx.lineTo(bodyX - 4 - chkStep, bodyY + 15);
+    ctx.moveTo(bodyX + 4, bodyY + 10); ctx.lineTo(bodyX + 4 + chkStep, bodyY + 15);
+    ctx.stroke();
+
+    // Body
+    ctx.fillStyle = colors.body;
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(bodyX, bodyY, 13, 11, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Tail
+    ctx.fillStyle = colors.belly || '#e2e8f0';
+    ctx.beginPath();
+    ctx.moveTo(bodyX - 11, bodyY - 2);
+    ctx.lineTo(bodyX - 18, bodyY - 10);
+    ctx.lineTo(bodyX - 13, bodyY + 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Wing
+    ctx.fillStyle = colors.belly || '#e2e8f0';
+    ctx.beginPath();
+    ctx.ellipse(bodyX - 1, bodyY, 6, 4.5, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.fillStyle = colors.body;
+    ctx.beginPath();
+    ctx.arc(chkHeadX, chkHeadY, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Red comb
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(chkHeadX - 3, chkHeadY - 7.5, 2.5, 0, Math.PI * 2);
+    ctx.arc(chkHeadX + 1, chkHeadY - 8.5, 3, 0, Math.PI * 2);
+    ctx.arc(chkHeadX + 5, chkHeadY - 7.5, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.moveTo(chkHeadX + 5, chkHeadY - 1);
+    ctx.lineTo(chkHeadX + 12, chkHeadY + 1.5);
+    ctx.lineTo(chkHeadX + 5, chkHeadY + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Red wattle
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath();
+    ctx.arc(chkHeadX + 4, chkHeadY + 6, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#111827';
+    ctx.beginPath();
+    ctx.arc(chkHeadX + 2, chkHeadY - 1, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (avatar === 'sapi') {
+    // ----------------------------------------------------
+    // SAPI (Spotted Cow with Horns, Pink Snout & Hooves)
+    // ----------------------------------------------------
+    const cowX = w * 0.44;
+    const cowY = h * 0.62;
+    const cowStep = isMoving ? Math.sin(now * 0.016) * 4 : 0;
+
+    // Hooves
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(cowX - 9 - cowStep, cowY + 10, 3.5, 5);
+    ctx.fillRect(cowX - 3 + cowStep, cowY + 10, 3.5, 5);
+    ctx.fillRect(cowX + 3 - cowStep, cowY + 10, 3.5, 5);
+    ctx.fillRect(cowX + 9 + cowStep, cowY + 10, 3.5, 5);
+
+    // Body
+    ctx.fillStyle = colors.body;
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 2;
+    roundRect(ctx, cowX - 12, cowY - 8, 24, 18, 7);
+    ctx.fill();
+    ctx.stroke();
+
+    // Black spots
+    ctx.fillStyle = '#1e293b';
+    ctx.beginPath();
+    ctx.arc(cowX - 5, cowY - 2, 4.5, 0, Math.PI * 2);
+    ctx.arc(cowX + 6, cowY + 3, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    const cowHeadX = cowX + 9;
+    const cowHeadY = cowY - 5;
+    ctx.fillStyle = colors.body;
+    roundRect(ctx, cowHeadX - 6, cowHeadY - 9, 13, 13, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    // Horns
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.moveTo(cowHeadX - 4, cowHeadY - 8); ctx.lineTo(cowHeadX - 6, cowHeadY - 14); ctx.lineTo(cowHeadX - 1, cowHeadY - 9);
+    ctx.moveTo(cowHeadX + 2, cowHeadY - 8); ctx.lineTo(cowHeadX + 4, cowHeadY - 14); ctx.lineTo(cowHeadX + 6, cowHeadY - 9);
+    ctx.fill();
+
+    // Pink snout
+    ctx.fillStyle = '#f472b6';
+    roundRect(ctx, cowHeadX + 1, cowHeadY - 1, 9, 6.5, 3);
+    ctx.fill();
+    ctx.fillStyle = '#831843';
+    ctx.beginPath();
+    ctx.arc(cowHeadX + 4, cowHeadY + 2, 1, 0, Math.PI * 2);
+    ctx.arc(cowHeadX + 7, cowHeadY + 2, 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#111827';
+    ctx.beginPath();
+    ctx.arc(cowHeadX - 1, cowHeadY - 4, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tail
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cowX - 12, cowY);
+    ctx.quadraticCurveTo(cowX - 17, cowY + Math.sin(now * 0.015) * 5, cowX - 15, cowY + 8);
+    ctx.stroke();
+    ctx.fillStyle = '#1e293b';
+    ctx.beginPath();
+    ctx.arc(cowX - 15, cowY + 8, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (avatar === 'domba') {
+    // ----------------------------------------------------
+    // DOMBA (Super Fluffy Wool Cloud with Floppy Ears)
+    // ----------------------------------------------------
+    const shpX = w * 0.44;
+    const shpY = h * 0.62;
+    const shpStep = isMoving ? Math.sin(now * 0.018) * 3.5 : 0;
+    const bounce = isMoving ? Math.abs(Math.sin(now * 0.02)) * 2 : 0;
+
+    // Legs
+    ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(w * 0.25, 19); ctx.lineTo(w * 0.38, 25);
-    ctx.moveTo(w * 0.38, 19); ctx.lineTo(w * 0.25, 25);
-    ctx.moveTo(w * 0.62, 19); ctx.lineTo(w * 0.75, 25);
-    ctx.moveTo(w * 0.75, 19); ctx.lineTo(w * 0.62, 25);
+    ctx.moveTo(shpX - 7 - shpStep, shpY + 8); ctx.lineTo(shpX - 7 - shpStep, shpY + 15);
+    ctx.moveTo(shpX - 2 + shpStep, shpY + 8); ctx.lineTo(shpX - 2 + shpStep, shpY + 15);
+    ctx.moveTo(shpX + 4 - shpStep, shpY + 8); ctx.lineTo(shpX + 4 - shpStep, shpY + 15);
+    ctx.moveTo(shpX + 9 + shpStep, shpY + 8); ctx.lineTo(shpX + 9 + shpStep, shpY + 15);
     ctx.stroke();
-    // Open shocked mouth
-    ctx.fillStyle = '#111827';
+
+    // Wool puffs
+    ctx.fillStyle = colors.body;
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.5;
+    const woolPuffs = [
+      { ox: -8, oy: -3, r: 8 },
+      { ox: 0, oy: -7, r: 8.5 },
+      { ox: 7, oy: -3, r: 8 },
+      { ox: -6, oy: 4, r: 7.5 },
+      { ox: 3, oy: 5, r: 8 },
+      { ox: 0, oy: 0, r: 9 },
+    ];
+    for (const puff of woolPuffs) {
+      ctx.beginPath();
+      ctx.arc(shpX + puff.ox, shpY + puff.oy - bounce, puff.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Dark face
+    const shpFaceX = shpX + 8;
+    const shpFaceY = shpY - 2 - bounce;
+    ctx.fillStyle = '#334155';
     ctx.beginPath();
-    ctx.arc(w * 0.5, 32, 3.5, 0, Math.PI * 2);
+    ctx.ellipse(shpFaceX, shpFaceY, 6, 7, 0.2, 0, Math.PI * 2);
     ctx.fill();
-  } else if (isBurning) {
-    // Panicked wide eyes O_O + screaming mouth when on fire!
+
+    // Ear
+    ctx.beginPath();
+    ctx.ellipse(shpFaceX - 4, shpFaceY - 4, 2.5, 5, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(w * 0.32, 22, 4.4, 0, Math.PI * 2);
-    ctx.arc(w * 0.68, 22, 4.4, 0, Math.PI * 2);
+    ctx.arc(shpFaceX + 2, shpFaceY - 1.5, 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#111827';
+    ctx.fillStyle = '#0f172a';
     ctx.beginPath();
-    ctx.arc(w * 0.32, 22, 2, 0, Math.PI * 2);
-    ctx.arc(w * 0.68, 22, 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#7f1d1d';
-    ctx.beginPath();
-    ctx.ellipse(w * 0.5, 31.5, 4.2, 3, 0, 0, Math.PI * 2);
+    ctx.arc(shpFaceX + 2.5, shpFaceY - 1.5, 1, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    ctx.fillStyle = '#111827';
+    // ----------------------------------------------------
+    // DEFAULT CAT (Kucing Klasik)
+    // ----------------------------------------------------
+    ctx.fillStyle = colors.ear;
     ctx.beginPath();
-    ctx.arc(w * 0.32, 22, 3, 0, Math.PI * 2);
-    ctx.arc(w * 0.68, 22, 3, 0, Math.PI * 2);
+    ctx.moveTo(4, 14); ctx.lineTo(10, 0); ctx.lineTo(16, 14); ctx.closePath();
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(w * 0.44, 30); ctx.lineTo(w * 0.5, 33); ctx.lineTo(w * 0.56, 30);
-    ctx.strokeStyle = '#111827';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.moveTo(w - 16, 14); ctx.lineTo(w - 10, 0); ctx.lineTo(w - 4, 14); ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = colors.body;
+    roundRect(ctx, 2, 10, w - 4, h - 10, 10);
+    ctx.fill();
+
+    ctx.fillStyle = colors.belly;
+    roundRect(ctx, w / 2 - 8, h * 0.55, 16, h * 0.35, 6);
+    ctx.fill();
+
+    if (isDying) {
+      ctx.strokeStyle = '#111827';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.25, 19); ctx.lineTo(w * 0.38, 25);
+      ctx.moveTo(w * 0.38, 19); ctx.lineTo(w * 0.25, 25);
+      ctx.moveTo(w * 0.62, 19); ctx.lineTo(w * 0.75, 25);
+      ctx.moveTo(w * 0.75, 19); ctx.lineTo(w * 0.62, 25);
+      ctx.stroke();
+      ctx.fillStyle = '#111827';
+      ctx.beginPath();
+      ctx.arc(w * 0.5, 32, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (isBurning) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(w * 0.32, 22, 4.4, 0, Math.PI * 2);
+      ctx.arc(w * 0.68, 22, 4.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#111827';
+      ctx.beginPath();
+      ctx.arc(w * 0.32, 22, 2, 0, Math.PI * 2);
+      ctx.arc(w * 0.68, 22, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#7f1d1d';
+      ctx.beginPath();
+      ctx.ellipse(w * 0.5, 31.5, 4.2, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#111827';
+      ctx.beginPath();
+      ctx.arc(w * 0.32, 22, 3, 0, Math.PI * 2);
+      ctx.arc(w * 0.68, 22, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(w * 0.44, 30); ctx.lineTo(w * 0.5, 33); ctx.lineTo(w * 0.56, 30);
+      ctx.strokeStyle = '#111827';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
   ctx.restore();
 
@@ -270,6 +711,31 @@ function drawCat(
   const isSuperCat = Boolean(hazard?.blasterUntil && hazard.blasterUntil > now);
   const isGodMode = Boolean(hazard?.isGodMode);
 
+  // Posisi tag bertingkat (dari bawah ke atas di atas nick):
+  // tag3 (posisi 3, paling atas)
+  // tag2 (posisi 2, tengah)
+  // tag1 (posisi 1, paling bawah langsung di atas nick)
+  // nick / nama lengkap
+  // karakter
+  const t1 = hazard?.tag1?.trim() || (!hazard?.tag2 && !hazard?.tag3 && hazard?.tag ? hazard.tag.trim() : '');
+  const t2 = hazard?.tag2?.trim() || '';
+  const t3 = hazard?.tag3?.trim() || '';
+
+  const activeTags: { slot: number; text: string }[] = [];
+  if (t1) activeTags.push({ slot: 1, text: t1 });
+  if (t2) activeTags.push({ slot: 2, text: t2 });
+  if (t3) activeTags.push({ slot: 3, text: t3 });
+
+  if (activeTags.length === 0) {
+    if (effRole === 'admin') {
+      activeTags.push({ slot: 1, text: 'ADMINISTRATOR' });
+    } else if (effRole === 'teacher') {
+      activeTags.push({ slot: 1, text: 'TEACHER' });
+    }
+  }
+
+  const tagTopOffset = activeTags.length > 0 ? (26 + (activeTags.length - 1) * 12) : (hasStaffTitle ? 26 : 14);
+
   if (isGodMode) {
     ctx.save();
     ctx.shadowColor = '#eab308';
@@ -282,7 +748,7 @@ function drawCat(
 
     ctx.font = '16px Nunito, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('👑', drawX + w / 2, y - (hasStaffTitle ? 40 : 28));
+    ctx.fillText('👑', drawX + w / 2, y - (tagTopOffset + 14));
     ctx.restore();
   }
 
@@ -321,7 +787,7 @@ function drawCat(
     ctx.restore();
   }
 
-  const displayName = name;
+  const displayName = hazard?.customNick?.trim() || name;
   const nickOverride = hazard?.colors?.nick
     ? resolvePlayerColor(hazard.colors.nick, now)
     : undefined;
@@ -330,43 +796,30 @@ function drawCat(
   ctx.textAlign = 'center';
   ctx.fillText(displayName, drawX + w / 2, y - 14);
 
-  const tagOverride = hazard?.tag;
-  const tagColor = hazard?.colors?.tag ? resolvePlayerColor(hazard.colors.tag, now) : undefined;
+  for (let i = 0; i < activeTags.length; i++) {
+    const item = activeTags[i];
+    const tagY = y - (26 + i * 12);
+    ctx.font = 'bold 9.5px Nunito, sans-serif';
+
+    const specificSpec =
+      item.slot === 1 ? hazard?.colors?.tag1 :
+      item.slot === 2 ? hazard?.colors?.tag2 :
+      item.slot === 3 ? hazard?.colors?.tag3 : undefined;
+
+    const specificColor = specificSpec ? resolvePlayerColor(specificSpec, now) : undefined;
+    const generalTagColor = hazard?.colors?.tag ? resolvePlayerColor(hazard.colors.tag, now) : undefined;
+    const defaultColor = item.slot === 3 ? '#c084fc' : item.slot === 2 ? '#38bdf8' : (effRole === 'admin' ? '#ff2a5f' : effRole === 'teacher' ? '#ffd338' : '#fde047');
+
+    ctx.fillStyle = specificColor ?? generalTagColor ?? defaultColor;
+    ctx.fillText(item.text.toUpperCase().slice(0, 24), drawX + w / 2, tagY);
+  }
+
   const hasGun = Boolean(hazard?.gun);
   const isStaffPlayer = effRole === 'admin' || effRole === 'teacher' || role === 'admin' || role === 'teacher';
   // Keterangan di atas kepala jika sedang pegang senjata: HANYA untuk Admin dan Guru
   const showGunBadge = hasGun && isStaffPlayer;
 
-  if (isSuperCat && isStaffPlayer && !tagOverride) {
-    const ammoText = `⚡ LASER x${hazard?.blasterAmmo ?? 0}`;
-    ctx.font = 'bold 9px Nunito, sans-serif';
-    const tw = ctx.measureText(ammoText).width + 10;
-    const bx = drawX + w / 2 - tw / 2;
-    const by = y - 28;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, bx, by - 12, tw, 15, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#fde047';
-    ctx.fillText(ammoText, drawX + w / 2, by - 1);
-  } else if (tagOverride) {
-    // Spoofed title (/change tag), warna bisa custom via /change color tag
-    ctx.fillStyle = tagColor ?? (effRole === 'admin' ? '#ff2a5f' : effRole === 'teacher' ? '#ffd338' : '#fde047');
-    ctx.font = 'bold 9.5px Nunito, sans-serif';
-    ctx.fillText(tagOverride.toUpperCase().slice(0, 20), drawX + w / 2, y - 26);
-  } else if (effRole === 'admin') {
-    ctx.fillStyle = tagColor ?? '#ff2a5f';
-    ctx.font = 'bold 9.5px Nunito, sans-serif';
-    ctx.fillText('ADMINISTRATOR', drawX + w / 2, y - 26);
-  } else if (effRole === 'teacher') {
-    ctx.fillStyle = tagColor ?? '#ffd338';
-    ctx.font = 'bold 9px Nunito, sans-serif';
-    ctx.fillText('TEACHER', drawX + w / 2, y - 26);
-  }
-
-  if (showGunBadge && !tagOverride) {
+  if (showGunBadge) {
     // Senjata admin/guru aktif: label ammo dengan warna sesuai weapon (selalu infinity bila unlimited)
     const ammoCount = hazard?.blasterAmmo;
     const ammoDisplay = ammoCount === Infinity || typeof ammoCount !== 'number' || ammoCount <= 0 ? '∞' : String(ammoCount);
@@ -374,7 +827,7 @@ function drawCat(
     ctx.font = 'bold 9px Nunito, sans-serif';
     const tw = ctx.measureText(gunLabel).width + 10;
     const bx = drawX + w / 2 - tw / 2;
-    const by = y - 28;
+    const by = y - (tagTopOffset + 14);
     ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
     ctx.strokeStyle = '#f97316';
     ctx.lineWidth = 1.5;
@@ -405,7 +858,7 @@ function drawCat(
     ctx.font = 'bold 10px Nunito, sans-serif';
     const tw = ctx.measureText(jailLabel).width + 12;
     const bx = drawX + w / 2 - tw / 2;
-    const by = y - (hasStaffTitle || tagOverride ? 44 : 32);
+    const by = y - (tagTopOffset + 14);
     ctx.fillStyle = '#1e3a8a';
     ctx.strokeStyle = cageColor;
     ctx.lineWidth = 1.5;
@@ -423,7 +876,7 @@ function drawCat(
     ctx.font = 'bold 10px Nunito, sans-serif';
     const tw = ctx.measureText(burnLabel).width + 12;
     const bx = drawX + w / 2 - tw / 2;
-    const by = y - (hasStaffTitle ? 46 : 34);
+    const by = y - (tagTopOffset + 14);
     ctx.fillStyle = '#dc2626';
     ctx.strokeStyle = '#fef08a';
     ctx.lineWidth = 1.5;
@@ -439,7 +892,7 @@ function drawCat(
     const tw = ctx.measureText(text).width + 14;
     const bw = Math.max(tw, 34);
     const bx = x + w / 2 - bw / 2;
-    const by = y - (hasStaffTitle ? 50 : 36);
+    const by = y - (tagTopOffset + 18);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
     ctx.strokeStyle = '#233866';
     ctx.lineWidth = 1.5;
@@ -477,67 +930,131 @@ export function drawWorld(ctx: CanvasRenderingContext2D, stageInfo?: StageRender
   const now = Date.now();
 
   const sky = ctx.createLinearGradient(0, 0, 0, WORLD.height);
-  if (stage === 4) {
-    sky.addColorStop(0, '#030712');
-    sky.addColorStop(0.28, '#0b0f19');
-    sky.addColorStop(0.58, '#1e1b4b');
-    sky.addColorStop(0.82, '#0284c7');
-    sky.addColorStop(1, '#38bdf8');
-  } else if (stage === 3) {
-    sky.addColorStop(0, '#0f051d');
-    sky.addColorStop(0.32, '#450a0a');
-    sky.addColorStop(0.65, '#991b1b');
-    sky.addColorStop(0.85, '#c2410c');
-    sky.addColorStop(1, '#f97316');
-  } else if (stage === 2) {
-    sky.addColorStop(0, '#2e1065');
-    sky.addColorStop(0.38, '#7e22ce');
-    sky.addColorStop(0.7, '#db2777');
-    sky.addColorStop(0.9, '#f97316');
-    sky.addColorStop(1, '#fde047');
-  } else if (stage === 5) {
-    // Hutan Neon Biolumin: deep purple-teal night sky
-    sky.addColorStop(0, '#020617');
-    sky.addColorStop(0.3, '#0f172a');
-    sky.addColorStop(0.55, '#134e4a');
-    sky.addColorStop(0.8, '#0d9488');
-    sky.addColorStop(1, '#2dd4bf');
-  } else if (stage === 6) {
-    // Kota Roda Gigi: smoggy industrial dusk
-    sky.addColorStop(0, '#1c1917');
-    sky.addColorStop(0.35, '#44403c');
-    sky.addColorStop(0.65, '#78716c');
+  if (stage === 20) {
+    // Puncak Tahta Primordial Void
+    sky.addColorStop(0, '#000000');
+    sky.addColorStop(0.28, '#180424');
+    sky.addColorStop(0.65, '#4c0519');
     sky.addColorStop(0.85, '#b45309');
-    sky.addColorStop(1, '#d97706');
-  } else if (stage === 7) {
-    // Samudra Es: pale glacial blue
+    sky.addColorStop(1, '#fbbf24');
+  } else if (stage === 19) {
+    // Neraka Virus Cyber Matrix
+    sky.addColorStop(0, '#020617');
+    sky.addColorStop(0.35, '#14532d');
+    sky.addColorStop(0.7, '#7f1d1d');
+    sky.addColorStop(1, '#dc2626');
+  } else if (stage === 18) {
+    // Dimensi Void Berputar
+    sky.addColorStop(0, '#050505');
+    sky.addColorStop(0.3, '#1e1b4b');
+    sky.addColorStop(0.65, '#581c87');
+    sky.addColorStop(1, '#701a75');
+  } else if (stage === 17) {
+    // Koridor Robot Mecha
+    sky.addColorStop(0, '#09090b');
+    sky.addColorStop(0.35, '#18181b');
+    sky.addColorStop(0.7, '#27272a');
+    sky.addColorStop(1, '#ef4444');
+  } else if (stage === 16) {
+    // Formasi Tempur Pesawat Langit
+    sky.addColorStop(0, '#022c22');
+    sky.addColorStop(0.35, '#064e3b');
+    sky.addColorStop(0.7, '#0284c7');
+    sky.addColorStop(1, '#f8fafc');
+  } else if (stage === 15) {
+    // Benteng Magma Neraka
+    sky.addColorStop(0, '#450a0a');
+    sky.addColorStop(0.35, '#7f1d1d');
+    sky.addColorStop(0.7, '#b91c1c');
+    sky.addColorStop(1, '#ffedd5');
+  } else if (stage === 14) {
+    // Sarang Mutasi Biohazard
+    sky.addColorStop(0, '#052e16');
+    sky.addColorStop(0.35, '#14532d');
+    sky.addColorStop(0.7, '#15803d');
+    sky.addColorStop(1, '#a855f7');
+  } else if (stage === 13) {
+    // Lab Drone Pengintai
+    sky.addColorStop(0, '#030712');
+    sky.addColorStop(0.3, '#0f172a');
+    sky.addColorStop(0.65, '#1e293b');
+    sky.addColorStop(1, '#06b6d4');
+  } else if (stage === 12) {
+    // Gurun Reruntuhan Kuno
+    sky.addColorStop(0, '#7c2d12');
+    sky.addColorStop(0.35, '#c2410c');
+    sky.addColorStop(0.65, '#ea580c');
+    sky.addColorStop(0.85, '#fbbf24');
+    sky.addColorStop(1, '#fde68a');
+  } else if (stage === 11) {
+    // Badai Petir Angkasa
+    sky.addColorStop(0, '#09090b');
+    sky.addColorStop(0.3, '#1e1b4b');
+    sky.addColorStop(0.65, '#3b0764');
+    sky.addColorStop(0.85, '#6b21a8');
+    sky.addColorStop(1, '#fde047');
+  } else if (stage === 10) {
+    // Penerbangan Awan Pesawat
+    sky.addColorStop(0, '#0369a1');
+    sky.addColorStop(0.35, '#38bdf8');
+    sky.addColorStop(0.7, '#bae6fd');
+    sky.addColorStop(1, '#ffffff');
+  } else if (stage === 9) {
+    // Samudra Es Kutub
     sky.addColorStop(0, '#0c4a6e');
     sky.addColorStop(0.35, '#0ea5e9');
     sky.addColorStop(0.65, '#7dd3fc');
     sky.addColorStop(0.88, '#bae6fd');
     sky.addColorStop(1, '#e0f2fe');
   } else if (stage === 8) {
-    // Gurun Reruntuhan: scorched amber haze
-    sky.addColorStop(0, '#7c2d12');
-    sky.addColorStop(0.35, '#c2410c');
-    sky.addColorStop(0.65, '#ea580c');
-    sky.addColorStop(0.85, '#fbbf24');
-    sky.addColorStop(1, '#fde68a');
-  } else if (stage === 9) {
-    // Sarang Virus: sickly organic green-red
-    sky.addColorStop(0, '#0a0f0a');
-    sky.addColorStop(0.3, '#14532d');
-    sky.addColorStop(0.6, '#166534');
-    sky.addColorStop(0.85, '#4d7c0f');
-    sky.addColorStop(1, '#84cc16');
-  } else if (stage === 10) {
-    // Menara Final Boss: void purple-black with blood red horizon
-    sky.addColorStop(0, '#000000');
-    sky.addColorStop(0.25, '#0b0514');
-    sky.addColorStop(0.5, '#1e1b4b');
-    sky.addColorStop(0.75, '#4c0519');
-    sky.addColorStop(1, '#7f1d1d');
+    // Kota Roda Gigi
+    sky.addColorStop(0, '#1c1917');
+    sky.addColorStop(0.35, '#44403c');
+    sky.addColorStop(0.65, '#78716c');
+    sky.addColorStop(0.85, '#b45309');
+    sky.addColorStop(1, '#d97706');
+  } else if (stage === 7) {
+    // Hutan Neon Biolumin
+    sky.addColorStop(0, '#020617');
+    sky.addColorStop(0.3, '#0f172a');
+    sky.addColorStop(0.55, '#134e4a');
+    sky.addColorStop(0.8, '#0d9488');
+    sky.addColorStop(1, '#2dd4bf');
+  } else if (stage === 6) {
+    // Kastil Magma
+    sky.addColorStop(0, '#0f051d');
+    sky.addColorStop(0.32, '#450a0a');
+    sky.addColorStop(0.65, '#991b1b');
+    sky.addColorStop(0.85, '#c2410c');
+    sky.addColorStop(1, '#f97316');
+  } else if (stage === 5) {
+    // Galaksi Cyber Pemula
+    sky.addColorStop(0, '#030712');
+    sky.addColorStop(0.28, '#0b0f19');
+    sky.addColorStop(0.58, '#1e1b4b');
+    sky.addColorStop(0.82, '#0284c7');
+    sky.addColorStop(1, '#38bdf8');
+  } else if (stage === 4) {
+    // Bukit Balon Udara
+    sky.addColorStop(0, '#3b82f6');
+    sky.addColorStop(0.4, '#93c5fd');
+    sky.addColorStop(0.75, '#fef08a');
+    sky.addColorStop(1, '#fbcfe8');
+  } else if (stage === 3) {
+    // Lembah Kipas Angin
+    sky.addColorStop(0, '#0891b2');
+    sky.addColorStop(0.35, '#06b6d4');
+    sky.addColorStop(0.7, '#67e8f9');
+    sky.addColorStop(1, '#cffafe');
+  } else if (stage === 2) {
+    // Menara Sunset
+    sky.addColorStop(0, '#2e1065');
+    sky.addColorStop(0.38, '#7e22ce');
+    sky.addColorStop(0.7, '#db2777');
+    sky.addColorStop(0.9, '#f97316');
+    sky.addColorStop(1, '#fde047');
   } else {
+    // Lembah Kampus
     sky.addColorStop(0, '#4b94e6');
     sky.addColorStop(0.65, '#8ec8fa');
     sky.addColorStop(1, '#c3e7ff');
@@ -1038,7 +1555,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, stageInfo?: StageRender
   ctx.restore();
 }
 
-export function drawPlatforms(ctx: CanvasRenderingContext2D, platforms: Platform[], stage = 1) {
+export function drawPlatforms(ctx: CanvasRenderingContext2D, platforms: Platform[], stage = 1, bossAlive = true) {
   for (const p of platforms) {
     if (p.type === 'ground') {
       if (stage === 4) {
@@ -1345,6 +1862,175 @@ export function drawPlatforms(ctx: CanvasRenderingContext2D, platforms: Platform
       ctx.font = 'bold 11px Nunito, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(p.moveAxis === 'y' ? '▲ LIFT ▼' : '◀ LIFT ▶', p.x + p.w / 2, p.y + p.h - 5);
+    } else if (p.type === 'plane') {
+      // PESAWAT TERBANG (Plane Ride in the Clouds!)
+      const now = Date.now();
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      const facingRight = (p.dx ?? 0) >= 0;
+
+      ctx.save();
+      // 1. Jet engine exhaust flame trail at rear
+      const exhaustX = facingRight ? p.x - 10 : p.x + p.w + 10;
+      const jetPulse = Math.sin(now * 0.04) * 5;
+      const flameGrad = ctx.createRadialGradient(exhaustX, cy, 2, exhaustX, cy, 22);
+      flameGrad.addColorStop(0, '#ffffff');
+      flameGrad.addColorStop(0.25, '#38bdf8');
+      flameGrad.addColorStop(0.65, '#f97316');
+      flameGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+      ctx.fillStyle = flameGrad;
+      ctx.beginPath();
+      ctx.arc(exhaustX, cy, 18 + jetPulse, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Streamlined Aerodynamic Plane Fuselage
+      const planeGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+      planeGrad.addColorStop(0, '#ffffff');
+      planeGrad.addColorStop(0.5, '#e2e8f0');
+      planeGrad.addColorStop(1, '#94a3b8');
+      ctx.fillStyle = planeGrad;
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 2.5;
+      roundRect(ctx, p.x, p.y, p.w, p.h, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // 3. Orange / Red Racing Stripe
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(p.x + 10, p.y + p.h * 0.44, p.w - 20, 5);
+
+      // 4. Cockpit Dome Canopy
+      const cockpitX = facingRight ? p.x + p.w - 65 : p.x + 16;
+      ctx.fillStyle = '#0284c7';
+      roundRect(ctx, cockpitX, p.y - 8, 48, 14, 6);
+      ctx.fill();
+      ctx.fillStyle = '#7dd3fc';
+      roundRect(ctx, cockpitX + 4, p.y - 6, 40, 5, 3);
+      ctx.fill();
+
+      // 5. Caution Hazard Stripes on Walkway Top Surface
+      ctx.fillStyle = '#facc15';
+      for (let sx = p.x + 24; sx < p.x + p.w - 24; sx += 22) {
+        ctx.fillRect(sx, p.y + 2, 9, 4);
+      }
+
+      // 6. Identification label
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 11px Nunito, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✈ SKY-CRUISER ✈', cx, p.y + p.h - 8);
+      ctx.restore();
+    } else if (p.type === 'fan') {
+      // KIPAS ANGIN (Updraft Fan)
+      const now = Date.now();
+      const fanRange = p.moveRange ?? 460;
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+
+      ctx.save();
+      // 1. Updraft Airflow Streamlines shooting into the sky
+      for (let i = 0; i < 4; i += 1) {
+        const streamX = p.x + 12 + i * ((p.w - 24) / 3);
+        const cycle = ((now * 0.25 + i * 135) % fanRange);
+        const streamY = p.y - cycle;
+        const alpha = Math.max(0, 0.65 * (1 - cycle / fanRange));
+        ctx.strokeStyle = `rgba(165, 243, 252, ${alpha})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        const wave = Math.sin(now * 0.01 + cycle * 0.05) * 6;
+        ctx.moveTo(streamX + wave, streamY);
+        ctx.lineTo(streamX - wave, streamY - 26);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.9})`;
+        ctx.beginPath();
+        ctx.arc(streamX + wave * 0.5, streamY - 13, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 2. Metal Enclosure Housing
+      const boxGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+      boxGrad.addColorStop(0, '#475569');
+      boxGrad.addColorStop(0.5, '#334155');
+      boxGrad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = boxGrad;
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 2;
+      roundRect(ctx, p.x, p.y, p.w, p.h, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // 3. Rotating Turbine Fan Blades
+      const bladeRadius = Math.min(p.h * 0.45, 12);
+      const bladeAngle = now * 0.035;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(bladeAngle);
+      ctx.fillStyle = '#38bdf8';
+      for (let b = 0; b < 4; b += 1) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath();
+        ctx.ellipse(0, bladeRadius * 0.7, 3, bladeRadius, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // 4. Grille lines
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.5;
+      for (let gx = p.x + 8; gx < p.x + p.w - 8; gx += 8) {
+        ctx.beginPath();
+        ctx.moveTo(gx, p.y + 3);
+        ctx.lineTo(gx, p.y + p.h - 3);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (p.type === 'thunder') {
+      // AWAN PETIR MEMATIKAN (Thunder Storm Hazard)
+      const now = Date.now();
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.015);
+
+      ctx.save();
+      // Internal electric ambient glow
+      const glowGrad = ctx.createRadialGradient(cx, cy, 4, cx, cy, p.w * 0.6);
+      glowGrad.addColorStop(0, `rgba(253, 224, 71, ${0.45 * pulse})`);
+      glowGrad.addColorStop(0.6, `rgba(168, 85, 247, ${0.3 * pulse})`);
+      glowGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, p.w * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Dark puffy cloud body
+      ctx.fillStyle = '#1e293b';
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 2;
+      const r = p.h * 0.6;
+      ctx.beginPath();
+      ctx.arc(p.x + r, cy, r, 0, Math.PI * 2);
+      ctx.arc(cx, cy - 4, r * 1.15, 0, Math.PI * 2);
+      ctx.arc(p.x + p.w - r, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Jagged electric spark bolts
+      if (Math.sin(now * 0.02) > 0.25) {
+        ctx.strokeStyle = '#fde047';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - 10, cy + r);
+        ctx.lineTo(cx - 3, cy + r + 10);
+        ctx.lineTo(cx - 8, cy + r + 14);
+        ctx.lineTo(cx + 2, cy + r + 24);
+        ctx.stroke();
+      }
+      ctx.restore();
     } else {
       ctx.fillStyle = '#8b5a2b';
       ctx.strokeStyle = '#4e2e12';
@@ -1416,6 +2102,77 @@ export function drawEnemies(ctx: CanvasRenderingContext2D, enemies: StageEnemy[]
         ctx.arc(cx + 6 + e.dir * 1.2, cy - 2, 1.8, 0, Math.PI * 2);
         ctx.fill();
       }
+    } else if (e.kind === 'drone') {
+      // DRONE PATROLI UDARA (Recon Drone)
+      const isStomped = Boolean(e.stompedUntil && e.stompedUntil > now);
+      const cx = e.x + e.w / 2;
+      const cy = isStomped ? e.y + e.h - 10 : e.y + e.h / 2 + Math.sin(now * 0.01 + e.x) * 4;
+      
+      // 4 Quadcopter Rotors spinning rapidly
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 18, cy - 10);
+      ctx.lineTo(cx + 18, cy + 10);
+      ctx.moveTo(cx + 18, cy - 10);
+      ctx.lineTo(cx - 18, cy + 10);
+      ctx.stroke();
+
+      const rotorAng = now * 0.04;
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.7)';
+      for (const [rx, ry] of [[cx - 18, cy - 10], [cx + 18, cy - 10], [cx - 18, cy + 10], [cx + 18, cy + 10]]) {
+        ctx.beginPath();
+        ctx.ellipse(rx, ry, 7, 2.5, rotorAng, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Drone Central Pod Body
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, isStomped ? 8 : 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Glowing Red Cyclops Scanner Eye
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(cx + e.dir * 3, cy, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx + e.dir * 3 - 1, cy - 1, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (e.kind === 'robot') {
+      // MECHA WALKER ROBOT
+      const isStomped = Boolean(e.stompedUntil && e.stompedUntil > now);
+      const cx = e.x + e.w / 2;
+      const cy = isStomped ? e.y + e.h - 10 : e.y + e.h / 2;
+
+      // Antenna with blinking LED
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 16);
+      ctx.lineTo(cx, cy - 24);
+      ctx.stroke();
+      ctx.fillStyle = Math.sin(now * 0.015) > 0 ? '#ef4444' : '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(cx, cy - 24, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Steel Mecha Torso
+      ctx.fillStyle = '#334155';
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 2;
+      roundRect(ctx, cx - 14, cy - 14, 28, isStomped ? 12 : 28, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Red Visor
+      ctx.fillStyle = '#f43f5e';
+      ctx.fillRect(cx - 10 + e.dir * 2, cy - 8, 16, 5);
     } else {
       // Walking Fireball monster
       const cx = e.x + e.w / 2;

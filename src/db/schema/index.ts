@@ -31,6 +31,13 @@ export const users = sqliteTable(
     avatar: text('avatar').notNull().default('cat-blue'),
     totalPoints: integer('total_points').notNull().default(0),
     totalStars: integer('total_stars').notNull().default(0),
+    customNick: text('custom_nick'),
+    tag1: text('tag1'),
+    tag2: text('tag2'),
+    tag3: text('tag3'),
+    customColors: text('custom_colors'),
+    unlockedBodies: text('unlocked_bodies'),
+    equippedBody: text('equipped_body'),
     ...timestamps,
   },
   (t) => ({
@@ -388,3 +395,9 @@ export const achievements = sqliteTable(
     userIdx: index('achievements_user_idx').on(t.userId),
   }),
 );
+
+export const systemSettings = sqliteTable('system_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});

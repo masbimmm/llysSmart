@@ -113,6 +113,9 @@ export type ColorChannel = 'body' | 'tag' | 'nick';
 export type PlayerColors = {
   body?: string;
   tag?: string;
+  tag1?: string;
+  tag2?: string;
+  tag3?: string;
   nick?: string;
 };
 

@@ -42,10 +42,22 @@ export type RejoinRequest = {
   requestedAt: number;
 };
 
+export type LiveBossState = {
+  stage: number;
+  bid: string;
+  hp: number;
+  maxHp: number;
+  alive: boolean;
+  x?: number;
+  dir?: number;
+  updatedAt: number;
+};
+
 export type RoomObstacleState = {
   crumbles: Map<string, { stage: number; idx: number; startedAt: number }>;
   stomps: Map<string, { stage: number; id: string; until: number }>;
   powerups: Map<string, { stage: number; id: string; until: number }>;
+  bosses?: Map<string, LiveBossState>;
 };
 
 const globalForPresence = globalThis as unknown as {
@@ -95,11 +107,82 @@ export function recordRoomPowerUp(roomId: string, stage: number, id: string, unt
   const store = getRoomObstaclesStore();
   let state = store.get(roomId);
   if (!state) {
-    state = { crumbles: new Map(), stomps: new Map(), powerups: new Map() };
+    state = { crumbles: new Map(), stomps: new Map(), powerups: new Map(), bosses: new Map() };
     store.set(roomId, state);
   }
   if (!state.powerups) state.powerups = new Map();
   state.powerups.set(`${stage}:${id}`, { stage, id, until });
+}
+
+export function recordRoomBossHit(roomId: string, stage: number, bid: string, dmg: number, currentHp?: number) {
+  const store = getRoomObstaclesStore();
+  let state = store.get(roomId);
+  if (!state) {
+    state = { crumbles: new Map(), stomps: new Map(), powerups: new Map(), bosses: new Map() };
+    store.set(roomId, state);
+  }
+  if (!state.bosses) state.bosses = new Map();
+  const key = `${stage}:${bid}`;
+  const existing = state.bosses.get(key);
+  const hp = typeof currentHp === 'number' ? Math.max(0, currentHp) : existing ? Math.max(0, existing.hp - dmg) : Math.max(0, 50 - dmg);
+  const maxHp = existing?.maxHp ?? Math.max(hp, 50);
+  const alive = hp > 0;
+  state.bosses.set(key, {
+    stage,
+    bid,
+    hp,
+    maxHp,
+    alive,
+    x: existing?.x,
+    dir: existing?.dir,
+    updatedAt: Date.now(),
+  });
+}
+
+export function recordRoomBossSync(
+  roomId: string,
+  stage: number,
+  bid: string,
+  hp: number,
+  maxHp: number,
+  alive: boolean,
+  x?: number,
+  dir?: number,
+) {
+  const store = getRoomObstaclesStore();
+  let state = store.get(roomId);
+  if (!state) {
+    state = { crumbles: new Map(), stomps: new Map(), powerups: new Map(), bosses: new Map() };
+    store.set(roomId, state);
+  }
+  if (!state.bosses) state.bosses = new Map();
+  state.bosses.set(`${stage}:${bid}`, {
+    stage,
+    bid,
+    hp: Math.max(0, hp),
+    maxHp: Math.max(hp, maxHp),
+    alive,
+    x,
+    dir,
+    updatedAt: Date.now(),
+  });
+}
+
+export function recordRoomBossDied(roomId: string, stage: number) {
+  const store = getRoomObstaclesStore();
+  let state = store.get(roomId);
+  if (!state) {
+    state = { crumbles: new Map(), stomps: new Map(), powerups: new Map(), bosses: new Map() };
+    store.set(roomId, state);
+  }
+  if (!state.bosses) state.bosses = new Map();
+  for (const b of state.bosses.values()) {
+    if (b.stage === stage) {
+      b.hp = 0;
+      b.alive = false;
+      b.updatedAt = Date.now();
+    }
+  }
 }
 
 export function getLiveRoomObstacles(roomId: string) {
@@ -132,7 +215,21 @@ export function getLiveRoomObstacles(roomId: string) {
       }
     }
   }
-  return { crumbles, stomps, powerups };
+  const bosses: { stage: number; bid: string; hp: number; maxHp: number; alive: boolean; x?: number; dir?: number }[] = [];
+  if (state.bosses) {
+    for (const b of state.bosses.values()) {
+      bosses.push({
+        stage: b.stage,
+        bid: b.bid,
+        hp: b.hp,
+        maxHp: b.maxHp,
+        alive: b.alive,
+        x: b.x,
+        dir: b.dir,
+      });
+    }
+  }
+  return { crumbles, stomps, powerups, bosses };
 }
 
 function getRejoinRequestsStore(): Map<string, Map<string, RejoinRequest>> {

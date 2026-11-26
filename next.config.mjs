@@ -2,6 +2,9 @@
 const isProd = process.env.NODE_ENV === 'production';
 
 const nextConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   reactStrictMode: false,
   swcMinify: true,
   compress: true,

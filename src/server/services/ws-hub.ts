@@ -12,6 +12,9 @@ import {
   recordRoomCrumble,
   recordRoomPowerUp,
   recordRoomStomp,
+  recordRoomBossHit,
+  recordRoomBossSync,
+  recordRoomBossDied,
   removePresence,
   touchPresence,
   updateLivePlayerPosition,
@@ -405,6 +408,73 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
           weapon: typeof msg.weapon === 'string' ? msg.weapon : undefined,
           shooterRole: typeof msg.shooterRole === 'string' ? msg.shooterRole : client.role,
           shooterId: typeof msg.shooterId === 'string' ? msg.shooterId : client.userId,
+        },
+        client.userId,
+        client.id,
+      );
+    } else if (op === 'boss_hit' && typeof msg.bid === 'string' && typeof msg.dmg === 'number') {
+      const currentHp = typeof msg.hp === 'number' ? msg.hp : undefined;
+      recordRoomBossHit(client.roomId, stg, msg.bid, msg.dmg, currentHp);
+      broadcastRoomEvent(
+        client.roomId,
+        {
+          t: 'obstacle',
+          op: 'boss_hit',
+          stg,
+          bid: msg.bid,
+          dmg: msg.dmg,
+          hp: currentHp,
+        },
+        client.userId,
+        client.id,
+      );
+    } else if (op === 'boss_died') {
+      recordRoomBossDied(client.roomId, stg);
+      broadcastRoomEvent(
+        client.roomId,
+        {
+          t: 'obstacle',
+          op: 'boss_died',
+          stg,
+        },
+        client.userId,
+        client.id,
+      );
+    } else if (op === 'boss_sync' && typeof msg.bid === 'string' && typeof msg.hp === 'number') {
+      const maxHp = typeof msg.maxHp === 'number' ? msg.maxHp : msg.hp;
+      const alive = typeof msg.alive === 'boolean' ? msg.alive : msg.hp > 0;
+      const posX = typeof msg.x === 'number' ? msg.x : undefined;
+      const dirX = typeof msg.dir === 'number' ? msg.dir : undefined;
+      recordRoomBossSync(client.roomId, stg, msg.bid, msg.hp, maxHp, alive, posX, dirX);
+      broadcastRoomEvent(
+        client.roomId,
+        {
+          t: 'obstacle',
+          op: 'boss_sync',
+          stg,
+          bid: msg.bid,
+          hp: msg.hp,
+          maxHp,
+          alive,
+          x: posX,
+          dir: dirX,
+        },
+        client.userId,
+        client.id,
+      );
+    } else if (op === 'boss_spit' && typeof msg.bid === 'string' && typeof msg.pid === 'string') {
+      broadcastRoomEvent(
+        client.roomId,
+        {
+          t: 'obstacle',
+          op: 'boss_spit',
+          stg,
+          bid: msg.bid,
+          pid: msg.pid,
+          x: typeof msg.x === 'number' ? msg.x : 0,
+          y: typeof msg.y === 'number' ? msg.y : 0,
+          vx: typeof msg.vx === 'number' ? msg.vx : 0,
+          vy: typeof msg.vy === 'number' ? msg.vy : 0.0025,
         },
         client.userId,
         client.id,

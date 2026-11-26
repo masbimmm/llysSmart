@@ -1,3 +1,4 @@
+import { getLiveShopPrices } from '@/server/services/shop-service';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { eq, asc, inArray, and } from 'drizzle-orm';
@@ -143,6 +144,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
     const answeredQuestionIds = Object.keys(answerResults);
 
+    const effectiveEquipped = user.equippedBody ?? 'cat';
+    const effectiveAvatar = effectiveEquipped === 'cat'
+      ? (user.avatar?.startsWith('cat') ? user.avatar : 'cat-blue')
+      : (user.equippedBody || user.avatar || 'cat-blue');
+
     return ok({
       profile: {
         id: user.id,
@@ -150,10 +156,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         username: user.username,
         fullName: user.fullName,
         role: user.role,
-        avatar: user.avatar,
+        avatar: effectiveAvatar,
         totalPoints: user.totalPoints,
         totalStars: user.totalStars,
+        unlockedBodies: user.unlockedBodies ? JSON.parse(user.unlockedBodies) : ['cat'],
+        equippedBody: effectiveEquipped,
       },
+      shopPrices: await getLiveShopPrices(),
       room,
       questions: levelQs,
       chatCursor: chatSync.chatCursor,
@@ -200,6 +209,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     const { status } = statusSchema.parse(body);
+    const existing = await getRoom(id);
+    if (existing.status === 'completed' && status !== 'completed' && user.role !== 'admin') {
+      return fail('Hanya administrator yang dapat mengaktifkan kembali ruang game yang sudah selesai', 403);
+    }
     const room = await updateRoomStatus(id, user.id, status);
     setLiveRoomStatus(id, status);
     invalidateRoomSyncCache(id);
