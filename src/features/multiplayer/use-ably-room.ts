@@ -115,7 +115,8 @@ export type RoomCommandEvent =
   | { op: 'pvp_mode'; value: boolean }
   | { op: 'mirror_question_state'; userId: string; qid: string | null; selected?: string; isSubmitted?: boolean; isCorrect?: boolean }
   | { op: 'shop_prices_update'; prices: unknown }
-  | { op: 'reset_items'; itemType: 'body' | 'tag' | 'color' | 'all'; targetId: string };
+  | { op: 'reset_items'; itemType: 'body' | 'tag' | 'color' | 'all'; targetId: string }
+  | { op: 'change_map'; stageOrder: number | 'all'; newMapTheme: number; selectedStages: number[]; byName?: string };
 
 type RealtimeCallbacks = {
   onDirectMove?: (player: PresencePlayer) => void;
@@ -414,7 +415,7 @@ export function useAblyRoom(
 
       if (t === 'cmd') {
         const op = msg.op;
-        if (typeof op === 'string' && (op === 'rope_all_clear' || op === 'shop_prices_update' || typeof msg.targetId === 'string')) {
+        if (typeof op === 'string' && (op === 'rope_all_clear' || op === 'shop_prices_update' || op === 'change_map' || typeof msg.targetId === 'string')) {
           callbacksRef.current?.onCommandEvent?.(msg as unknown as RoomCommandEvent);
         }
         return;

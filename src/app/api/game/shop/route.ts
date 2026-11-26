@@ -65,6 +65,10 @@ export async function POST(req: NextRequest) {
       const bodyKey = normalizeBodyName(rawBody);
       if (!bodyKey) return fail('Nama karakter tidak valid', 400);
 
+      if (prices.hiddenBodies?.includes(bodyKey) && dbUser.role !== 'admin') {
+        return fail('Karakter ini sedang disembunyikan oleh Administrator (Only Admin).', 403);
+      }
+
       const canonicalAvatar = bodyKey === 'cat' ? 'cat-blue' : bodyKey;
 
       if (unlockedBodies.includes(bodyKey)) {
@@ -133,6 +137,10 @@ export async function POST(req: NextRequest) {
       const bodyKey = normalizeBodyName(rawBody);
       if (!bodyKey) return fail('Nama karakter tidak valid', 400);
 
+      if (prices.hiddenBodies?.includes(bodyKey) && dbUser.role !== 'admin') {
+        return fail('Karakter ini sedang disembunyikan oleh Administrator (Only Admin).', 403);
+      }
+
       if (!isStaff && !unlockedBodies.includes(bodyKey)) {
         return fail('Karakter ini belum kamu beli. Beli terlebih dahulu menggunakan poin!', 400);
       }
@@ -165,6 +173,17 @@ export async function POST(req: NextRequest) {
       const rawTitle = typeof body.title === 'string' ? body.title : typeof body.tag === 'string' ? body.tag : '';
       const title = rawTitle.trim().slice(0, 24);
       if (!title) return fail('Gelar/tag tidak boleh kosong.', 400);
+
+      // Repeat Buy Check: jika sudah memakai tag yang sama, tidak perlu potong poin lagi
+      if (dbUser.tag1 && dbUser.tag1.trim() === title) {
+        return ok({
+          ok: true,
+          alreadyOwned: true,
+          tag1: title,
+          totalPoints: dbUser.totalPoints,
+          pointsDeducted: 0,
+        });
+      }
 
       const cost = isStaff ? 0 : (prices.tag ?? 5000);
       if (dbUser.totalPoints < cost) {
@@ -199,23 +218,39 @@ export async function POST(req: NextRequest) {
     if (action === 'buy_color') {
       const part = body.part as 'body' | 'tag1' | 'nick';
       const mode = body.mode as 'static' | 'rgb';
-      const colorVal = typeof body.color === 'string' ? body.color.trim() : '#ffd43b';
+      const colorVal = typeof body.color === 'string' && body.color.trim()
+        ? body.color.trim()
+        : typeof body.colorVal === 'string' && body.colorVal.trim()
+          ? body.colorVal.trim()
+          : '#ffd43b';
 
       if (!['body', 'tag1', 'nick'].includes(part)) return fail('Bagian warna tidak valid.', 400);
       if (!['static', 'rgb'].includes(mode)) return fail('Mode warna tidak valid.', 400);
-
-      const priceKey = `${part}_${mode}`;
-      const cost = isStaff ? 0 : (prices.color[priceKey] ?? (mode === 'rgb' ? 5000 : 1000));
-      if (dbUser.totalPoints < cost) {
-        return fail(`Poin tidak cukup (${dbUser.totalPoints} / ${cost} Poin dibutuhkan).`, 400);
-      }
 
       let curColors: Record<string, string> = {};
       try {
         if (dbUser.customColors) curColors = JSON.parse(dbUser.customColors);
       } catch { }
 
-      curColors[part] = mode === 'rgb' ? 'rgb' : colorVal;
+      const targetValue = mode === 'rgb' ? 'rgb' : colorVal;
+      // Repeat Buy Check: jika warna part ini sudah sama dengan pilihan, jangan potong poin lagi
+      if (curColors[part] && curColors[part].toLowerCase() === targetValue.toLowerCase()) {
+        return ok({
+          ok: true,
+          alreadyOwned: true,
+          customColors: curColors,
+          totalPoints: dbUser.totalPoints,
+          pointsDeducted: 0,
+        });
+      }
+
+      const priceKey = `${part}_${mode}`;
+      const cost = isStaff ? 0 : (prices.color[priceKey] ?? prices.color[`body_${mode}`] ?? (mode === 'rgb' ? 5000 : 1000));
+      if (dbUser.totalPoints < cost) {
+        return fail(`Poin tidak cukup (${dbUser.totalPoints} / ${cost} Poin dibutuhkan).`, 400);
+      }
+
+      curColors[part] = targetValue;
       const newPoints = dbUser.totalPoints - cost;
 
       await db
@@ -240,7 +275,90 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // 5. SET SHOP PRICE (ADMIN ONLY)
+    // 5. TOGGLE HIDE / UNHIDE ITEM (ADMIN ONLY)
+    // =========================================================================
+    if (action === 'toggle_hide') {
+      if (dbUser.role !== 'admin') {
+        return fail('Hanya Administrator yang dapat menyembunyikan atau menampilkan item toko.', 403);
+      }
+      const itemKey = normalizeBodyName(typeof body.itemId === 'string' ? body.itemId : typeof body.body === 'string' ? body.body : '');
+      if (!itemKey || itemKey === 'cat') {
+        return fail('Karakter default tidak dapat disembunyikan.', 400);
+      }
+
+      const currentPrices = await getLiveShopPrices();
+      const hidden = new Set(currentPrices.hiddenBodies || []);
+      let isHiddenNow = false;
+      if (hidden.has(itemKey)) {
+        hidden.delete(itemKey);
+        isHiddenNow = false;
+      } else {
+        hidden.add(itemKey);
+        isHiddenNow = true;
+      }
+      currentPrices.hiddenBodies = Array.from(hidden);
+      await saveLiveShopPrices(currentPrices);
+
+      if (roomId) {
+        void publishToRoom(roomId, 'cmd', { op: 'shop_prices_update', prices: currentPrices });
+      }
+
+      return ok({
+        ok: true,
+        itemId: itemKey,
+        isHidden: isHiddenNow,
+        hiddenBodies: currentPrices.hiddenBodies,
+        prices: currentPrices,
+        message: isHiddenNow
+          ? `Karakter '${itemKey}' berhasil disembunyikan dari toko (Guru & Siswa tidak dapat melihat/menggunakan).`
+          : `Karakter '${itemKey}' berhasil ditampilkan kembali di toko.`,
+      });
+    }
+
+    // =========================================================================
+    // 6. EDIT ITEM NAME, PRICE, AND DESCRIPTION (ADMIN ONLY)
+    // =========================================================================
+    if (action === 'edit_item') {
+      if (dbUser.role !== 'admin') {
+        return fail('Hanya Administrator yang dapat mengedit nama, deskripsi, dan harga item toko.', 403);
+      }
+      const rawId = typeof body.itemId === 'string' ? body.itemId : typeof body.body === 'string' ? body.body : '';
+      const itemId = normalizeBodyName(rawId);
+      if (!itemId) return fail('ID item tidak valid.', 400);
+
+      const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 40) : undefined;
+      const desc = typeof body.desc === 'string' && body.desc.trim() ? body.desc.trim().slice(0, 160) : undefined;
+      const price = typeof body.price === 'number' && Number.isFinite(body.price) ? Math.max(0, Math.round(body.price)) : undefined;
+
+      const currentPrices = await getLiveShopPrices();
+      if (!currentPrices.bodyMetadata) currentPrices.bodyMetadata = {};
+
+      currentPrices.bodyMetadata[itemId] = {
+        ...(currentPrices.bodyMetadata[itemId] || {}),
+        ...(name !== undefined ? { name } : {}),
+        ...(desc !== undefined ? { desc } : {}),
+      };
+
+      if (price !== undefined) {
+        currentPrices.body[itemId] = price;
+        if (itemId === 'ulat') currentPrices.body.cacing = price;
+      }
+
+      await saveLiveShopPrices(currentPrices);
+      if (roomId) {
+        void publishToRoom(roomId, 'cmd', { op: 'shop_prices_update', prices: currentPrices });
+      }
+
+      return ok({
+        ok: true,
+        itemId,
+        prices: currentPrices,
+        message: `Karakter [${name || itemId}] berhasil diperbarui!`,
+      });
+    }
+
+    // =========================================================================
+    // 7. SET SHOP PRICE (ADMIN ONLY)
     // =========================================================================
     if (action === 'set_price') {
       if (!isStaff) return fail('Hanya Administrator atau Guru yang dapat mengatur harga toko.', 403);
@@ -257,8 +375,15 @@ export async function POST(req: NextRequest) {
         currentPrices.body[bodyKey] = price;
         if (bodyKey === 'ulat') currentPrices.body.cacing = price;
       } else if (category === 'color') {
-        const key = `${item}_${mode}`;
+        const itemKey = item || 'body';
+        const key = `${itemKey}_${mode}`;
         currentPrices.color[key] = price;
+        // Sinkronkan harga ke seluruh bagian warna (tubuh, tag, nick) agar seragam
+        if (mode === 'static' || mode === 'rgb') {
+          currentPrices.color[`body_${mode}`] = price;
+          currentPrices.color[`tag1_${mode}`] = price;
+          currentPrices.color[`nick_${mode}`] = price;
+        }
       }
 
       await saveLiveShopPrices(currentPrices);
@@ -277,9 +402,16 @@ export async function POST(req: NextRequest) {
     // 6. RESET ITEMS (ADMIN ONLY)
     // =========================================================================
     if (action === 'reset_items') {
-      if (!isStaff) return fail('Hanya Administrator atau Guru yang dapat mereset item.', 403);
+      if (dbUser.role !== 'admin') return fail('Hanya Administrator yang dapat mereset item toko.', 403);
       const itemType = body.itemType as 'body' | 'tag' | 'color' | 'all';
-      const targetQuery = typeof body.target === 'string' ? body.target.trim().toLowerCase() : 'all';
+      if (!itemType || !['body', 'tag', 'color', 'all'].includes(itemType)) {
+        return fail('Parameter itemType wajib diisi (body, tag, color, all).', 400);
+      }
+      const rawTarget = typeof body.target === 'string' ? body.target.trim().toLowerCase() : '';
+      if (!rawTarget) {
+        return fail('Parameter target wajib diisi ("all" atau username spesifik).', 400);
+      }
+      const targetQuery = rawTarget;
 
       if (targetQuery === 'all') {
         // Reset SEMUA user

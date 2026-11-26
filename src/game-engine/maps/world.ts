@@ -1368,17 +1368,17 @@ export type StageDefinition = {
 };
 
 export const STAGE_TIERS: StageTier[] = [
-  { id: 1, name: 'Tier 1: Rintangan Mudah (Stage 1-5)', color: 'border-emerald-300 bg-emerald-50/60 text-emerald-900', badge: 'bg-emerald-600 text-white' },
-  { id: 2, name: 'Tier 2: Rintangan Sedang (Stage 6-10)', color: 'border-amber-300 bg-amber-50/60 text-amber-900', badge: 'bg-amber-600 text-white' },
-  { id: 3, name: 'Tier 3: Rintangan Sulit (Stage 11-15)', color: 'border-rose-300 bg-rose-50/60 text-rose-900', badge: 'bg-rose-600 text-white' },
-  { id: 4, name: 'Tier 4: Rintangan Gak Masuk Akal (Stage 16-20)', color: 'border-purple-300 bg-purple-50/60 text-purple-900', badge: 'bg-purple-600 text-white' },
+  { id: 1, name: 'Tier 1: Rintangan Mudah (Stage 1–5)', color: 'border-emerald-300 bg-emerald-50/60 text-emerald-900', badge: 'bg-emerald-600 text-white' },
+  { id: 2, name: 'Tier 2: Rintangan Sedang (Stage 6–10)', color: 'border-amber-300 bg-amber-50/60 text-amber-900', badge: 'bg-amber-600 text-white' },
+  { id: 3, name: 'Tier 3: Rintangan Sulit (Stage 11–15)', color: 'border-rose-300 bg-rose-50/60 text-rose-900', badge: 'bg-rose-600 text-white' },
+  { id: 4, name: 'Tier 4: Rintangan Ekstrem (Stage 16–20)', color: 'border-purple-300 bg-purple-50/60 text-purple-900', badge: 'bg-purple-600 text-white' },
 ];
 
 export const STAGE_DEFINITIONS: StageDefinition[] = [
   // TIER 1: MUDAH (1 - 5)
   { id: 1, tier: 1, icon: '🏞️', shortName: 'Stage 1', name: 'Lembah Kampus', theme: 'Dasar & Jalur Hijau', feature: 'Santai' },
   { id: 2, tier: 1, icon: '🌅', shortName: 'Stage 2', name: 'Menara Sunset', theme: 'Sunset & Tangga Batu', feature: 'Patroli Virus' },
-  { id: 3, tier: 1, icon: '💨', shortName: 'Stage 3', name: 'Lembah Kipas Angin', theme: 'Hembusan Angin ke Langit', feature: '💨 Kipas Angin' },
+  { id: 3, tier: 1, icon: '💨', shortName: 'Stage 3', name: 'Lembah Kipas Angin', theme: 'Hembusan Angin ke Langit', feature: 'Kipas Angin' },
   { id: 4, tier: 1, icon: '🎈', shortName: 'Stage 4', name: 'Bukit Balon Udara', theme: 'Awan & Super Trampolin', feature: 'Trampolin' },
   { id: 5, tier: 1, icon: '⚡', shortName: 'Stage 5', name: 'Galaksi Cyber Pemula', theme: 'Grid Cyber & Senjata Laser', feature: 'Laser Blaster' },
 
@@ -1387,21 +1387,21 @@ export const STAGE_DEFINITIONS: StageDefinition[] = [
   { id: 7, tier: 2, icon: '🌿', shortName: 'Stage 7', name: 'Hutan Neon Biolumin', theme: 'Rimba Neon & Spora Biolumin', feature: 'Pijakan Rapuh' },
   { id: 8, tier: 2, icon: '⚙️', shortName: 'Stage 8', name: 'Kota Roda Gigi', theme: 'Conveyor Sabuk & Mesin Gir', feature: 'Conveyor Belt' },
   { id: 9, tier: 2, icon: '❄️', shortName: 'Stage 9', name: 'Samudra Es', theme: 'Es Licin & Runtuhan Gletser', feature: 'Pijakan Licin' },
-  { id: 10, tier: 2, icon: '✈️', shortName: 'Stage 10', name: 'Penerbangan Awan', theme: 'Naik Pesawat Melintasi Awan!', feature: '✈️ Naik Pesawat' },
+  { id: 10, tier: 2, icon: '✈️', shortName: 'Stage 10', name: 'Penerbangan Awan', theme: 'Naik Pesawat Melintasi Awan!', feature: 'Pesawat Tempur' },
 
   // TIER 3: SULIT (11 - 15)
-  { id: 11, tier: 3, icon: '⛈️', shortName: 'Stage 11', name: 'Badai Petir Angkasa', theme: 'Awan Petir Mematikan & Kipas', feature: '⚡ Badai Petir' },
+  { id: 11, tier: 3, icon: '⛈️', shortName: 'Stage 11', name: 'Badai Petir Angkasa', theme: 'Awan Petir Mematikan & Kipas', feature: 'Badai Petir' },
   { id: 12, tier: 3, icon: '🏜️', shortName: 'Stage 12', name: 'Gurun Reruntuhan', theme: 'Pasir Hisap & Jurang Terjal', feature: 'Pasir Hisap' },
-  { id: 13, tier: 3, icon: '🛸', shortName: 'Stage 13', name: 'Lab Drone Pengintai', theme: 'Patroli Drone Udara & Laser', feature: '🛸 Drone Udara' },
+  { id: 13, tier: 3, icon: '🛸', shortName: 'Stage 13', name: 'Lab Drone Pengintai', theme: 'Patroli Drone Udara & Laser', feature: 'Drone Udara' },
   { id: 14, tier: 3, icon: '🧪', shortName: 'Stage 14', name: 'Mutasi Biohazard', theme: 'Lumpur Beracun & Mutan Virus', feature: 'Biohazard' },
   { id: 15, tier: 3, icon: '🌋', shortName: 'Stage 15', name: 'Benteng Magma Neraka', theme: 'Lautan Lahar Luas & Lift Sempit', feature: 'Lahar Neraka' },
 
-  // TIER 4: GAK MASUK AKAL / EKSTREM (16 - 20)
-  { id: 16, tier: 4, icon: '🛩️', shortName: 'Stage 16', name: 'Formasi Tempur Pesawat', theme: 'Parkour Pesawat Cepat & Petir', feature: '🛩️ Parkour Pesawat' },
-  { id: 17, tier: 4, icon: '🤖', shortName: 'Stage 17', name: 'Koridor Robot Mecha', theme: 'Patroli Mecha & Conveyor Maut', feature: '🤖 Robot Mecha' },
+  // TIER 4: EKSTREM (16 - 20)
+  { id: 16, tier: 4, icon: '🛩️', shortName: 'Stage 16', name: 'Formasi Tempur Pesawat', theme: 'Parkour Pesawat Cepat & Petir', feature: 'Parkour Pesawat' },
+  { id: 17, tier: 4, icon: '🤖', shortName: 'Stage 17', name: 'Koridor Robot Mecha', theme: 'Patroli Mecha & Conveyor Maut', feature: 'Robot Mecha' },
   { id: 18, tier: 4, icon: '🌪️', shortName: 'Stage 18', name: 'Dimensi Void Berputar', theme: '85% Pijakan Runtuh & Jurang Void', feature: 'Full Crumble' },
   { id: 19, tier: 4, icon: '🦠', shortName: 'Stage 19', name: 'Neraka Virus Matrix', theme: 'Drone Swarm & Semburan Api Cepat', feature: 'Virus Swarm' },
-  { id: 20, tier: 4, icon: '👑', shortName: 'Stage 20', name: 'Tahta Void Overlord', theme: 'Pesawat, Kipas, Petir & Void God!', feature: '👑 OVERLORD FINAL' },
+  { id: 20, tier: 4, icon: '👑', shortName: 'Stage 20', name: 'Tahta Void Overlord', theme: 'Pesawat, Kipas, Petir & Void God!', feature: 'Final Boss Overlord' },
 ];
 
 // =========================================================================

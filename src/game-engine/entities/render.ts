@@ -24,6 +24,14 @@ const AVATAR_COLORS: Record<string, { body: string; belly: string; ear: string }
   'ayam': { body: '#f8fafc', belly: '#e2e8f0', ear: '#ef4444' },
   'sapi': { body: '#ffffff', belly: '#f472b6', ear: '#1e293b' },
   'domba': { body: '#f1f5f9', belly: '#e2e8f0', ear: '#334155' },
+  'naga': { body: '#0f172a', belly: '#06b6d4', ear: '#38bdf8' },
+  'hacker': { body: '#090d16', belly: '#22c55e', ear: '#4ade80' },
+  'kangguru': { body: '#d97706', belly: '#fef3c7', ear: '#f472b6' },
+  'pinguin': { body: '#0f172a', belly: '#f8fafc', ear: '#f97316' },
+  'penguin': { body: '#0f172a', belly: '#f8fafc', ear: '#f97316' },
+  'capybara': { body: '#78350f', belly: '#d97706', ear: '#ea580c' },
+  'bebek': { body: '#facc15', belly: '#fef08a', ear: '#f97316' },
+  'duck': { body: '#facc15', belly: '#fef08a', ear: '#f97316' },
 };
 
 function hashHue(seed: string) {
@@ -83,7 +91,7 @@ function drawCat(
   const bodySpec = hazard?.colors?.body;
   const bodyOverride = bodySpec ? toHexColor(resolvePlayerColor(bodySpec, now) ?? bodySpec) : null;
   const effRole = role;
-  const isCustomAnimal = avatar === 'virus' || avatar === 'cacing' || avatar === 'ulat' || avatar === 'burung' || avatar === 'ayam' || avatar === 'sapi' || avatar === 'domba';
+  const isCustomAnimal = avatar === 'virus' || avatar === 'cacing' || avatar === 'ulat' || avatar === 'burung' || avatar === 'ayam' || avatar === 'sapi' || avatar === 'domba' || avatar === 'naga' || avatar === 'dragon' || avatar === 'hacker' || avatar === 'kangguru' || avatar === 'kangaroo' || avatar === 'pinguin' || avatar === 'penguin' || avatar === 'capybara' || avatar === 'bebek' || avatar === 'duck';
   const colors = bodyOverride
     ? { body: bodyOverride, belly: bodyOverride, ear: bodyOverride }
     : isFrozen
@@ -330,83 +338,221 @@ function drawCat(
       ctx.arc(headX - 1, headY + 3.5, 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
-  } else if (avatar === 'burung') {
+  } else if (avatar === 'pinguin' || avatar === 'penguin' || avatar === 'burung') {
     // ----------------------------------------------------
-    // BURUNG (Flapping Wings in Air, Stepping Feet)
+    // PINGUIN PERUT LUNCUR (Belly Slide & Flapping Waddle)
     // ----------------------------------------------------
-    const flap = isAirborne ? Math.sin(now * 0.035) * 16 : isMoving ? Math.sin(now * 0.02) * 5 : 0;
-    const bodyCx = w * 0.45;
-    const bodyCy = h * 0.62;
-    const footStep = isMoving ? Math.sin(now * 0.018) * 4 : 0;
+    const isSliding = isAirborne || (isMoving && Math.abs(hazard?.velocity?.vx ?? 0) > 1.2);
+    const pgBody = colors.body || '#0f172a';
+    const pgBelly = colors.belly || '#f8fafc';
+    const pgBeak = colors.ear || '#f97316';
+    const pgScarf = '#ef4444';
 
-    // Feet
-    ctx.strokeStyle = '#ea580c';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(bodyCx - 4, bodyCy + 10); ctx.lineTo(bodyCx - 4 - footStep, bodyCy + 15);
-    ctx.moveTo(bodyCx + 4, bodyCy + 10); ctx.lineTo(bodyCx + 4 + footStep, bodyCy + 15);
-    ctx.stroke();
+    if (isSliding) {
+      // BELLY SLIDE MODE! (Meluncur tengkurap pakai perut)
+      const slideY = h * 0.70;
+      const slideX = w * 0.44;
+      const slideTilt = 0.18 + Math.sin(now * 0.02) * 0.05;
 
-    // Tail
-    ctx.fillStyle = colors.ear || '#0284c7';
-    ctx.beginPath();
-    ctx.moveTo(bodyCx - 10, bodyCy);
-    ctx.lineTo(bodyCx - 18, bodyCy - 4);
-    ctx.lineTo(bodyCx - 16, bodyCy + 4);
-    ctx.closePath();
-    ctx.fill();
+      ctx.save();
+      ctx.translate(slideX, slideY);
+      ctx.rotate(slideTilt);
 
-    // Plump body
-    ctx.fillStyle = colors.body;
-    ctx.strokeStyle = '#0369a1';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(bodyCx, bodyCy, 12, 11, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+      // Frost / snow glide particles behind belly
+      ctx.fillStyle = 'rgba(224, 242, 254, 0.7)';
+      for (let i = 0; i < 4; i += 1) {
+        const sparkPhase = ((now * 0.02 + i * 0.25) % 1);
+        ctx.beginPath();
+        ctx.arc(-14 - sparkPhase * 12, 6 + Math.sin(now * 0.05 + i) * 2, 2.5 * (1 - sparkPhase), 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-    // Belly
-    ctx.fillStyle = colors.belly || '#bae6fd';
-    ctx.beginPath();
-    ctx.ellipse(bodyCx + 2, bodyCy + 3, 7, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Flapping wing
-    ctx.save();
-    ctx.translate(bodyCx - 2, bodyCy - 1);
-    ctx.rotate((flap * Math.PI) / 180);
-    ctx.fillStyle = colors.ear || '#0284c7';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 7, 4.5, -0.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // Beak
-    ctx.fillStyle = '#f97316';
-    ctx.beginPath();
-    ctx.moveTo(bodyCx + 10, bodyCy - 3);
-    ctx.lineTo(bodyCx + 18, bodyCy - 1);
-    ctx.lineTo(bodyCx + 10, bodyCy + 2);
-    ctx.closePath();
-    ctx.fill();
-
-    // Eye
-    if (isDying) {
-      ctx.strokeStyle = '#111827';
+      // Torpedo Shaped Body (Horizontal)
+      ctx.fillStyle = pgBody;
+      ctx.strokeStyle = '#020617';
       ctx.lineWidth = 1.8;
       ctx.beginPath();
-      ctx.moveTo(bodyCx + 4, bodyCy - 5); ctx.lineTo(bodyCx + 8, bodyCy - 1);
-      ctx.moveTo(bodyCx + 8, bodyCy - 5); ctx.lineTo(bodyCx + 4, bodyCy - 1);
+      ctx.ellipse(0, 0, 15, 9.5, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.stroke();
-    } else {
-      ctx.fillStyle = '#111827';
+
+      // Big Round White Belly underneath
+      ctx.fillStyle = pgBelly;
       ctx.beginPath();
-      ctx.arc(bodyCx + 6, bodyCy - 3, 2.5, 0, Math.PI * 2);
+      ctx.ellipse(1, 2.5, 11, 6.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Back Tail
+      ctx.fillStyle = pgBody;
+      ctx.beginPath();
+      ctx.moveTo(-14, -2); ctx.lineTo(-20, 0); ctx.lineTo(-14, 3);
+      ctx.closePath();
+      ctx.fill();
+
+      // Flippers held back like airplane wings
+      const wingVibe = Math.sin(now * 0.04) * 2;
+      ctx.fillStyle = pgBody;
+      ctx.strokeStyle = '#020617';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(-2, -5 + wingVibe * 0.2, 8, 3.5, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Tiny feet trailing behind
+      ctx.fillStyle = pgBeak;
+      ctx.beginPath();
+      ctx.ellipse(-13, 4, 3.5, 2, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Head & Scarf
+      ctx.fillStyle = pgScarf;
+      roundRect(ctx, 5, -8, 5, 14, 2.5);
+      ctx.fill();
+      const scarfWave = Math.sin(now * 0.025) * 4;
+      ctx.beginPath();
+      ctx.moveTo(6, -6);
+      ctx.quadraticCurveTo(-2, -12 + scarfWave, -12, -8 + scarfWave * 1.2);
+      ctx.lineTo(-12, -4 + scarfWave * 1.2);
+      ctx.quadraticCurveTo(-1, -8 + scarfWave, 6, -2);
+      ctx.closePath();
+      ctx.fill();
+
+      // Beak
+      ctx.fillStyle = pgBeak;
+      ctx.beginPath();
+      ctx.moveTo(13, -2); ctx.lineTo(19, 0); ctx.lineTo(13, 2.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Focused happy sliding eye
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(10, -3.5, 2, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(bodyCx + 7, bodyCy - 4, 1, 0, Math.PI * 2);
+      ctx.arc(10.8, -4.2, 0.8, 0, Math.PI * 2);
       ctx.fill();
+
+      // Blush
+      ctx.fillStyle = 'rgba(251, 113, 133, 0.7)';
+      ctx.beginPath();
+      ctx.arc(8, 0, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    } else {
+      // WADDLE MODE! (Megal-megol gemoy kiri-kanan)
+      const waddleSpeed = isMoving ? 0.018 : 0.005;
+      const waddleAngle = isMoving ? Math.sin(now * waddleSpeed) * 0.22 : Math.sin(now * 0.004) * 0.05;
+      const waddleStep = isMoving ? Math.sin(now * waddleSpeed) * 4 : 0;
+      const pgCx = w * 0.44;
+      const pgCy = h * 0.62;
+
+      ctx.save();
+      ctx.translate(pgCx, pgCy);
+      ctx.rotate(waddleAngle);
+
+      // Webbed feet
+      ctx.fillStyle = pgBeak;
+      ctx.strokeStyle = '#c2410c';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(-5 - waddleStep * 0.5, 12 + (waddleStep > 0 ? -2 : 0), 4.5, 2.5, -0.1, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(5 + waddleStep * 0.5, 12 + (waddleStep < 0 ? -2 : 0), 4.5, 2.5, 0.1, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+
+      // Plump Egg-shaped Body
+      ctx.fillStyle = pgBody;
+      ctx.strokeStyle = '#020617';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 11.5, 13.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Marshmallow Snow-White Belly
+      ctx.fillStyle = pgBelly;
+      ctx.beginPath();
+      ctx.ellipse(2, 2, 7.5, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tiny Flapping Wings / Flippers
+      const wingFlap = isMoving ? Math.sin(now * 0.025) * 0.5 : Math.sin(now * 0.006) * 0.15;
+      ctx.save();
+      ctx.translate(-9, -2);
+      ctx.rotate(-0.3 - wingFlap);
+      ctx.fillStyle = pgBody;
+      ctx.beginPath();
+      ctx.ellipse(0, 4, 3, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(7, -1);
+      ctx.rotate(0.3 + wingFlap);
+      ctx.fillStyle = pgBody;
+      ctx.beginPath();
+      ctx.ellipse(0, 4, 3, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Cozy Red Knitted Scarf
+      ctx.fillStyle = pgScarf;
+      roundRect(ctx, -7, -7, 15, 4.5, 2);
+      ctx.fill();
+      const scarfFlut = Math.sin(now * 0.015) * 3;
+      ctx.beginPath();
+      ctx.moveTo(-4, -4);
+      ctx.quadraticCurveTo(-9, -2 + scarfFlut, -12, 5 + scarfFlut);
+      ctx.lineTo(-8, 6 + scarfFlut);
+      ctx.quadraticCurveTo(-6, -1 + scarfFlut, -1, -3);
+      ctx.closePath();
+      ctx.fill();
+
+      // Head
+      ctx.fillStyle = pgBody;
+      ctx.beginPath();
+      ctx.arc(3, -9, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Orange Beak
+      ctx.fillStyle = pgBeak;
+      ctx.beginPath();
+      ctx.moveTo(9, -10.5); ctx.lineTo(15, -8.5); ctx.lineTo(9, -6.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Big Sparkly Anime Eye
+      if (isDying) {
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(2, -11.5); ctx.lineTo(6, -7.5);
+        ctx.moveTo(6, -11.5); ctx.lineTo(2, -7.5);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(4.5, -9.5, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(4, -10.5, 1, 0, Math.PI * 2);
+        ctx.arc(5.5, -8.8, 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Rosy Cheek Blush
+      ctx.fillStyle = 'rgba(251, 113, 133, 0.7)';
+      ctx.beginPath();
+      ctx.arc(2.5, -6.5, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
     }
   } else if (avatar === 'ayam') {
     // ----------------------------------------------------
@@ -558,66 +704,1006 @@ function drawCat(
     ctx.beginPath();
     ctx.arc(cowX - 15, cowY + 8, 2, 0, Math.PI * 2);
     ctx.fill();
-  } else if (avatar === 'domba') {
+  } else if (avatar === 'capybara' || avatar === 'kapibara' || avatar === 'masbro' || avatar === 'domba') {
     // ----------------------------------------------------
-    // DOMBA (Super Fluffy Wool Cloud with Floppy Ears)
+    // CAPYBARA MASBRO (Chill Zen Capybara with Citrus Orange on Head)
     // ----------------------------------------------------
-    const shpX = w * 0.44;
-    const shpY = h * 0.62;
-    const shpStep = isMoving ? Math.sin(now * 0.018) * 3.5 : 0;
-    const bounce = isMoving ? Math.abs(Math.sin(now * 0.02)) * 2 : 0;
+    const cpBody = colors.body || '#78350f';
+    const cpMuzzle = colors.belly || '#d97706';
+    const cpOutline = '#451a03';
+    const cpX = w * 0.44;
+    const cpY = h * 0.62;
 
-    // Legs
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(shpX - 7 - shpStep, shpY + 8); ctx.lineTo(shpX - 7 - shpStep, shpY + 15);
-    ctx.moveTo(shpX - 2 + shpStep, shpY + 8); ctx.lineTo(shpX - 2 + shpStep, shpY + 15);
-    ctx.moveTo(shpX + 4 - shpStep, shpY + 8); ctx.lineTo(shpX + 4 - shpStep, shpY + 15);
-    ctx.moveTo(shpX + 9 + shpStep, shpY + 8); ctx.lineTo(shpX + 9 + shpStep, shpY + 15);
+    const cpTrot = isMoving ? Math.sin(now * 0.016) * 3 : 0;
+    const cpBob = isMoving ? Math.abs(Math.sin(now * 0.016)) * 1.5 : Math.sin(now * 0.004) * 0.6;
+
+    ctx.save();
+    ctx.translate(cpX, cpY - cpBob);
+
+    // 1. Sturdy 4-paw Little Legs
+    ctx.fillStyle = cpOutline;
+    roundRect(ctx, -10 - cpTrot, 8, 4, 7, 2);
+    ctx.fill();
+    roundRect(ctx, -4 + cpTrot, 8, 4, 7, 2);
+    ctx.fill();
+    roundRect(ctx, 4 - cpTrot, 8, 4, 7, 2);
+    ctx.fill();
+    roundRect(ctx, 9 + cpTrot, 8, 4, 7, 2);
+    ctx.fill();
+
+    // 2. Rectangular Chubby Barrel Body
+    ctx.fillStyle = cpBody;
+    ctx.strokeStyle = cpOutline;
+    ctx.lineWidth = 2;
+    roundRect(ctx, -12, -7, 22, 16, 8);
+    ctx.fill();
     ctx.stroke();
 
-    // Wool puffs
-    ctx.fillStyle = colors.body;
-    ctx.strokeStyle = '#cbd5e1';
-    ctx.lineWidth = 1.5;
-    const woolPuffs = [
-      { ox: -8, oy: -3, r: 8 },
-      { ox: 0, oy: -7, r: 8.5 },
-      { ox: 7, oy: -3, r: 8 },
-      { ox: -6, oy: 4, r: 7.5 },
-      { ox: 3, oy: 5, r: 8 },
-      { ox: 0, oy: 0, r: 9 },
-    ];
-    for (const puff of woolPuffs) {
+    // 3. Iconic Rectangular Big Snout & Head
+    const headX = 6;
+    const headY = -9;
+    ctx.fillStyle = cpBody;
+    roundRect(ctx, headX - 4, headY - 4, 15, 13, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    // Muzzle highlight
+    ctx.fillStyle = cpMuzzle;
+    roundRect(ctx, headX + 3, headY + 1, 8, 7.5, 3.5);
+    ctx.fill();
+
+    // Nostrils
+    ctx.fillStyle = '#261105';
+    ctx.beginPath();
+    ctx.ellipse(headX + 9, headY + 3.5, 1, 1.4, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Little twitching ear
+    const earTwitch = Math.sin(now * 0.007) > 0.8 ? Math.sin(now * 0.07) * 0.25 : 0;
+    ctx.save();
+    ctx.translate(headX - 1, headY - 4);
+    ctx.rotate(earTwitch);
+    ctx.fillStyle = cpOutline;
+    ctx.beginPath();
+    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Peaceful Zen Half-Lidded Eye (- _ -)
+    if (isDying) {
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
-      ctx.arc(shpX + puff.ox, shpY + puff.oy - bounce, puff.r, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(headX + 1, headY - 1); ctx.lineTo(headX + 5, headY + 2);
+      ctx.moveTo(headX + 5, headY - 1); ctx.lineTo(headX + 1, headY + 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = '#1e1b4b';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(headX, headY);
+      ctx.quadraticCurveTo(headX + 2.5, headY + 1.8, headX + 5, headY);
+      ctx.stroke();
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(headX + 0.5, headY - 2.5);
+      ctx.lineTo(headX + 4.5, headY - 2.5);
       ctx.stroke();
     }
 
-    // Dark face
-    const shpFaceX = shpX + 8;
-    const shpFaceY = shpY - 2 - bounce;
-    ctx.fillStyle = '#334155';
+    // Soft Blush
+    ctx.fillStyle = 'rgba(251, 146, 60, 0.6)';
     ctx.beginPath();
-    ctx.ellipse(shpFaceX, shpFaceY, 6, 7, 0.2, 0, Math.PI * 2);
+    ctx.arc(headX + 2.5, headY + 4, 2, 0, Math.PI * 2);
     ctx.fill();
 
-    // Ear
+    // 4. THE ICONIC CITRUS ORANGE ON HEAD (Jeruk Santang Membal)
+    const orangeBob = isMoving ? Math.sin(now * 0.016) * 1.5 : Math.sin(now * 0.004) * 0.6;
+    const orangeX = headX + 2;
+    const orangeY = headY - 8.5 + orangeBob;
+
+    // Citrus shadow
+    ctx.fillStyle = 'rgba(69, 26, 3, 0.3)';
     ctx.beginPath();
-    ctx.ellipse(shpFaceX - 4, shpFaceY - 4, 2.5, 5, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(orangeX, headY - 4.5, 3.5, 1.2, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eye
+    // Bright Orange Fruit
+    ctx.fillStyle = '#f97316';
+    ctx.strokeStyle = '#c2410c';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(orangeX, orangeY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Orange gloss highlight
+    ctx.fillStyle = '#fdba74';
+    ctx.beginPath();
+    ctx.arc(orangeX - 1.2, orangeY - 1.5, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Little Green Stem & Leaf
+    ctx.fillStyle = '#15803d';
+    ctx.beginPath();
+    ctx.ellipse(orangeX + 2.2, orangeY - 4.2, 2.2, 1.2, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(orangeX, orangeY - 4);
+    ctx.lineTo(orangeX + 0.5, orangeY - 5.5);
+    ctx.stroke();
+
+    ctx.restore();
+  } else if (avatar === 'naga' || avatar === 'dragon') {
+    // ----------------------------------------------------
+    // NAGA CYBER / MECHA DRAGON (LIMITED EDITION LEGENDARY)
+    // ----------------------------------------------------
+    // 1. Hover/Floating Dynamics
+    const hover = isAirborne ? 0 : Math.sin(now * 0.005) * 2.5;
+    const bCx = w * 0.44;
+    const bCy = h * 0.58 + hover;
+
+    // 2. Plasma Thruster Jet Exhaust (Behind/under dragon)
+    const thrusterX = bCx - 10;
+    const thrusterY = bCy + 4;
+    const jetLen = isAirborne ? 12 : isMoving ? 9 : 5;
+    const jetPulse = Math.sin(now * 0.035) * 2;
+
+    // Jet flame gradient
+    const jetGrad = ctx.createLinearGradient(thrusterX, thrusterY, thrusterX - jetLen - jetPulse, thrusterY + 2);
+    jetGrad.addColorStop(0, '#ffffff');
+    jetGrad.addColorStop(0.3, colors.ear || '#38bdf8');
+    jetGrad.addColorStop(1, 'rgba(6, 182, 212, 0)');
+    ctx.fillStyle = jetGrad;
+    ctx.beginPath();
+    ctx.moveTo(thrusterX, thrusterY - 3);
+    ctx.lineTo(thrusterX - jetLen - jetPulse, thrusterY + 1);
+    ctx.lineTo(thrusterX, thrusterY + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Floating plasma spark particles when active
+    for (let sp = 0; sp < 3; sp++) {
+      const spPhase = ((now * 0.006 + sp * 0.33) % 1);
+      const spX = thrusterX - 2 - spPhase * 16;
+      const spY = thrusterY + Math.sin(now * 0.02 + sp * 2) * 3;
+      ctx.fillStyle = `rgba(56, 189, 248, ${1 - spPhase})`;
+      ctx.beginPath();
+      ctx.arc(spX, spY, 1.8 * (1 - spPhase), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Multi-Segment Undulating Dragon Tail with Energy Blade
+    const segCount = 4;
+    let prevTx = bCx - 8;
+    let prevTy = bCy + 2;
+    for (let s = 1; s <= segCount; s++) {
+      const swish = Math.sin(now * 0.012 - s * 0.6) * (isMoving ? 4.5 : 2.2);
+      const tx = bCx - 7 - s * 4.2;
+      const ty = bCy + 2 + s * 1.2 + swish;
+      const sr = Math.max(2.2, 5.5 - s * 0.8);
+
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(prevTx, prevTy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+
+      ctx.fillStyle = s % 2 === 0 ? colors.body : (colors.belly || '#06b6d4');
+      ctx.beginPath();
+      ctx.arc(tx, ty, sr, 0, Math.PI * 2);
+      ctx.fill();
+      prevTx = tx;
+      prevTy = ty;
+    }
+    // Tail Tip Stinger / Energy Blade
+    const stingerAng = Math.sin(now * 0.012 - segCount * 0.6) * 0.35;
+    ctx.save();
+    ctx.translate(prevTx, prevTy);
+    ctx.rotate(stingerAng);
+    ctx.fillStyle = colors.ear || '#38bdf8';
+    ctx.beginPath();
+    ctx.moveTo(0, -3.5);
+    ctx.lineTo(-9, 0);
+    ctx.lineTo(0, 3.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 4. Cyber Claws / Legs
+    const clawStep = isMoving ? Math.sin(now * 0.018) * 3.5 : 0;
+    ctx.fillStyle = '#1e293b';
+    ctx.strokeStyle = '#0284c7';
+    ctx.lineWidth = 1.2;
+    roundRect(ctx, bCx - 7 - clawStep, bCy + 8, 4.5, 6, 2);
+    ctx.fill(); ctx.stroke();
+    roundRect(ctx, bCx + 4 + clawStep, bCy + 8, 4.5, 6, 2);
+    ctx.fill(); ctx.stroke();
+    // Neon claw tips
+    ctx.fillStyle = colors.belly || '#06b6d4';
+    ctx.fillRect(bCx - 8 - clawStep, bCy + 13, 2, 2);
+    ctx.fillRect(bCx + 7 + clawStep, bCy + 13, 2, 2);
+
+    // 5. Main Armored Torso & Chest Arc Reactor
+    ctx.fillStyle = colors.body;
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    roundRect(ctx, bCx - 9, bCy - 9, 21, 18, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    // Chest reactor plate
+    ctx.fillStyle = '#0f172a';
+    roundRect(ctx, bCx - 2, bCy - 5, 11, 12, 3.5);
+    ctx.fill();
+
+    // Glowing Arc Reactor Core
+    const corePulse = 0.75 + Math.sin(now * 0.01) * 0.25;
+    ctx.fillStyle = `rgba(6, 182, 212, ${corePulse})`;
+    ctx.beginPath();
+    ctx.arc(bCx + 3.5, bCy + 1, 3.5, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(shpFaceX + 2, shpFaceY - 1.5, 2, 0, Math.PI * 2);
+    ctx.arc(bCx + 3.5, bCy + 1, 1.4, 0, Math.PI * 2);
     ctx.fill();
+
+    // 6. Dynamic Flapping Mecha Wings
+    const flap = isAirborne ? Math.sin(now * 0.035) * 22 : isMoving ? Math.sin(now * 0.018) * 11 : Math.sin(now * 0.006) * 5;
+    ctx.save();
+    ctx.translate(bCx - 3, bCy - 6);
+    ctx.rotate((-18 + flap) * (Math.PI / 180));
+
+    // Wing Struts (Framework)
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-7, -15);
+    ctx.lineTo(8, -13);
+    ctx.stroke();
+
+    // Glowing Energy Membrane Gradient
+    const wingGrad = ctx.createLinearGradient(0, 0, 10, -18);
+    wingGrad.addColorStop(0, 'rgba(6, 182, 212, 0.95)');
+    wingGrad.addColorStop(0.6, 'rgba(56, 189, 248, 0.85)');
+    wingGrad.addColorStop(1, 'rgba(255, 255, 255, 0.95)');
+    ctx.fillStyle = wingGrad;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-7, -15);
+    ctx.lineTo(-2, -18);
+    ctx.lineTo(8, -13);
+    ctx.lineTo(4, -7);
+    ctx.closePath();
+    ctx.fill();
+
+    // Secondary wing blade
+    ctx.beginPath();
+    ctx.moveTo(-1, 0);
+    ctx.lineTo(9, -8);
+    ctx.lineTo(13, -2);
+    ctx.lineTo(3, 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 7. Dragon Head, Cyber Horns & Visor
+    const headX = bCx + 8;
+    const headY = bCy - 7;
+
+    // Dual Cyber Horns
+    ctx.fillStyle = colors.ear || '#38bdf8';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.2;
+    // Main top horn
+    ctx.beginPath();
+    ctx.moveTo(headX - 4, headY - 4);
+    ctx.lineTo(headX - 13, headY - 13);
+    ctx.lineTo(headX - 2, headY - 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Lower crest
+    ctx.beginPath();
+    ctx.moveTo(headX - 6, headY);
+    ctx.lineTo(headX - 12, headY - 5);
+    ctx.lineTo(headX - 4, headY - 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Dragon Head Armor
+    ctx.fillStyle = colors.body;
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(headX - 5, headY - 6);
+    ctx.lineTo(headX + 5, headY - 7);
+    ctx.lineTo(headX + 11, headY - 1); // snout tip
+    ctx.lineTo(headX + 11, headY + 3); // jaw
+    ctx.lineTo(headX + 3, headY + 5);
+    ctx.lineTo(headX - 5, headY + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Mouth / jaw seam
+    ctx.strokeStyle = '#0284c7';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(headX + 5, headY + 2);
+    ctx.lineTo(headX + 11, headY + 2);
+    ctx.stroke();
+
+    // Cyber Visor / Eye
+    if (isDying) {
+      // Glitch X_X
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(headX + 1, headY - 3); ctx.lineTo(headX + 6, headY + 1);
+      ctx.moveTo(headX + 6, headY - 3); ctx.lineTo(headX + 1, headY + 1);
+      ctx.stroke();
+    } else if (isBurning) {
+      ctx.fillStyle = '#ef4444';
+      roundRect(ctx, headX + 1, headY - 3, 6, 3.5, 1.5);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = colors.belly || '#06b6d4';
+      roundRect(ctx, headX + 1, headY - 3, 6, 3.5, 1.5);
+      ctx.fill();
+      // Laser gleam
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(headX + 4, headY - 2.5, 2, 1.5);
+    }
+
+    // 8. Orbiting Astral Cosmic Orbs (Legendary Aura)
+    for (let o = 0; o < 2; o++) {
+      const orbAngle = now * 0.0035 + o * Math.PI;
+      const orbX = bCx + Math.cos(orbAngle) * 19;
+      const orbY = bCy - 2 + Math.sin(orbAngle) * 7;
+      const orbScale = 0.7 + (Math.sin(orbAngle) + 1) * 0.25;
+
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.35)';
+      ctx.beginPath();
+      ctx.arc(orbX, orbY, 4 * orbScale, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = colors.ear || '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(orbX, orbY, 2.2 * orbScale, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(orbX, orbY, 1 * orbScale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (avatar === 'hacker') {
+    // ----------------------------------------------------
+    // HACKER / CYBER PHANTOM (GLITCH MATRIX EDITION)
+    // ----------------------------------------------------
+    const hkX = w * 0.44;
+    const hkY = h * 0.60;
+    const step = isMoving ? Math.sin(now * 0.018) * 4 : 0;
+    const coatFlutter = isMoving ? Math.sin(now * 0.016) * 3.5 : isAirborne ? -4 : 0;
+    const isGlitching = Math.random() < 0.08 || (isMoving && Math.floor(now / 180) % 7 === 0);
+    const glitchOffset = isGlitching ? (Math.random() - 0.5) * 4 : 0;
+
+    // 1. Falling Matrix Digital Rain (0101 streams)
+    const symbols = ['1', '0', '>', '_', '0', '1', '$', '#'];
+    for (let b = 0; b < 4; b++) {
+      const bitPhase = ((now * 0.0035 + b * 0.25) % 1);
+      const bitX = hkX - 14 + b * 9;
+      const bitY = hkY - 18 + bitPhase * 36;
+      const alpha = (1 - bitPhase) * 0.7;
+      ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      const char = symbols[(b * 3 + Math.floor(now * 0.005)) % symbols.length];
+      ctx.fillText(char, bitX, bitY);
+    }
+
+    // 2. Chromatic aberration glitch shadow when moving
+    if (isGlitching) {
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.4)';
+      roundRect(ctx, hkX - 10 + glitchOffset, hkY - 14, 20, 26, 7);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(244, 63, 94, 0.4)';
+      roundRect(ctx, hkX - 10 - glitchOffset, hkY - 14, 20, 26, 7);
+      ctx.fill();
+    }
+
+    // 3. Cyber Combat Boots / Legs
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = colors.belly || '#22c55e';
+    ctx.lineWidth = 1.2;
+    // Back leg
+    roundRect(ctx, hkX - 7 - step, hkY + 9, 4.5, 6, 2);
+    ctx.fill(); ctx.stroke();
+    // Front leg
+    roundRect(ctx, hkX + 3 + step, hkY + 9, 4.5, 6, 2);
+    ctx.fill(); ctx.stroke();
+
+    // 4. Dark Trench Coat & Hoodie
+    // Flapping trench coat tails at back
+    ctx.fillStyle = colors.body || '#090d16';
+    ctx.strokeStyle = colors.belly || '#22c55e';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(hkX - 8, hkY);
+    ctx.lineTo(hkX - 16 + coatFlutter, hkY + 11);
+    ctx.lineTo(hkX - 6, hkY + 11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Main torso / hoodie body
+    ctx.fillStyle = colors.body || '#090d16';
+    roundRect(ctx, hkX - 9, hkY - 7, 20, 18, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    // Neon circuit lines along coat zipper/chest
+    ctx.strokeStyle = colors.belly || '#22c55e';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(hkX + 1, hkY - 7);
+    ctx.lineTo(hkX + 1, hkY + 9);
+    ctx.stroke();
+    // Horizontal circuit traces
+    ctx.beginPath();
+    ctx.moveTo(hkX - 5, hkY + 1); ctx.lineTo(hkX + 1, hkY + 1);
+    ctx.moveTo(hkX + 1, hkY + 4); ctx.lineTo(hkX + 7, hkY + 4);
+    ctx.stroke();
+
+    // 5. Deep Cyber Hood & Guy Fawkes / LED Mask
+    const hoodX = hkX + 1;
+    const hoodY = hkY - 9;
+
+    // Outer Hood
+    ctx.fillStyle = colors.body || '#090d16';
+    ctx.strokeStyle = colors.belly || '#22c55e';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(hoodX, hoodY, 10.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Hood inner shadow
+    ctx.fillStyle = '#020617';
+    ctx.beginPath();
+    ctx.arc(hoodX + 1, hoodY, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cyber LED Face Mask inside hood
+    const maskX = hoodX + 2;
+    const maskY = hoodY;
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = colors.ear || '#4ade80';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(maskX, maskY, 5.5, 6.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Mask Animation & Eyes
+    if (isDying) {
+      // 404 / Glitch error text
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 6.5px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('404', maskX, maskY + 2.5);
+    } else if (isBurning) {
+      // Overheat warning red visor
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(maskX - 2.5, maskY - 2, 5, 2);
+      ctx.fillRect(maskX - 1.5, maskY + 1.5, 3, 1.5);
+    } else {
+      // Angled sharp glowing LED Eyes (Matrix Green)
+      ctx.fillStyle = colors.ear || '#4ade80';
+      ctx.beginPath();
+      ctx.moveTo(maskX - 3.5, maskY - 2.5);
+      ctx.lineTo(maskX - 0.5, maskY - 1);
+      ctx.lineTo(maskX - 3.5, maskY - 0.5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(maskX + 3.5, maskY - 2.5);
+      ctx.lineTo(maskX + 0.5, maskY - 1);
+      ctx.lineTo(maskX + 3.5, maskY - 0.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Stylized digital smirk / pixel smile
+      ctx.strokeStyle = colors.belly || '#22c55e';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(maskX - 2.5, maskY + 2.5);
+      ctx.quadraticCurveTo(maskX, maskY + 4, maskX + 2.5, maskY + 2.5);
+      ctx.stroke();
+
+      // Vertical/Horizontal Scanner beam across mask
+      const scanOffset = Math.sin(now * 0.008) * 3.5;
+      ctx.fillStyle = 'rgba(74, 222, 128, 0.4)';
+      ctx.fillRect(maskX - 4.5, maskY + scanOffset - 0.5, 9, 1);
+    }
+
+    // 6. Floating Hologram Virtual Terminal HUD
+    const hudBob = Math.sin(now * 0.006) * 1.8;
+    const hudX = hkX + 11;
+    const hudY = hkY - 4 + hudBob;
+
+    // Translucent glowing green terminal screen
+    ctx.fillStyle = 'rgba(6, 78, 59, 0.55)';
+    ctx.strokeStyle = colors.ear || '#4ade80';
+    ctx.lineWidth = 1;
+    roundRect(ctx, hudX, hudY, 13, 10, 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Terminal header bar
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.7)';
+    ctx.fillRect(hudX, hudY, 13, 2.5);
+
+    // Blinking prompt cursor `>_`
+    const cursorBlink = Math.floor(now / 350) % 2 === 0;
+    ctx.fillStyle = colors.ear || '#4ade80';
+    ctx.font = 'bold 5px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`>${cursorBlink ? '_' : ' '}`, hudX + 1.5, hudY + 7);
+
+    // Mini activity waveform / bits
+    ctx.fillStyle = 'rgba(74, 222, 128, 0.8)';
+    ctx.fillRect(hudX + 8, hudY + 4.5, 1.5, (Math.sin(now * 0.02) + 1.2) * 1.5);
+    ctx.fillRect(hudX + 10.5, hudY + 3.5, 1.5, (Math.cos(now * 0.025) + 1.2) * 2);
+  } else if (avatar === 'kangguru' || avatar === 'kangaroo') {
+    // ----------------------------------------------------
+    // KANGGURU GEMOY (Bouncy Hopping Kangaroo with Baby Joey in Pouch)
+    // ----------------------------------------------------
+    const hopSpeed = isMoving ? 0.016 : 0.006;
+    const hopPhase = now * hopSpeed;
+    const hopSin = Math.sin(hopPhase);
+
+    // Dynamic hop elevation
+    const hopY = isMoving
+      ? -Math.abs(hopSin) * 9.5
+      : isAirborne
+        ? -4
+        : Math.sin(now * 0.005) * 1.5;
+
+    // Squash & stretch on landing/jumping
+    const isMidHop = isMoving && Math.abs(hopSin) > 0.4;
+    const squashX = isMoving ? (isMidHop ? 0.92 : 1.1) : 1.0;
+    const squashY = isMoving ? (isMidHop ? 1.1 : 0.9) : 1.0;
+
+    const kangBaseX = w * 0.44;
+    const kangBaseY = h * 0.58 + hopY;
+
+    ctx.save();
+    ctx.translate(kangBaseX, kangBaseY);
+    ctx.scale(squashX, squashY);
+
+    const kgBodyColor = colors.body || '#d97706';
+    const kgBellyColor = colors.belly || '#fef3c7';
+    const kgEarInner = colors.ear || '#f472b6';
+    const kgOutline = '#78350f';
+
+    // 1. Long Powerful Springy Tail (Ekor Membal Panjang)
+    const tailWiggle = isMoving ? Math.sin(hopPhase - 0.7) * 0.35 : Math.sin(now * 0.004) * 0.15;
+    ctx.save();
+    ctx.translate(-7, 7);
+    ctx.rotate(-0.2 + tailWiggle);
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(0, -4);
+    ctx.quadraticCurveTo(-12, 4, -20, -1);
+    ctx.quadraticCurveTo(-14, 11, 0, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // 2. Powerful Kangaroo Feet & Back Leg (Kaki Lompat Besar)
+    const legHopAngle = isMoving ? (isMidHop ? 0.4 : -0.2) : (isAirborne ? 0.35 : 0);
+    ctx.save();
+    ctx.translate(-2, 8);
+    ctx.rotate(legHopAngle);
+    // Big Thigh
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(-2, -2, 7, 5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Long Foot (kaki loncat khas kangguru)
+    ctx.fillStyle = kgBodyColor;
+    ctx.beginPath();
+    roundRect(ctx, -5, 2, 14, 4, 2);
+    ctx.fill();
+    ctx.stroke();
+    // Toe claws
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(7, 3); ctx.lineTo(10, 4);
+    ctx.moveTo(7, 5); ctx.lineTo(9.5, 6);
+    ctx.stroke();
+    ctx.restore();
+
+    // 3. Chubby Pear-Shaped Body (Tubuh Gembul Kangguru)
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 11.5, 13.5, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Soft Cream Belly (Perut Krem)
+    ctx.fillStyle = kgBellyColor;
+    ctx.beginPath();
+    ctx.ellipse(3, 1, 7.5, 9.5, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. POUCH & BABY JOEY (Kantung Bayi Mengintip Lucu!)
+    const pouchY = 3;
+    ctx.fillStyle = kgBellyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(3.5, pouchY, 7, 0.1, Math.PI - 0.1, false);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Baby Joey peeking out!
+    const joeyBob = isMoving ? Math.sin(now * 0.02) * 1.5 : Math.sin(now * 0.007) * 0.8;
+    const joeyX = 3.5;
+    const joeyY = pouchY - 2.5 + joeyBob;
+
+    // Joey Ears
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1;
+    // Left mini ear
+    ctx.beginPath();
+    ctx.ellipse(joeyX - 3, joeyY - 4.5, 1.4, 3, -0.3, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // Right mini ear
+    ctx.beginPath();
+    ctx.ellipse(joeyX + 3, joeyY - 4.5, 1.4, 3, 0.3, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // Joey Inner Ears
+    ctx.fillStyle = kgEarInner;
+    ctx.beginPath();
+    ctx.ellipse(joeyX - 3, joeyY - 4.5, 0.7, 2, -0.3, 0, Math.PI * 2);
+    ctx.ellipse(joeyX + 3, joeyY - 4.5, 0.7, 2, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Joey Mini Head
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(joeyX, joeyY, 4, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Joey Sparkly Eyes
     ctx.fillStyle = '#0f172a';
     ctx.beginPath();
-    ctx.arc(shpFaceX + 2.5, shpFaceY - 1.5, 1, 0, Math.PI * 2);
+    ctx.arc(joeyX - 1.5, joeyY - 0.5, 1, 0, Math.PI * 2);
+    ctx.arc(joeyX + 1.5, joeyY - 0.5, 1, 0, Math.PI * 2);
     ctx.fill();
+    // White eye twinkle
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(joeyX - 1.8, joeyY - 0.8, 0.4, 0, Math.PI * 2);
+    ctx.arc(joeyX + 1.2, joeyY - 0.8, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    // Joey tiny nose
+    ctx.fillStyle = '#451a03';
+    ctx.beginPath();
+    ctx.arc(joeyX, joeyY + 1.2, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    // Joey tiny blush
+    ctx.fillStyle = 'rgba(251, 113, 133, 0.65)';
+    ctx.beginPath();
+    ctx.arc(joeyX - 2.5, joeyY + 0.8, 1, 0, Math.PI * 2);
+    ctx.arc(joeyX + 2.5, joeyY + 0.8, 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 5. Cute Kangaroo Arms / Mini Paws (Tangan Mungil Gembul)
+    const armBob = isMoving ? Math.sin(now * 0.02) * 2.5 : Math.sin(now * 0.006) * 1;
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(8, -1 + armBob, 3, 2, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 6. Kangaroo Head (Kepala Gembul Kangguru)
+    const headX = 6;
+    const headY = -12;
+
+    // Floppy Big Kangaroo Ears (Telinga Panjang Goyang)
+    const earFloppiness = isMoving ? Math.sin(hopPhase - 0.5) * 0.35 : Math.sin(now * 0.005) * 0.12;
+    // Back Ear
+    ctx.save();
+    ctx.translate(headX - 3, headY - 5);
+    ctx.rotate(-0.35 + earFloppiness);
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 3, 7.5, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = kgEarInner;
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 1.8, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Front Ear
+    ctx.save();
+    ctx.translate(headX + 2, headY - 6);
+    ctx.rotate(-0.15 + earFloppiness);
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(0, -6.5, 3.2, 8, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = kgEarInner;
+    ctx.beginPath();
+    ctx.ellipse(0, -6.5, 2, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Head Base
+    ctx.fillStyle = kgBodyColor;
+    ctx.strokeStyle = kgOutline;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(headX, headY, 8, 7.5, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Snout / Muzzle (Moncong Krem Lucu)
+    ctx.fillStyle = kgBellyColor;
+    ctx.beginPath();
+    ctx.ellipse(headX + 5, headY + 2, 4.5, 3.5, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Nose (Hidung Hitam Kancing)
+    ctx.fillStyle = '#451a03';
+    ctx.beginPath();
+    ctx.arc(headX + 7.5, headY + 1.2, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mouth (Senyum Gemoy)
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(headX + 6, headY + 3.2, 1.5, 0.1, Math.PI * 0.9, false);
+    ctx.stroke();
+
+    // Big Sparkling Chibi Eyes
+    if (isDying) {
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(headX + 1, headY - 2.5); ctx.lineTo(headX + 4.5, headY + 1);
+      ctx.moveTo(headX + 4.5, headY - 2.5); ctx.lineTo(headX + 1, headY + 1);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(headX + 2.5, headY - 0.5, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(headX + 2, headY - 1.4, 1.1, 0, Math.PI * 2);
+      ctx.arc(headX + 3.4, headY + 0.3, 0.55, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Chubby Rosy Cheeks (Pipi Merah Merona)
+    ctx.fillStyle = 'rgba(251, 113, 133, 0.7)';
+    ctx.beginPath();
+    ctx.arc(headX + 1, headY + 2.2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dust puff particles beneath kangaroo when landing on ground
+    if (isMoving && !isAirborne && Math.abs(hopSin) < 0.25) {
+      ctx.fillStyle = 'rgba(217, 119, 6, 0.45)';
+      ctx.beginPath();
+      ctx.arc(-8, 12, 2.5, 0, Math.PI * 2);
+      ctx.arc(10, 12, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  } else if (avatar === 'bebek' || avatar === 'duck') {
+    // ----------------------------------------------------
+    // BEBEK BALING-BALING (Quacking Waddle Duck with Propeller Beanie)
+    // ----------------------------------------------------
+    const dkWaddle = isMoving ? Math.sin(now * 0.024) * 0.22 : Math.sin(now * 0.005) * 0.05;
+    const dkStep = isMoving ? Math.sin(now * 0.024) * 4 : 0;
+    const buttWiggle = isMoving ? Math.sin(now * 0.028) * 4.5 : Math.sin(now * 0.006) * 1;
+    const beakOpen = isMoving ? Math.abs(Math.sin(now * 0.02)) * 2 : 0;
+
+    const dkBody = colors.body || '#facc15';
+    const dkBill = colors.ear || '#f97316';
+    const dkOutline = '#a16207';
+    const dkX = w * 0.44;
+    const dkY = h * 0.62;
+
+    ctx.save();
+    ctx.translate(dkX, dkY);
+    ctx.rotate(dkWaddle);
+
+    // 1. Webbed Feet (Kaki Bebek Selaput Oranye)
+    ctx.fillStyle = dkBill;
+    ctx.strokeStyle = '#c2410c';
+    ctx.lineWidth = 1.2;
+    // Left Foot
+    ctx.beginPath();
+    ctx.ellipse(-5 - dkStep * 0.5, 11 + (dkStep > 0 ? -2.5 : 0), 5, 2.5, -0.2, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // Right Foot
+    ctx.beginPath();
+    ctx.ellipse(5 + dkStep * 0.5, 11 + (dkStep < 0 ? -2.5 : 0), 5, 2.5, 0.2, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // 2. Wiggling Fluffy Duck Butt / Tail (Buntut Bebek Goyang Lucu)
+    ctx.save();
+    ctx.translate(-11, -2);
+    ctx.rotate((-0.3) + (buttWiggle * Math.PI) / 180);
+    ctx.fillStyle = dkBody;
+    ctx.strokeStyle = dkOutline;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(0, -3);
+    ctx.quadraticCurveTo(-7, -8, -9, -12);
+    ctx.quadraticCurveTo(-4, -6, 2, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // 3. Chubby Round Body (Tubuh Bulat Gembul Kuning)
+    ctx.fillStyle = dkBody;
+    ctx.strokeStyle = dkOutline;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 11.5, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Soft yellow belly highlight
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.ellipse(2, 2, 7, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Little Wing (Sayap Mungil Mengepak)
+    const wingFlap = isAirborne ? Math.sin(now * 0.04) * 0.6 : isMoving ? Math.sin(now * 0.03) * 0.4 : Math.sin(now * 0.006) * 0.1;
+    ctx.save();
+    ctx.translate(-1, 0);
+    ctx.rotate(-0.1 + wingFlap);
+    ctx.fillStyle = '#fde047';
+    ctx.strokeStyle = dkOutline;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 6.5, 4.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // 5. Round Duck Head (Kepala Bulat Gemoy)
+    const headX = 5;
+    const headY = -9;
+    ctx.fillStyle = dkBody;
+    ctx.strokeStyle = dkOutline;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(headX, headY, 8.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 6. Quacking Duck Bill (Paruh Bebek Kwek-Kwek)
+    ctx.fillStyle = dkBill;
+    ctx.strokeStyle = '#c2410c';
+    ctx.lineWidth = 1.2;
+    // Upper Bill
+    ctx.beginPath();
+    ctx.ellipse(headX + 9, headY - 1 - beakOpen, 6, 2.5, 0.1, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // Lower Bill when quacking
+    if (beakOpen > 0.5) {
+      ctx.beginPath();
+      ctx.ellipse(headX + 8, headY + 1.5, 4.5, 2, 0.2, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // 7. Sparkling Big Chibi Eyes & Blushing Cheeks
+    if (isDying) {
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(headX + 1, headY - 4); ctx.lineTo(headX + 5, headY);
+      ctx.moveTo(headX + 5, headY - 4); ctx.lineTo(headX + 1, headY);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(headX + 3.5, headY - 2.5, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(headX + 2.8, headY - 3.5, 1, 0, Math.PI * 2);
+      ctx.arc(headX + 4.5, headY - 1.8, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Blush
+    ctx.fillStyle = 'rgba(251, 113, 133, 0.75)';
+    ctx.beginPath();
+    ctx.arc(headX + 1.5, headY + 1.5, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 8. Propeller Beanie Cap (Topi Baling-Baling Muter Kencang!)
+    const capX = headX - 0.5;
+    const capY = headY - 7.5;
+    // Cyan Beanie base
+    ctx.fillStyle = '#06b6d4';
+    ctx.strokeStyle = '#0891b2';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(capX, capY, 5.5, Math.PI, 0, false);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Golden Spindle / Shaft
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(capX - 1, capY - 4.5, 2, 4);
+
+    // Spinning Blades (Efek Putaran Baling-Baling 2D Perspektif)
+    const spinSpeed = isAirborne ? 0.055 : isMoving ? 0.038 : 0.007;
+    const spinWidth = Math.sin(now * spinSpeed) * 8.5;
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(capX - spinWidth, capY - 4.5);
+    ctx.lineTo(capX + spinWidth, capY - 4.5);
+    ctx.stroke();
+
+    // Rotor Center Cap
+    ctx.fillStyle = '#facc15';
+    ctx.beginPath();
+    ctx.arc(capX, capY - 4.5, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tiny wind vortex whirls when flying or moving fast
+    if (isAirborne || (isMoving && Math.abs(hazard?.velocity?.vx ?? 0) > 1.2)) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(capX, capY - 7, 4.5 + Math.sin(now * 0.02) * 1.5, -0.4, Math.PI * 0.8);
+      ctx.stroke();
+    }
+
+    ctx.restore();
   } else {
     // ----------------------------------------------------
     // DEFAULT CAT (Kucing Klasik)

@@ -12,6 +12,8 @@ export async function getLiveShopPrices(): Promise<ShopPrices> {
         tag: typeof parsed.tag === 'number' ? parsed.tag : DEFAULT_SHOP_PRICES.tag,
         body: { ...DEFAULT_SHOP_PRICES.body, ...(parsed.body || {}) },
         color: { ...DEFAULT_SHOP_PRICES.color, ...(parsed.color || {}) },
+        hiddenBodies: Array.isArray(parsed.hiddenBodies) ? parsed.hiddenBodies : [],
+        bodyMetadata: typeof parsed.bodyMetadata === 'object' && parsed.bodyMetadata !== null ? parsed.bodyMetadata : {},
       };
     }
   } catch {

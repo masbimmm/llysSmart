@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StagePreviewModal from '@/components/game/stage-preview-modal';
+import { STAGE_TIERS, STAGE_DEFINITIONS } from '@/game-engine/maps/world';
 import { getCachedData, getPersistedCache, setCachedData } from '@/lib/client-cache';
 import DashboardLoader from '@/components/dashboard/dashboard-loader';
 
@@ -85,43 +86,6 @@ function parseLevelMeta(lvl: LevelRow): { subjectName: string; grade: string; ob
   };
 }
 
-const STAGE_TIERS = [
-  { id: 1, name: 'Tier 1: Rintangan Mudah (Stage 1-5)', color: 'border-emerald-300 bg-emerald-50/60 text-emerald-900', badge: 'bg-emerald-600 text-white' },
-  { id: 2, name: 'Tier 2: Rintangan Sedang (Stage 6-10)', color: 'border-amber-300 bg-amber-50/60 text-amber-900', badge: 'bg-amber-600 text-white' },
-  { id: 3, name: 'Tier 3: Rintangan Sulit (Stage 11-15)', color: 'border-rose-300 bg-rose-50/60 text-rose-900', badge: 'bg-rose-600 text-white' },
-  { id: 4, name: 'Tier 4: Rintangan Gak Masuk Akal (Stage 16-20)', color: 'border-purple-300 bg-purple-50/60 text-purple-900', badge: 'bg-purple-600 text-white' },
-];
-
-const STAGE_DEFINITIONS = [
-  // TIER 1: MUDAH (1 - 5)
-  { id: 1, tier: 1, icon: '🏞️', shortName: 'Stage 1', name: 'Lembah Kampus', theme: 'Dasar & Jalur Hijau', feature: 'Santai' },
-  { id: 2, tier: 1, icon: '🌅', shortName: 'Stage 2', name: 'Menara Sunset', theme: 'Sunset & Tangga Batu', feature: 'Patroli Virus' },
-  { id: 3, tier: 1, icon: '💨', shortName: 'Stage 3', name: 'Lembah Kipas Angin', theme: 'Hembusan Angin ke Langit', feature: '💨 Kipas Angin' },
-  { id: 4, tier: 1, icon: '🎈', shortName: 'Stage 4', name: 'Bukit Balon Udara', theme: 'Awan & Super Trampolin', feature: 'Trampolin' },
-  { id: 5, tier: 1, icon: '⚡', shortName: 'Stage 5', name: 'Galaksi Cyber Pemula', theme: 'Grid Cyber & Senjata Laser', feature: 'Laser Blaster' },
-
-  // TIER 2: SEDANG (6 - 10)
-  { id: 6, tier: 2, icon: '🔥', shortName: 'Stage 6', name: 'Kastil Magma', theme: 'Lahar Panas & Lift Vulkanik', feature: 'Lift Vulkanik' },
-  { id: 7, tier: 2, icon: '🌿', shortName: 'Stage 7', name: 'Hutan Neon Biolumin', theme: 'Rimba Neon & Spora Biolumin', feature: 'Pijakan Rapuh' },
-  { id: 8, tier: 2, icon: '⚙️', shortName: 'Stage 8', name: 'Kota Roda Gigi', theme: 'Conveyor Sabuk & Mesin Gir', feature: 'Conveyor Belt' },
-  { id: 9, tier: 2, icon: '❄️', shortName: 'Stage 9', name: 'Samudra Es', theme: 'Es Licin & Runtuhan Gletser', feature: 'Pijakan Licin' },
-  { id: 10, tier: 2, icon: '✈️', shortName: 'Stage 10', name: 'Penerbangan Awan', theme: 'Naik Pesawat Melintasi Awan!', feature: '✈️ Naik Pesawat' },
-
-  // TIER 3: SULIT (11 - 15)
-  { id: 11, tier: 3, icon: '⛈️', shortName: 'Stage 11', name: 'Badai Petir Angkasa', theme: 'Awan Petir Mematikan & Kipas', feature: '⚡ Badai Petir' },
-  { id: 12, tier: 3, icon: '🏜️', shortName: 'Stage 12', name: 'Gurun Reruntuhan', theme: 'Pasir Hisap & Jurang Terjal', feature: 'Pasir Hisap' },
-  { id: 13, tier: 3, icon: '🛸', shortName: 'Stage 13', name: 'Lab Drone Pengintai', theme: 'Patroli Drone Udara & Laser', feature: '🛸 Drone Udara' },
-  { id: 14, tier: 3, icon: '🧪', shortName: 'Stage 14', name: 'Mutasi Biohazard', theme: 'Lumpur Beracun & Mutan Virus', feature: 'Biohazard' },
-  { id: 15, tier: 3, icon: '🌋', shortName: 'Stage 15', name: 'Benteng Magma Neraka', theme: 'Lautan Lahar Luas & Lift Sempit', feature: 'Lahar Neraka' },
-
-  // TIER 4: GAK MASUK AKAL / EKSTREM (16 - 20)
-  { id: 16, tier: 4, icon: '🛩️', shortName: 'Stage 16', name: 'Formasi Tempur Pesawat', theme: 'Parkour Pesawat Cepat & Petir', feature: '🛩️ Parkour Pesawat' },
-  { id: 17, tier: 4, icon: '🤖', shortName: 'Stage 17', name: 'Koridor Robot Mecha', theme: 'Patroli Mecha & Conveyor Maut', feature: '🤖 Robot Mecha' },
-  { id: 18, tier: 4, icon: '🌪️', shortName: 'Stage 18', name: 'Dimensi Void Berputar', theme: '85% Pijakan Runtuh & Jurang Void', feature: 'Full Crumble' },
-  { id: 19, tier: 4, icon: '🦠', shortName: 'Stage 19', name: 'Neraka Virus Matrix', theme: 'Drone Swarm & Semburan Api Cepat', feature: 'Virus Swarm' },
-  { id: 20, tier: 4, icon: '👑', shortName: 'Stage 20', name: 'Tahta Void Overlord', theme: 'Pesawat, Kipas, Petir & Void God!', feature: '👑 OVERLORD FINAL' },
-];
-
 export default function RoomsPage() {
   const [rooms, setRooms] = useState<Room[]>(() => getCachedData<Room[]>('teacher:rooms') ?? []);
   const [classrooms, setClassrooms] = useState<Classroom[]>(() => getCachedData<Classroom[]>('teacher:classrooms') ?? []);
@@ -136,6 +100,8 @@ export default function RoomsPage() {
   const [maxPlayers, setMaxPlayers] = useState(40);
   const [selectedStages, setSelectedStages] = useState<number[]>([1, 2, 3, 4]);
   const [previewStageId, setPreviewStageId] = useState<number | null>(null);
+  const [stageFilterTier, setStageFilterTier] = useState<number | 'all'>('all');
+  const [isStagesExpanded, setIsStagesExpanded] = useState<boolean>(false);
 
   function toggleStage(id: number) {
     setSelectedStages((prev) => {
@@ -603,204 +569,314 @@ export default function RoomsPage() {
               />
             </div>
 
-            <div className="sm:col-span-2 lg:col-span-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-2">
-                  <label className="label-field mb-0">
-                    4. Pilihan Stage Game (20 Stage / 4 Tingkat Kesulitan){' '}
-                    <span className="font-bold text-amber-800">
-                      ({selectedStages.length} Stage Terpilih)
-                    </span>
+            <div className="sm:col-span-2 lg:col-span-3 rounded-2xl border border-black/10 bg-black/[0.02] p-3.5 sm:p-4 transition-all">
+              {/* Header / Accordion Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div
+                  className="flex flex-wrap items-center gap-2.5 cursor-pointer select-none flex-1 min-w-[240px]"
+                  onClick={() => setIsStagesExpanded((v) => !v)}
+                >
+                  <label className="font-display text-sm sm:text-base font-bold text-gray-900 mb-0 cursor-pointer">
+                    4. Pilihan Stage Game
                   </label>
-                  <button
-                    type="button"
-                    className="px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 font-bold text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer text-xs"
-                    onClick={() => setPreviewStageId(selectedStages[0] ?? 1)}
-                    title="Buka Preview Visual Map & Uji Coba Stage (1-20)"
-                  >
-                    <span>👁️ Preview Map (Stage 1-20)</span>
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="text-[var(--wood-text)]/60 font-medium mr-1">Preset:</span>
-                  <button
-                    type="button"
-                    className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 font-semibold text-emerald-900 transition-colors"
-                    onClick={() => setSelectedStages([1, 2, 3, 4, 5])}
-                    title="Pilih semua Stage Mudah"
-                  >
-                    🟢 Mudah (1-5)
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 font-semibold text-amber-900 transition-colors"
-                    onClick={() => setSelectedStages([6, 7, 8, 9, 10])}
-                    title="Pilih semua Stage Sedang (Termasuk Naik Pesawat)"
-                  >
-                    🟡 Sedang (6-10)
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-0.5 rounded border border-rose-300 bg-rose-50 hover:bg-rose-100 font-semibold text-rose-900 transition-colors"
-                    onClick={() => setSelectedStages([11, 12, 13, 14, 15])}
-                    title="Pilih semua Stage Sulit"
-                  >
-                    🔴 Sulit (11-15)
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-0.5 rounded border border-purple-300 bg-purple-50 hover:bg-purple-100 font-semibold text-purple-900 transition-colors"
-                    onClick={() => setSelectedStages([16, 17, 18, 19, 20])}
-                    title="Pilih semua Stage Gak Masuk Akal (Ekstrem)"
-                  >
-                    🟣 Gak Masuk Akal (16-20)
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-0.5 rounded border border-blue-400 bg-blue-50 hover:bg-blue-100 font-semibold text-blue-900 transition-colors"
-                    onClick={() => setSelectedStages(Array.from({ length: 20 }, (_, i) => i + 1))}
-                    title="Pilih semua 20 Stage"
-                  >
-                    ⚡ Semua 20 Stage
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-0.5 rounded border border-slate-300 bg-slate-50 hover:bg-slate-100 font-semibold text-slate-700 transition-colors"
-                    onClick={() => setSelectedStages([1, 2, 3, 4])}
-                    title="Reset ke Default 4 Stage"
-                  >
-                    Default (1-4)
-                  </button>
-                </div>
-              </div>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300/80 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
+                    {selectedStages.length} dari 20 Dipilih
+                  </span>
 
-              <p className="text-xs text-[var(--wood-text)]/70 mb-3">
-                Centang stage yang ingin dimainkan. Bebas pilih kombinasi mana saja (contoh: hanya Stage 1, 3 Kipas Angin, dan 10 Pesawat).
-              </p>
-
-              {/* 4 Grouped Tiers */}
-              <div className="space-y-3">
-                {STAGE_TIERS.map((tier) => {
-                  const tierStages = STAGE_DEFINITIONS.filter((s) => s.tier === tier.id);
-                  const selectedInTier = tierStages.filter((s) => selectedStages.includes(s.id)).length;
-                  return (
-                    <div key={tier.id} className={`rounded-xl border p-2.5 ${tier.color}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold tracking-wide">
-                          {tier.name}
+                  {/* Compact flow preview when collapsed */}
+                  {!isStagesExpanded && selectedStages.length > 0 && (
+                    <div className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-amber-900/80 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                      {selectedStages.map((id, idx) => (
+                        <span key={id} className="inline-flex items-center gap-0.5">
+                          <span>S{id}</span>
+                          {idx < selectedStages.length - 1 && <span className="opacity-40">→</span>}
                         </span>
-                        <div className="flex items-center gap-1.5 text-[11px]">
-                          <span className="font-semibold opacity-75">
-                            {selectedInTier}/{tierStages.length} Terpilih
-                          </span>
-                          <button
-                            type="button"
-                            className="px-1.5 py-0.5 rounded bg-white/80 hover:bg-white text-[10px] font-bold border border-black/10 transition-colors shadow-xs cursor-pointer"
-                            onClick={() => {
-                              const tierIds = tierStages.map((s) => s.id);
-                              const allInTierSelected = tierIds.every((id) => selectedStages.includes(id));
-                              if (allInTierSelected) {
-                                setSelectedStages((prev) => prev.filter((id) => !tierIds.includes(id)));
-                              } else {
-                                setSelectedStages((prev) => Array.from(new Set([...prev, ...tierIds])).sort((a, b) => a - b));
-                              }
-                            }}
-                          >
-                            {selectedInTier === tierStages.length ? 'Batal Semua' : 'Pilih Semua Tier Ini'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
-                        {tierStages.map((stg) => {
-                          const isChecked = selectedStages.includes(stg.id);
-                          const orderIdx = selectedStages.indexOf(stg.id);
-                          return (
-                            <label
-                              key={stg.id}
-                              className={`relative flex items-start gap-2 p-2 rounded-lg border cursor-pointer select-none transition-all ${
-                                isChecked
-                                  ? 'border-amber-500 bg-white shadow-sm ring-2 ring-amber-400'
-                                  : 'border-black/10 bg-white/70 hover:border-black/25 hover:bg-white'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                checked={isChecked}
-                                onChange={() => toggleStage(stg.id)}
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm">{stg.icon}</span>
-                                  <span className={`text-xs font-bold leading-tight ${isChecked ? 'text-amber-950' : 'text-gray-800'}`}>
-                                    {stg.shortName}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] font-medium text-gray-700 leading-tight mt-0.5 truncate">
-                                  {stg.name}
-                                </div>
-                                <div className="mt-1 flex items-center justify-between gap-1">
-                                  <span className={`inline-block px-1 py-0.2 rounded text-[9px] font-semibold truncate ${
-                                    isChecked ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
-                                  }`}>
-                                    {stg.feature}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="px-1.5 py-0.5 rounded bg-amber-100/90 hover:bg-amber-200 text-[10px] font-bold text-amber-900 border border-amber-300 transition-colors flex items-center gap-0.5 cursor-pointer shadow-xs shrink-0"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      setPreviewStageId(stg.id);
-                                    }}
-                                    title={`Preview / Intip Peta ${stg.shortName}`}
-                                  >
-                                    <span>👁️ Intip</span>
-                                  </button>
-                                </div>
-                              </div>
-                              {isChecked && (
-                                <span
-                                  className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[9px] font-extrabold text-white shadow-xs"
-                                  title={`Urutan ke-${orderIdx + 1} yang dimainkan`}
-                                >
-                                  #{orderIdx + 1}
-                                </span>
-                              )}
-                            </label>
-                          );
-                        })}
-                      </div>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
-              
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-md bg-amber-500/10 p-2 text-xs border border-amber-500/20">
-                <div className="flex items-center gap-1.5 font-medium text-amber-950">
-                  <span>🚀 Alur Stage:</span>
-                  {selectedStages.length > 0 ? (
-                    <span className="font-bold">
-                      {selectedStages.map((id) => `Stage ${id}`).join(' ➔ ')}
-                    </span>
-                  ) : (
-                    <span className="font-bold text-rose-600">⚠️ Belum ada stage yang dipilih! Centang minimal 1 stage.</span>
                   )}
                 </div>
 
-                {levelId && selectedStages.length > 0 && (() => {
-                  const selectedLvl = levels.find((l) => l.id === levelId);
-                  const qTotal = selectedLvl?.questionIds.length ?? 0;
-                  if (qTotal <= 0) return null;
-                  const perStage = Math.ceil(qTotal / selectedStages.length);
-                  return (
-                    <span className="font-semibold text-blue-900">
-                      Kalkulasi: {qTotal} soal ÷ {selectedStages.length} stage = <strong>~{perStage} kotak soal / stage</strong>
-                    </span>
-                  );
-                })()}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-2.5 py-1.5 rounded-xl border border-amber-400/90 bg-amber-50 hover:bg-amber-100 text-amber-950 font-bold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer hover:border-amber-500"
+                    onClick={() => setPreviewStageId(selectedStages[0] ?? 1)}
+                    title="Buka Pratinjau Visual Peta & Uji Coba Fisika Karakter (Stage 1-20)"
+                  >
+                    <svg className="w-3.5 h-3.5 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                    </svg>
+                    <span>Pratinjau Peta</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-black/5 text-gray-800 font-bold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => setIsStagesExpanded((v) => !v)}
+                  >
+                    <span>{isStagesExpanded ? 'Tutup Pilihan' : 'Pilih / Atur Stage'}</span>
+                    <svg
+                      className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-200 ${isStagesExpanded ? 'rotate-180' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
               </div>
+
+              {/* Collapsible Content */}
+              {isStagesExpanded && (
+                <div className="mt-3.5 pt-3.5 border-t border-black/10 space-y-4 animate-in fade-in duration-200">
+                  <p className="text-xs text-[var(--wood-text)]/70">
+                    Atur alur petualangan dan rintangan yang akan dihadapi siswa selama sesi permainan. Bebas pilih kombinasi mana saja.
+                  </p>
+
+                  {/* Toolbar: Presets & Tier Switcher */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                    {/* Tier Filter Tabs */}
+                    <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-black/5 border border-black/5">
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                          stageFilterTier === 'all'
+                            ? 'bg-white text-gray-900 shadow-xs border border-black/10'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                        onClick={() => setStageFilterTier('all')}
+                      >
+                        Semua (20)
+                      </button>
+                      {STAGE_TIERS.map((tier) => {
+                        const tierStages = STAGE_DEFINITIONS.filter((s) => s.tier === tier.id);
+                        const selectedCount = tierStages.filter((s) => selectedStages.includes(s.id)).length;
+                        const tierLabel = tier.name.split(':')[1]?.split('(')[0]?.trim() || `Tier ${tier.id}`;
+                        return (
+                          <button
+                            key={tier.id}
+                            type="button"
+                            className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                              stageFilterTier === tier.id
+                                ? 'bg-white text-gray-900 shadow-xs border border-black/10'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                            onClick={() => setStageFilterTier(tier.id)}
+                          >
+                            <span>{tierLabel}</span>
+                            {selectedCount > 0 && (
+                              <span className="h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-black leading-none flex items-center justify-center">
+                                {selectedCount}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-semibold text-[var(--wood-text)]/60">Preset:</span>
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 rounded-lg border border-black/10 bg-white hover:bg-amber-50 hover:border-amber-300 font-bold text-gray-700 transition-colors shadow-2xs"
+                        onClick={() => setSelectedStages([1, 2, 3, 4])}
+                        title="Pilih Stage 1 hingga 4"
+                      >
+                        Standar (1–4)
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 rounded-lg border border-black/10 bg-white hover:bg-amber-50 hover:border-amber-300 font-bold text-gray-700 transition-colors shadow-2xs"
+                        onClick={() => setSelectedStages(Array.from({ length: 20 }, (_, i) => i + 1))}
+                        title="Pilih seluruh 20 stage"
+                      >
+                        Pilih Semua
+                      </button>
+                      {selectedStages.length > 0 && (
+                        <button
+                          type="button"
+                          className="px-2 py-0.5 rounded-lg font-bold text-rose-600 hover:bg-rose-50 transition-colors"
+                          onClick={() => setSelectedStages([])}
+                        >
+                          Kosongkan
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Stage Cards Grouped by Tier */}
+                  <div className="space-y-4">
+                    {STAGE_TIERS.filter((tier) => stageFilterTier === 'all' || stageFilterTier === tier.id).map((tier) => {
+                      const tierStages = STAGE_DEFINITIONS.filter((s) => s.tier === tier.id);
+                      const selectedInTier = tierStages.filter((s) => selectedStages.includes(s.id)).length;
+                      const allInTierSelected = tierStages.every((s) => selectedStages.includes(s.id));
+                      return (
+                        <div key={tier.id} className="space-y-2">
+                          <div className="flex items-center justify-between pb-1 border-b border-black/10">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold uppercase tracking-wider text-gray-800">
+                                {tier.name}
+                              </span>
+                              <span className="text-[11px] font-medium text-gray-500">
+                                • {selectedInTier}/{tierStages.length} terpilih
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-xs font-bold text-amber-800 hover:text-amber-950 transition-colors cursor-pointer"
+                              onClick={() => {
+                                const tierIds = tierStages.map((s) => s.id);
+                                if (allInTierSelected) {
+                                  setSelectedStages((prev) => prev.filter((id) => !tierIds.includes(id)));
+                                } else {
+                                  setSelectedStages((prev) => Array.from(new Set([...prev, ...tierIds])).sort((a, b) => a - b));
+                                }
+                              }}
+                            >
+                              {allInTierSelected ? 'Batalkan Tier Ini' : 'Pilih Semua Tier Ini'}
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                            {tierStages.map((stg) => {
+                              const isChecked = selectedStages.includes(stg.id);
+                              const orderIdx = selectedStages.indexOf(stg.id);
+                              return (
+                                <div
+                                  key={stg.id}
+                                  onClick={() => toggleStage(stg.id)}
+                                  className={`group relative flex flex-col justify-between p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                                    isChecked
+                                      ? 'border-amber-500 bg-amber-50/70 shadow-xs ring-1 ring-amber-500/40'
+                                      : 'border-black/10 bg-white hover:border-black/25 hover:bg-amber-50/20'
+                                  }`}
+                                >
+                                  {/* Top Row: Stage Indicator + Order Badge + Subtle Eye Preview */}
+                                  <div className="flex items-center justify-between gap-1 mb-1">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <div
+                                        className={`w-4 h-4 rounded flex items-center justify-center transition-colors shrink-0 ${
+                                          isChecked
+                                            ? 'bg-amber-600 text-white'
+                                            : 'border border-gray-300 bg-white group-hover:border-amber-400'
+                                        }`}
+                                      >
+                                        {isChecked && (
+                                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <span className="font-bold text-xs text-gray-900 truncate">
+                                        {stg.shortName}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {isChecked && (
+                                        <span
+                                          className="px-1.5 py-0.5 rounded-full bg-amber-700 text-white text-[9px] font-black tracking-wider leading-none"
+                                          title={`Urutan ke-${orderIdx + 1} yang dimainkan`}
+                                        >
+                                          #{orderIdx + 1}
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="p-1 rounded text-gray-400 hover:text-amber-800 hover:bg-black/5 transition-colors cursor-pointer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setPreviewStageId(stg.id);
+                                        }}
+                                        title={`Pratinjau peta ${stg.shortName}`}
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Stage Name */}
+                                  <div className="text-xs font-bold text-gray-800 leading-snug line-clamp-1 mb-1.5">
+                                    {stg.name}
+                                  </div>
+
+                                  {/* Feature Pill */}
+                                  <div>
+                                    <span
+                                      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold leading-tight truncate max-w-full ${
+                                        isChecked
+                                          ? 'bg-amber-200/80 text-amber-900'
+                                          : 'bg-gray-100 text-gray-600'
+                                      }`}
+                                    >
+                                      {stg.feature}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Bottom Flow & Question Distribution Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                    <div className="flex flex-wrap items-center gap-2 font-medium text-amber-950">
+                      <span className="font-bold">Alur Stage:</span>
+                      {selectedStages.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {selectedStages.map((id, idx) => (
+                            <span key={id} className="inline-flex items-center gap-1">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-700 text-white font-bold text-[11px] shadow-2xs">
+                                S{id}
+                              </span>
+                              {idx < selectedStages.length - 1 && (
+                                <span className="text-amber-800/60 font-bold">→</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="font-semibold text-rose-700">Belum ada stage yang dipilih. Centang minimal 1 stage.</span>
+                      )}
+                    </div>
+
+                    {levelId && selectedStages.length > 0 && (() => {
+                      const selectedLvl = levels.find((l) => l.id === levelId);
+                      const qTotal = selectedLvl?.questionIds.length ?? 0;
+                      if (qTotal <= 0) return null;
+                      const perStage = Math.ceil(qTotal / selectedStages.length);
+                      return (
+                        <span className="font-semibold text-amber-950 bg-white/80 px-2.5 py-1 rounded-lg border border-amber-300/40 shadow-2xs">
+                          Kalkulasi: <strong className="text-amber-900">{qTotal} soal</strong> ÷ {selectedStages.length} stage ≈ <strong className="text-emerald-700">{perStage} soal / stage</strong>
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Done / Collapse Button */}
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsStagesExpanded(false)}
+                      className="px-3 py-1.5 rounded-xl border border-amber-300/80 bg-amber-50/80 hover:bg-amber-100 text-amber-950 font-bold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Selesai &amp; Simpan Pilihan</span>
+                      <svg className="w-3.5 h-3.5 text-amber-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 15l7-7 7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

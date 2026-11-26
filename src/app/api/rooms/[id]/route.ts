@@ -208,6 +208,26 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return ok({ room: await getRoom(id) });
     }
 
+    if (body.action === 'change-map') {
+      const schema = z.object({
+        selectedStages: z.array(z.number().int().min(1).max(20)).min(1),
+      });
+      const { selectedStages } = schema.parse(body);
+      const roomRow = await getRoom(id);
+      const parsedSettings = (typeof roomRow.settings === 'object' && roomRow.settings !== null) ? roomRow.settings : {};
+      const updatedSettings = {
+        ...parsedSettings,
+        selectedStages,
+        stageCount: selectedStages.length,
+      };
+      await db
+        .update(rooms)
+        .set({ settings: JSON.stringify(updatedSettings) })
+        .where(eq(rooms.id, id));
+      invalidateRoomSyncCache(id);
+      return ok({ ok: true, selectedStages });
+    }
+
     const { status } = statusSchema.parse(body);
     const existing = await getRoom(id);
     if (existing.status === 'completed' && status !== 'completed' && user.role !== 'admin') {

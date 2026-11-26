@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { type ShopPrices, DEFAULT_SHOP_PRICES } from '@/lib/shop';
+import { type ShopPrices, DEFAULT_SHOP_PRICES, DEFAULT_BODY_METADATA, normalizeBodyName } from '@/lib/shop';
 import { Camera } from '@/game-engine/camera/camera';
 import { updatePlayerPhysics, updateStageEntities, canShooterHitTarget, type Player, type Projectile, type BossProjectile, PLAYER_W, PLAYER_H } from '@/game-engine/physics/physics';
 import { drawWorld, drawPlatforms, drawEnemies, drawPowerUps, drawProjectiles, drawCat, drawBosses, drawBossProjectiles, type BubbleEntry } from '@/game-engine/entities/render';
@@ -93,7 +93,9 @@ type RoomData = {
 function resolveSelectedStages(room: RoomData | null): number[] {
   const custom = room?.settings?.selectedStages;
   if (Array.isArray(custom) && custom.length > 0) {
-    const valid = Array.from(new Set(custom.map((n) => Math.round(Number(n))).filter((n) => n >= 1 && n <= 20))).sort((a, b) => a - b);
+    const valid = custom
+      .map((n) => Math.round(Number(n)))
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 20);
     if (valid.length > 0) return valid;
   }
   const configured = Number(room?.settings?.stageCount);
@@ -431,10 +433,14 @@ export default function GamePage() {
   const previewColorsRef = useRef<Record<string, string> | null>(null);
   const [userPoints, setUserPoints] = useState<number>(0);
   const [shopTagInput, setShopTagInput] = useState<string>('');
+  const [currentTag1, setCurrentTag1] = useState<string>('');
+  const [currentColors, setCurrentColors] = useState<Record<string, string>>({});
   const [shopColorPart, setShopColorPart] = useState<'body' | 'tag1' | 'nick'>('body');
   const [shopColorMode, setShopColorMode] = useState<'static' | 'rgb'>('static');
   const [shopColorVal, setShopColorVal] = useState<string>('#ffd43b');
   const [shopSubmitting, setShopSubmitting] = useState(false);
+  const [editingShopItem, setEditingShopItem] = useState<{ id: string; name: string; desc: string; price: number } | null>(null);
+  const [editItemSubmitting, setEditItemSubmitting] = useState(false);
   const [editingControlsLayout, setEditingControlsLayout] = useState(false);
   const [hudControls, setHudControls] = useState<HudControlsConfig>(DEFAULT_HUD_CONTROLS);
   const controlDragRef = useRef<{ group: 'dpad' | 'jump'; startX: number; startY: number; origX: number; origY: number } | null>(null);
@@ -1201,6 +1207,25 @@ export default function GamePage() {
         shopPricesRef.current = p;
         addSystemChatMessage('📢 Harga Toko Item & Karakter telah diperbarui oleh Admin.');
       }
+    } else if (cmd.op === 'change_map') {
+      const nextStages = cmd.selectedStages;
+      if (Array.isArray(nextStages) && nextStages.length > 0) {
+        selectedStagesRef.current = nextStages;
+        setSelectedStages(nextStages);
+        const curStg = currentStageRef.current;
+        const targetOrder = cmd.stageOrder;
+        // Jika perubahan map berpengaruh pada stage yang sedang dimainkan player saat ini
+        if (targetOrder === 'all' || targetOrder === curStg) {
+          applyStage(curStg, { force: true, showToast: true, respawnPlayer: true });
+          soundEngine.playPowerUp();
+          const newMapId = nextStages[curStg - 1] ?? curStg;
+          const stageName = getStageShortName(newMapId);
+          showBanner(`🗺️ Map Stage ${curStg} diubah menjadi S${newMapId} (${stageName}) oleh ${cmd.byName || 'Admin'}!`, 6000);
+        } else {
+          showBanner(`🗺️ Map Stage ${targetOrder} diubah menjadi S${cmd.newMapTheme} oleh ${cmd.byName || 'Admin'}.`, 4000);
+        }
+        addSystemChatMessage(`🗺️ [ADMIN] ${cmd.byName || 'Admin'} mengubah map ${targetOrder === 'all' ? 'semua stage' : `Stage ${targetOrder}`} menjadi S${cmd.newMapTheme} (${getStageShortName(cmd.newMapTheme)}).`);
+      }
     } else if (cmd.op === 'reset_items') {
       if (isTarget) {
         if (cmd.itemType === 'body' || cmd.itemType === 'all') {
@@ -1216,11 +1241,14 @@ export default function GamePage() {
         if (cmd.itemType === 'tag' || cmd.itemType === 'all') {
           const me = playersRef.current.get(myIdRef.current);
           if (me) { me.tag1 = undefined; me.tag = undefined; }
+          setCurrentTag1('');
+          setShopTagInput('');
           try { window.localStorage.removeItem('llys_custom_tag1'); } catch { }
         }
         if (cmd.itemType === 'color' || cmd.itemType === 'all') {
           const me = playersRef.current.get(myIdRef.current);
           if (me) me.customColors = undefined;
+          setCurrentColors({});
           try { window.localStorage.removeItem('llys_custom_colors'); } catch { }
         }
         soundEngine.playDeath();
@@ -1821,14 +1849,167 @@ export default function GamePage() {
       }
     }, [shopSubmitting, roomId, showBanner, ably]);
 
+    const toggleHideBody = useCallback(async (bodyId: string) => {
+      try {
+        const res = await fetch('/api/game/shop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'toggle_hide', itemId: bodyId, roomId }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setShopPrices(data.prices);
+          shopPricesRef.current = data.prices;
+          showBanner(data.message, 4000);
+          addSystemChatMessage(data.message);
+          soundEngine.playPowerUp();
+        } else {
+          showBanner(data.error || 'Gagal mengubah status hide', 4000);
+        }
+      } catch {
+        showBanner('Koneksi bermasalah', 3000);
+      }
+    }, [roomId, showBanner]);
+
+    const promptEditPrice = useCallback(async (bodyId: string, currentPrice: number) => {
+      const raw = window.prompt(`Masukkan harga baru (Poin) untuk karakter [${bodyId.toUpperCase()}]:`, String(currentPrice));
+      if (raw === null) return;
+      const newPrice = parseInt(raw, 10);
+      if (isNaN(newPrice) || newPrice < 0) {
+        showBanner('Harga poin tidak valid!', 3000);
+        return;
+      }
+      try {
+        const res = await fetch('/api/game/shop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_price', category: 'body', item: bodyId, price: newPrice, roomId }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setShopPrices(data.prices);
+          shopPricesRef.current = data.prices;
+          showBanner(`Harga [${bodyId.toUpperCase()}] diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
+          addSystemChatMessage(`🎭 Harga karakter [${bodyId.toUpperCase()}] berhasil diatur menjadi 💰 ${newPrice.toLocaleString()} Poin!`);
+          soundEngine.playPowerUp();
+        } else {
+          showBanner(data.error || 'Gagal mengubah harga', 4000);
+        }
+      } catch {
+        showBanner('Koneksi bermasalah', 3000);
+      }
+    }, [roomId, showBanner]);
+
+    const promptEditTagPrice = useCallback(async () => {
+      const cur = shopPrices.tag ?? 5000;
+      const raw = window.prompt(`Masukkan harga baru (Poin) untuk Tag & Gelar:`, String(cur));
+      if (raw === null) return;
+      const newPrice = parseInt(raw, 10);
+      if (isNaN(newPrice) || newPrice < 0) {
+        showBanner('Harga poin tidak valid!', 3000);
+        return;
+      }
+      try {
+        const res = await fetch('/api/game/shop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_price', category: 'tag', price: newPrice, roomId }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setShopPrices(data.prices);
+          shopPricesRef.current = data.prices;
+          showBanner(`Harga Tag diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
+          addSystemChatMessage(`🏷️ Harga Tag & Gelar berhasil diatur jadi 💰 ${newPrice.toLocaleString()} Poin!`);
+          soundEngine.playPowerUp();
+        } else {
+          showBanner(data.error || 'Gagal mengubah harga', 4000);
+        }
+      } catch {
+        showBanner('Koneksi bermasalah', 3000);
+      }
+    }, [roomId, shopPrices.tag, showBanner]);
+
+    const promptEditColorPrice = useCallback(async (mode: 'static' | 'rgb') => {
+      const key = `body_${mode}`;
+      const cur = shopPrices.color?.[key] ?? (mode === 'rgb' ? 5000 : 1000);
+      const label = mode === 'rgb' ? 'Warna Animasi RGB' : 'Warna Statis';
+      const raw = window.prompt(`Masukkan harga baru (Poin) untuk ${label}:`, String(cur));
+      if (raw === null) return;
+      const newPrice = parseInt(raw, 10);
+      if (isNaN(newPrice) || newPrice < 0) {
+        showBanner('Harga poin tidak valid!', 3000);
+        return;
+      }
+      try {
+        const res = await fetch('/api/game/shop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_price', category: 'color', item: 'body', mode, price: newPrice, roomId }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setShopPrices(data.prices);
+          shopPricesRef.current = data.prices;
+          showBanner(`Harga ${label} diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
+          addSystemChatMessage(`🎨 Harga ${label} berhasil diatur jadi 💰 ${newPrice.toLocaleString()} Poin!`);
+          soundEngine.playPowerUp();
+        } else {
+          showBanner(data.error || 'Gagal mengubah harga', 4000);
+        }
+      } catch {
+        showBanner('Koneksi bermasalah', 3000);
+      }
+    }, [roomId, shopPrices.color, showBanner]);
+
+    const saveEditedShopItem = useCallback(async () => {
+      if (!editingShopItem || editItemSubmitting) return;
+      setEditItemSubmitting(true);
+      try {
+        const res = await fetch('/api/game/shop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'edit_item',
+            itemId: editingShopItem.id,
+            name: editingShopItem.name,
+            desc: editingShopItem.desc,
+            price: editingShopItem.price,
+            roomId,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setShopPrices(data.prices);
+          shopPricesRef.current = data.prices;
+          showBanner(data.message, 4000);
+          addSystemChatMessage(`🎭 ${data.message}`);
+          soundEngine.playPowerUp();
+          setEditingShopItem(null);
+        } else {
+          showBanner(data.error || 'Gagal menyimpan perubahan.', 4000);
+        }
+      } catch {
+        showBanner('Koneksi bermasalah.', 3000);
+      } finally {
+        setEditItemSubmitting(false);
+      }
+    }, [editingShopItem, editItemSubmitting, roomId, showBanner]);
+
     const buyTag1 = useCallback(async (newTag: string) => {
       if (shopSubmitting) return;
+      const cleanTag = newTag.trim();
+      if (!cleanTag) return;
+      if (cleanTag.toLowerCase() === currentTag1.trim().toLowerCase()) {
+        showBanner('🏷️ Gelar ini sudah terpasang di karaktermu.', 3000);
+        return;
+      }
       setShopSubmitting(true);
       try {
         const res = await fetch('/api/game/shop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'buy_tag1', title: newTag, tag: newTag, roomId }),
+          body: JSON.stringify({ action: 'buy_tag1', title: cleanTag, tag: cleanTag, roomId }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
@@ -1837,6 +2018,10 @@ export default function GamePage() {
           return;
         }
         setUserPoints(data.totalPoints);
+        setCurrentTag1(data.tag1);
+        setShopTagInput(data.tag1);
+        setPreviewTag1(null);
+        previewTag1Ref.current = null;
         const me = playersRef.current.get(myIdRef.current);
         if (me) {
           me.tag1 = data.tag1;
@@ -1844,23 +2029,28 @@ export default function GamePage() {
         }
         ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, tag1: data.tag1 });
         soundEngine.playPowerUp();
-        setShopTagInput('');
         showBanner(`🏷️ Gelar Tag 1 berhasil diubah jadi "${data.tag1}"!`, 4000);
       } catch {
         showBanner('❌ Gagal menghubungi server.', 4000);
       } finally {
         setShopSubmitting(false);
       }
-    }, [shopSubmitting, roomId, showBanner, ably]);
+    }, [shopSubmitting, currentTag1, roomId, showBanner, ably]);
 
     const buyColor = useCallback(async (part: 'body' | 'tag1' | 'nick', mode: 'static' | 'rgb', colorVal: string) => {
       if (shopSubmitting) return;
+      const targetVal = mode === 'rgb' ? 'rgb' : colorVal;
+      const cur = (currentColors[part] || '').toLowerCase();
+      if (cur === targetVal.toLowerCase()) {
+        showBanner('🎨 Warna ini sudah aktif di bagian tersebut.', 3000);
+        return;
+      }
       setShopSubmitting(true);
       try {
         const res = await fetch('/api/game/shop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'buy_color', part, mode, colorVal, roomId }),
+          body: JSON.stringify({ action: 'buy_color', part, mode, color: colorVal, colorVal, roomId }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
@@ -1869,6 +2059,18 @@ export default function GamePage() {
           return;
         }
         setUserPoints(data.totalPoints);
+        setCurrentColors(data.customColors || {});
+        if (previewColorsRef.current) {
+          const next = { ...previewColorsRef.current };
+          delete next[part];
+          if (Object.keys(next).length === 0) {
+            previewColorsRef.current = null;
+            setPreviewColors(null);
+          } else {
+            previewColorsRef.current = next;
+            setPreviewColors(next);
+          }
+        }
         const me = playersRef.current.get(myIdRef.current);
         if (me) {
           me.colors = data.customColors;
@@ -1882,7 +2084,7 @@ export default function GamePage() {
       } finally {
         setShopSubmitting(false);
       }
-    }, [shopSubmitting, roomId, showBanner, ably]);
+    }, [shopSubmitting, currentColors, roomId, showBanner, ably]);
 
     useEffect(() => {
       hasLeftRef.current = false;
@@ -2035,6 +2237,16 @@ export default function GamePage() {
         equippedBodyRef.current = effectiveEquipped;
         if (typeof p.totalPoints === 'number') {
           setUserPoints(p.totalPoints);
+        }
+        if (p.tag1) {
+          setCurrentTag1(p.tag1);
+          setShopTagInput(p.tag1);
+        }
+        if (p.customColors) {
+          try {
+            const parsed = typeof p.customColors === 'string' ? JSON.parse(p.customColors) : (p.customColors as any);
+            if (parsed && typeof parsed === 'object') setCurrentColors(parsed);
+          } catch { }
         }
         myRoleRef.current = p.role;
         setMyRole(p.role);
@@ -4101,18 +4313,25 @@ export default function GamePage() {
         { prefix: 'unset', usage: '• /unset mirror : Sembunyikan kembali kotak soal', staffOnly: true },
         { prefix: 'reset', usage: '• /reset <user|me> : Reset jawaban & skor player ke Stage 1' },
         { prefix: 'reset', usage: '• /reset all : Reset SEMUA jawaban 1 room ke Stage 1', adminOnly: true },
+        { prefix: 'reset', usage: '• /reset item all <all|username> : Reset SEMUA item toko (Admin Only)', adminOnly: true },
+        { prefix: 'reset', usage: '• /reset item <body|tag|color> <all|username> : Reset item spesifik (Admin Only)', adminOnly: true },
         { prefix: 'spawn', usage: '• /spawn gun <minigun|laser|megalaser|ice|stunt|none> [user|me|here|all] : Beri / cabut senjata', staffOnly: true },
         { prefix: 'jail', usage: '• /jail on|off [user|me] : Bekukan player selama 15 detik', staffOnly: true },
         { prefix: 'set', usage: '• /set tag <1|2|3> <user|me> <title> : Atur title/tag permanen 3 tingkat (1=bawah, 2=tengah, 3=atas)', staffOnly: true },
         { prefix: 'unset', usage: '• /unset tag <1|2|3|all> <user|me> : Hapus title/tag di posisi 1/2/3 atau all', staffOnly: true },
         { prefix: 'set', usage: '• /set nick <user|me> <nama> : Ganti nickname permanen di atas kepala', staffOnly: true },
         { prefix: 'unset', usage: '• /unset nick <user|me> : Kembalikan nickname ke nama asli', staffOnly: true },
+        { prefix: 'change', usage: '• /change map <S1..S20> : Ganti map stage aktif saat ini (contoh: /change map S20)', staffOnly: true },
+        { prefix: 'change', usage: '• /change map <urutan_stage> <S1..S20> : Ganti map stage tertentu (contoh: /change map 2 S20)', staffOnly: true },
+        { prefix: 'change', usage: '• /change map all <S1..S20> : Ganti map semua stage (contoh: /change map all S1)', staffOnly: true },
         { prefix: 'change', usage: '• /change color <user|me> body|tag|tag1|tag2|tag3|nick <warna> : Ganti warna (bisa per tag: tag1, tag2, tag3, atau tag)', staffOnly: true },
-        { prefix: 'change', usage: '• /change body [user|me] <virus|cacing|burung|ayam|sapi|domba|cat> : Ganti model karakter animasi (virus rolling, cacing melar, burung mengepak, dll)' },
+        { prefix: 'change', usage: '• /change body [user|me] <naga|hacker|virus|cacing|burung|ayam|sapi|domba|cat> : Ganti model karakter animasi (naga mecha [LIMITED ⭐], hacker matrix [CYBER 💻], virus, dll)' },
         { prefix: 'change', usage: '• /change tag <user|me> <title> : Shortcut atur tag level 1', staffOnly: true },
         { prefix: 'take', usage: '• /take rope <user|here|all> : Ikat player dengan tali (ikut admin & kebal rintangan)', adminOnly: true },
         { prefix: 'untake', usage: '• /untake rope <user|here|all> : Lepas tali player', adminOnly: true },
         { prefix: 'skip', usage: '• /skip stage <username|here|all|rope> : Tandai soal tersisa selesai (here = stagemu, all = se-game)', adminOnly: true },
+        { prefix: 'hide', usage: '• /hide body <nama_karakter> : Sembunyikan karakter dari toko & player (Only Admin)', adminOnly: true },
+        { prefix: 'unhide', usage: '• /unhide body <nama_karakter> : Tampilkan kembali karakter ke toko (Only Admin)', adminOnly: true },
         { prefix: 'enable', usage: '• /enable cmd <target|all> : Izinkan siswa di room pakai perintah chat (sementara)', staffStrict: true },
         { prefix: 'disable', usage: '• /disable cmd <target|all> : Cabut akses perintah chat siswa di room', staffStrict: true },
       ];
@@ -4822,16 +5041,38 @@ export default function GamePage() {
       }
 
       if (cmd === 'reset' && arg1 === 'item') {
-        if (!isStaff) {
-          addSystemChatMessage('Perintah reset item hanya dapat dijalankan oleh Guru atau Admin.');
+        if (!isAdmin) {
+          addSystemChatMessage('Perintah reset item hanya dapat dijalankan oleh Administrator.');
           return;
         }
-        const itemType = (arg2 || 'all').toLowerCase();
-        const targetQuery = parts[3] ? parts[3].toLowerCase() : (arg2 === 'body' || arg2 === 'tag' || arg2 === 'all' ? 'all' : arg2);
+
+        // Format wajib: /reset item <all|body|tag|color> <all|username>
+        if (!arg2) {
+          addSystemChatMessage('⚠️ Command belum lengkap (Incompleted Command)!');
+          addSystemChatMessage('Gunakan format lengkap dengan target:');
+          addSystemChatMessage('• /reset item all all : Reset SEMUA item seluruh pemain');
+          addSystemChatMessage('• /reset item all <username> : Reset SEMUA item pemain tertentu');
+          addSystemChatMessage('• /reset item <body|tag|color> all : Reset jenis item tertentu untuk semua pemain');
+          addSystemChatMessage('• /reset item <body|tag|color> <username> : Reset jenis item pemain tertentu');
+          return;
+        }
+
+        const itemType = arg2.toLowerCase();
         if (!['body', 'tag', 'color', 'all'].includes(itemType)) {
-          addSystemChatMessage('Format: /reset item <body|tag|color|all> <username|all>');
+          addSystemChatMessage('⚠️ Jenis item tidak valid! Pilihan: body, tag, color, all.');
+          addSystemChatMessage('Contoh: /reset item all all  atau  /reset item body all');
           return;
         }
+
+        const targetQuery = parts[3]?.toLowerCase();
+        if (!targetQuery) {
+          addSystemChatMessage(`⚠️ Command belum lengkap! Target wajib diisi ('all' atau username).`);
+          addSystemChatMessage(`Contoh:`);
+          addSystemChatMessage(`• /reset item ${itemType} all  (Reset untuk seluruh pemain)`);
+          addSystemChatMessage(`• /reset item ${itemType} <username>  (Reset untuk pemain tertentu)`);
+          return;
+        }
+
         fetch('/api/game/shop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -4858,7 +5099,11 @@ export default function GamePage() {
       if (cmd === 'reset') {
         const targetQuery = arg1;
         if (!targetQuery) {
-          addSystemChatMessage('Format salah. Contoh: /reset bims atau /reset all');
+          addSystemChatMessage('⚠️ Command belum lengkap (Incompleted Command)!');
+          addSystemChatMessage('Gunakan format lengkap berikut:');
+          addSystemChatMessage('• /reset all : Reset progress kuis seluruh siswa di room ke Stage 1 (Admin Only)');
+          addSystemChatMessage('• /reset <username|me> : Reset progress kuis siswa tertentu (contoh: /reset bims)');
+          addSystemChatMessage('• /reset item all all : Reset seluruh item kosmetik toko seluruh pemain (Admin Only)');
           return;
         }
         if (targetQuery === 'all') {
@@ -5083,8 +5328,8 @@ export default function GamePage() {
           const item = parts[3];
           const price = parseInt(parts[4]);
           if (!item || !Number.isFinite(price) || price < 0) {
-            addSystemChatMessage('Format: /set shop body <item1..item6|ulat|burung|ayam|sapi|domba|virus> <harga_poin>');
-            addSystemChatMessage('Contoh: /set shop body item1 5000  atau  /set shop body ulat 5000');
+            addSystemChatMessage('Format: /set shop body <item1..item8|ulat|burung|ayam|sapi|domba|virus|naga|hacker> <harga_poin>');
+            addSystemChatMessage('Contoh: /set shop body item8 10000  atau  /set shop body hacker 10000');
             return;
           }
           fetch('/api/game/shop', {
@@ -5407,9 +5652,136 @@ export default function GamePage() {
         return;
       }
 
+      if (cmd === 'change' && (arg1 === 'map' || arg1 === 'stage')) {
+        if (!isAdmin && !isStaff) {
+          addSystemChatMessage('Perintah /change map hanya dapat digunakan oleh Administrator atau Guru.');
+          return;
+        }
+
+        const parseMapId = (str?: string): number | null => {
+          if (!str) return null;
+          const clean = str.trim().toLowerCase().replace(/^s(tage)?/i, '');
+          const n = parseInt(clean, 10);
+          return !isNaN(n) && n >= 1 && n <= 20 ? n : null;
+        };
+
+        const currentMapList = selectedStagesRef.current.length > 0
+          ? [...selectedStagesRef.current]
+          : [1, 2, 3, 4];
+
+        // Format yang didukung:
+        // 1. /change map S20              -> ubah stage saat ini ke map S20
+        // 2. /change map 2 S20            -> ubah stage urutan ke-2 ke map S20
+        // 3. /change map all S1           -> ubah SEMUA stage ke map S1
+        let targetStageOrder: number | 'all' = currentStageRef.current;
+        let targetMapTheme: number | null = null;
+
+        if (!parts[2]) {
+          addSystemChatMessage('Format perintah /change map:');
+          addSystemChatMessage('• /change map <S1..S20> : Ganti map stage aktif saat ini (contoh: /change map S20)');
+          addSystemChatMessage('• /change map <urutan_stage> <S1..S20> : Ganti map stage tertentu (contoh: /change map 2 S20)');
+          addSystemChatMessage('• /change map all <S1..S20> : Ganti map semua stage (contoh: /change map all S1)');
+          return;
+        }
+
+        if (parts[2].toLowerCase() === 'all') {
+          targetStageOrder = 'all';
+          targetMapTheme = parseMapId(parts[3]);
+        } else if (parts[3]) {
+          const parsedOrder = parseInt(parts[2].toLowerCase().replace(/^s(tage)?/i, ''), 10);
+          if (isNaN(parsedOrder) || parsedOrder < 1 || parsedOrder > totalStagesRef.current) {
+            addSystemChatMessage(`Nomor stage tidak valid. Pilih urutan stage 1 sampai ${totalStagesRef.current} (atau 'all').`);
+            return;
+          }
+          targetStageOrder = parsedOrder;
+          targetMapTheme = parseMapId(parts[3]);
+        } else {
+          targetStageOrder = currentStageRef.current;
+          targetMapTheme = parseMapId(parts[2]);
+        }
+
+        if (!targetMapTheme) {
+          addSystemChatMessage(`Map '${parts[3] || parts[2]}' tidak valid. Pilih map S1 sampai S20.`);
+          return;
+        }
+
+        const nextStages = [...currentMapList];
+        while (nextStages.length < totalStagesRef.current) {
+          nextStages.push(nextStages.length + 1);
+        }
+
+        if (targetStageOrder === 'all') {
+          for (let i = 0; i < nextStages.length; i++) {
+            nextStages[i] = targetMapTheme;
+          }
+        } else {
+          nextStages[targetStageOrder - 1] = targetMapTheme;
+        }
+
+        selectedStagesRef.current = nextStages;
+        setSelectedStages(nextStages);
+
+        if (targetStageOrder === 'all' || targetStageOrder === currentStageRef.current) {
+          applyStage(currentStageRef.current, { force: true, showToast: true, respawnPlayer: true });
+          soundEngine.playPowerUp();
+        }
+
+        ably.publishCommand({
+          op: 'change_map',
+          stageOrder: targetStageOrder,
+          newMapTheme: targetMapTheme,
+          selectedStages: nextStages,
+          byName: myUsernameRef.current || (isAdmin ? 'Admin' : 'Guru'),
+        });
+
+        fetch(`/api/rooms/${roomId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'change-map', selectedStages: nextStages }),
+        }).catch(() => {});
+
+        const mapName = getStageShortName(targetMapTheme);
+        const stageDesc = targetStageOrder === 'all' ? 'SEMUA stage' : `Stage ${targetStageOrder}`;
+        showBanner(`🗺️ Berhasil ganti map ${stageDesc} jadi S${targetMapTheme} (${mapName})!`, 5000);
+        addSystemChatMessage(`🗺️ Map ${stageDesc} berhasil diganti menjadi S${targetMapTheme} (${mapName}). Seluruh pemain telah disinkronkan secara realtime.`);
+        return;
+      }
+
+      if (cmd === 'hide' || cmd === 'unhide') {
+        if (!isAdmin) {
+          addSystemChatMessage('Perintah /hide & /unhide hanya dapat digunakan oleh Administrator.');
+          return;
+        }
+        const targetBody = normalizeBodyName(arg2 || arg1 || '');
+        if (!targetBody || targetBody === 'cat') {
+          addSystemChatMessage('Format: /hide body <nama_karakter>  atau  /unhide body <nama_karakter>');
+          addSystemChatMessage('Contoh: /hide body naga  atau  /unhide body hacker');
+          return;
+        }
+        fetch('/api/game/shop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'toggle_hide', itemId: targetBody, roomId }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.ok) {
+              setShopPrices(d.prices);
+              shopPricesRef.current = d.prices;
+              showBanner(d.message, 4500);
+              addSystemChatMessage(`🛡️ [ADMIN] ${d.message}`);
+              soundEngine.playPowerUp();
+            } else {
+              addSystemChatMessage(`Gagal: ${d.error}`);
+            }
+          })
+          .catch(() => addSystemChatMessage('Koneksi bermasalah.'));
+        return;
+      }
+
       if (cmd === 'change' && (arg1 === 'body' || arg1 === 'avatar' || arg1 === 'skin')) {
         // Format: /change body [user|me] <model>  ATAU  /change body <model>
-        const ALL_AVATARS = ['virus', 'cacing', 'ulat', 'burung', 'ayam', 'sapi', 'domba', 'cat-blue', 'cat-pink', 'cat-green', 'cat-orange', 'cat-purple', 'cat', 'kucing'];
+        const ALL_AVATARS = ['kangguru', 'kangaroo', 'pinguin', 'penguin', 'capybara', 'kapibara', 'masbro', 'bebek', 'duck', 'virus', 'cacing', 'ulat', 'burung', 'ayam', 'sapi', 'domba', 'naga', 'dragon', 'hacker', 'anon', 'cyber', 'cat-blue', 'cat-pink', 'cat-green', 'cat-orange', 'cat-purple', 'cat', 'kucing'];
         let targetQuery = 'me';
         let avatarChoice = '';
         if (parts[2] && ALL_AVATARS.includes(parts[2].toLowerCase())) {
@@ -5423,10 +5795,12 @@ export default function GamePage() {
 
         if (avatarChoice === 'cat' || avatarChoice === 'kucing') avatarChoice = 'cat-blue';
         if (avatarChoice === 'ulat') avatarChoice = 'cacing';
+        if (avatarChoice === 'dragon') avatarChoice = 'naga';
+        if (avatarChoice === 'anon' || avatarChoice === 'cyber') avatarChoice = 'hacker';
 
         if (!ALL_AVATARS.includes(avatarChoice)) {
-          addSystemChatMessage('Format: /change body [user|me] <virus|cacing|burung|ayam|sapi|domba|cat-blue|cat-pink|cat-green>');
-          addSystemChatMessage('Pilihan karakter animasi: virus (muter saat jalan), cacing/ulat (melar), burung (mengepak), ayam (mengangguk), sapi (menotok), domba (mantul), cat');
+          addSystemChatMessage('Format: /change body [user|me] <naga|hacker|virus|cacing|burung|ayam|sapi|domba|cat-blue|cat-pink|cat-green>');
+          addSystemChatMessage('Pilihan karakter animasi: naga (sayap mecha, jet plasma & orb kosmik [LIMITED ⭐]), hacker (topeng LED matrix & terminal hologram [CYBER 💻]), virus, cacing/ulat, burung, ayam, sapi, domba, cat');
           return;
         }
 
@@ -5439,6 +5813,10 @@ export default function GamePage() {
 
         const pTarget = playersRef.current.get(target.id);
         const targetBody = avatarChoice.startsWith('cat') ? 'cat' : avatarChoice;
+        if (shopPrices.hiddenBodies?.includes(targetBody) && !isAdmin) {
+          addSystemChatMessage(`⛔ Karakter '${targetBody}' sedang disembunyikan oleh Administrator (Khusus Admin).`);
+          return;
+        }
         if (pTarget) {
           pTarget.avatar = avatarChoice;
           pTarget.bodyModel = targetBody;
@@ -7612,7 +7990,9 @@ export default function GamePage() {
                   onClick={() => setShopTab('body')}
                 >
                   <span>Karakter</span>
-                  <span className="shop-badge-item text-[10px] py-0.5 px-1.5">{unlockedBodies.length}/7</span>
+                  <span className="shop-badge-item text-[10px] py-0.5 px-1.5">
+                    {unlockedBodies.length}/{isAdmin ? Object.keys(DEFAULT_BODY_METADATA).length : Math.max(1, Object.keys(DEFAULT_BODY_METADATA).length - (shopPrices.hiddenBodies?.length || 0))}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -7632,79 +8012,163 @@ export default function GamePage() {
 
               {/* 1. Body Tab */}
               {shopTab === 'body' && (
-                <div className="flex-1 overflow-y-auto pr-1 space-y-2">
-                  {[
-                    { id: 'cat', name: 'Kucing Petualang', num: 'Default', desc: 'Karakter utama petualang llysSmart.', price: 0 },
-                    { id: 'ulat', name: 'Cacing / Ulat Melar', num: 'Item 1', desc: 'Animasi akordeon melar & mengkerut.', price: shopPrices.body.ulat ?? 5000 },
-                    { id: 'burung', name: 'Burung Angkasa', num: 'Item 2', desc: 'Animasi sayap mengepak saat melompat.', price: shopPrices.body.burung ?? 5000 },
-                    { id: 'ayam', name: 'Ayam Jago', num: 'Item 3', desc: 'Animasi kepala mengangguk & jengger merah.', price: shopPrices.body.ayam ?? 5000 },
-                    { id: 'sapi', name: 'Sapi Padang', num: 'Item 4', desc: 'Animasi 4 kuku melangkah & belang hitam-putih.', price: shopPrices.body.sapi ?? 5000 },
-                    { id: 'domba', name: 'Domba Awan', num: 'Item 5', desc: 'Animasi bulu awan gembul membal.', price: shopPrices.body.domba ?? 5000 },
-                    { id: 'virus', name: 'Virus Matrix', num: 'Item 6', desc: 'Animasi menggelinding muter saat jalan.', price: shopPrices.body.virus ?? 5000 },
-                  ].map((item) => {
-                    const isOwned = item.id === 'cat' || unlockedBodies.includes(item.id);
-                    const isEquipped = (equippedBody === item.id) && !previewBody;
-                    const isPreviewing = previewBody === item.id;
-                    const canAfford = userPoints >= item.price;
+                <div className="flex-1 overflow-y-auto pr-1 space-y-2.5">
+                  {(() => {
+                    const allItems = Object.entries(DEFAULT_BODY_METADATA).map(([id, meta]) => {
+                      const custom = shopPrices.bodyMetadata?.[id] || {};
+                      const currentPrice = id === 'cat' ? 0 : (shopPrices.body?.[id] ?? meta.defaultPrice);
+                      const cleanName = custom.name?.trim();
+                      const name = (cleanName && cleanName !== '-') ? cleanName : meta.name;
+                      const cleanDesc = custom.desc?.trim();
+                      const desc = (cleanDesc && cleanDesc !== '-') ? cleanDesc : meta.desc;
+                      return {
+                        id,
+                        name,
+                        num: meta.num,
+                        desc,
+                        price: currentPrice,
+                        isLimited: meta.isLimited,
+                        isCyber: meta.isCyber,
+                      };
+                    });
 
-                    return (
-                      <div key={item.id} className={`shop-card-item ${isEquipped ? 'is-active' : ''}`}>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-[#3b1e02]">{item.name}</span>
-                            <span className="shop-badge-item">{item.num}</span>
-                            {isOwned && <span className="shop-badge-owned">Milikmu</span>}
-                          </div>
-                          <p className="text-[11px] text-[#784e27] mt-0.5">{item.desc}</p>
-                          {!isOwned && (
-                            <p className="text-xs font-bold text-[#8a5322] mt-1">
-                              Harga: <span className="text-[#b45309] font-black">{item.price.toLocaleString()} Poin</span>
-                            </p>
-                          )}
-                        </div>
+                    const visibleItems = allItems.filter((item) => isAdmin || !shopPrices.hiddenBodies?.includes(item.id));
 
-                        <div className="flex items-center gap-2">
-                          {isEquipped ? (
-                            <span className="shop-btn-equipped">
-                              Dipakai
-                            </span>
-                          ) : isOwned ? (
-                            <button
-                              type="button"
-                              className="shop-btn-equip"
-                              onClick={() => equipBody(item.id)}
-                            >
-                              Gunakan
-                            </button>
-                          ) : (
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                className={`shop-btn-try ${isPreviewing ? 'is-active' : ''}`}
-                                onClick={() => startPreview(item.id)}
-                              >
-                                {isPreviewing ? 'Mencoba' : 'Coba'}
-                              </button>
-                              {canAfford ? (
-                                <button
-                                  type="button"
-                                  disabled={shopSubmitting}
-                                  className="shop-btn-buy"
-                                  onClick={() => buyBody(item.id)}
-                                >
-                                  Beli
-                                </button>
-                              ) : (
-                                <span className="shop-btn-disabled">
-                                  Poin Kurang
+                    return visibleItems.map((item) => {
+                      const isHidden = Boolean(shopPrices.hiddenBodies?.includes(item.id));
+                      const isOwned = item.id === 'cat' || unlockedBodies.includes(item.id);
+                      const isEquipped = (equippedBody === item.id) && !previewBody;
+                      const isPreviewing = previewBody === item.id;
+                      const canAfford = userPoints >= item.price;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`shop-card-item ${isEquipped ? 'is-active' : ''} ${item.isLimited ? 'border-amber-400 bg-amber-50/40' : item.isCyber ? 'border-emerald-500/60 bg-emerald-50/30' : ''} ${isHidden ? 'opacity-75 border-dashed border-red-400 bg-red-50/30' : ''}`}
+                        >
+                          <div className="flex-1 min-w-0 pr-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-sm text-[#3b1e02] leading-tight">{item.name}</span>
+
+                              {/* Special Edition Badges (LIMITED ⭐, CYBER 💻) - Terlihat oleh semua player */}
+                              {item.isLimited && (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs border border-amber-300">
+                                  LIMITED ⭐
+                                </span>
+                              )}
+                              {item.isCyber && (
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-800 text-emerald-200 shadow-xs border border-emerald-400">
+                                  CYBER 💻
+                                </span>
+                              )}
+
+                              {/* Nomor / Slot Badge (Item 1, Item 2, etc.) - HANYA UNTUK ADMIN (di-hide untuk Guru & Siswa) */}
+                              {isAdmin && (
+                                <span className="shop-badge-item text-[10px] py-0.5 px-1.5 opacity-80" title="Slot ID Toko (Hanya Admin)">
+                                  {item.num}
+                                </span>
+                              )}
+
+                              {isOwned && (
+                                <span className="shop-badge-owned text-[10px] py-0.5 px-2 flex items-center gap-1">
+                                  <span className="text-emerald-600 font-black">✓</span> Milikmu
+                                </span>
+                              )}
+
+                              {isHidden && (
+                                <span className="text-[10px] bg-red-100 text-red-700 border border-red-300 font-bold px-1.5 py-0.5 rounded shadow-xs">
+                                  Tersembunyi (Only Admin)
                                 </span>
                               )}
                             </div>
-                          )}
+
+                            {item.desc && (
+                              <p className="text-[11.5px] text-[#784e27] mt-1 leading-snug line-clamp-2">
+                                {item.desc}
+                              </p>
+                            )}
+
+                            {/* Info Harga / Tombol Edit Admin */}
+                            {isAdmin ? (
+                              <div className="flex items-center gap-2 mt-1.5 pt-1 border-t border-[#e8d5be]/70 text-[11px] font-bold text-[#8a5322] flex-wrap">
+                                <span>Harga Live: <span className="text-[#b45309] font-black">{item.id === 'cat' ? 'Gratis' : `${item.price.toLocaleString()} Poin`}</span></span>
+                                <button
+                                  type="button"
+                                  title="Edit Nama, Harga, dan Deskripsi karakter ini"
+                                  className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded px-1.5 py-0.5 font-bold cursor-pointer transition-all shadow-xs"
+                                  onClick={() => setEditingShopItem({ id: item.id, name: item.name, desc: item.desc, price: item.price })}
+                                >
+                                  ✏️ Edit Item
+                                </button>
+                              </div>
+                            ) : (
+                              !isOwned && item.id !== 'cat' && (
+                                <p className="text-[11px] font-bold text-[#8a5322] mt-0.5">
+                                  Harga: <span className="text-[#b45309] font-black">{item.price.toLocaleString()} Poin</span>
+                                </p>
+                              )
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {/* Tombol Admin: Hide / Unhide (Mata) */}
+                            {isAdmin && item.id !== 'cat' && (
+                              <button
+                                type="button"
+                                title={isHidden ? "Tampilkan kembali item ke Guru & Siswa" : "Sembunyikan item dari toko (Guru & Siswa tidak bisa melihat / membeli)"}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 shadow-xs ${
+                                  isHidden
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-400 hover:bg-emerald-100'
+                                    : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                                }`}
+                                onClick={() => toggleHideBody(item.id)}
+                              >
+                                {isHidden ? '👁️ Tampilkan' : '👁️ Sembunyikan'}
+                              </button>
+                            )}
+
+                            {isEquipped ? (
+                              <span className="shop-btn-equipped">
+                                ✓ Dipakai
+                              </span>
+                            ) : isOwned ? (
+                              <button
+                                type="button"
+                                className="shop-btn-equip"
+                                onClick={() => equipBody(item.id)}
+                              >
+                                Gunakan
+                              </button>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  className={`shop-btn-try ${isPreviewing ? 'is-active' : ''}`}
+                                  onClick={() => startPreview(item.id)}
+                                >
+                                  {isPreviewing ? 'Mencoba' : 'Coba'}
+                                </button>
+                                {canAfford ? (
+                                  <button
+                                    type="button"
+                                    disabled={shopSubmitting}
+                                    className={`shop-btn-buy ${shopSubmitting ? 'shop-btn-disabled' : ''}`}
+                                    onClick={() => buyBody(item.id)}
+                                  >
+                                    {shopSubmitting ? '...' : `Beli (${item.price.toLocaleString()} Poin)`}
+                                  </button>
+                                ) : (
+                                  <span className="shop-btn-disabled" title="Poin kamu belum mencukupi">
+                                    {item.price > 0 ? `Butuh ${item.price.toLocaleString()} Poin` : 'Poin Kurang'}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               )}
 
@@ -7712,9 +8176,21 @@ export default function GamePage() {
               {shopTab === 'tag' && (
                 <div className="flex-1 overflow-y-auto pr-1 space-y-3">
                   <div className="settings-section">
-                    <p className="text-xs font-bold text-[#3b1e02]">
-                      Gelar aktif (Tag 1): <span className="font-bold text-[#8a5322]">{playersRef.current.get(myIdRef.current)?.tag1 || 'Belum ada'}</span>
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-[#3b1e02]">
+                        Gelar aktif: <span className="font-bold text-[#8a5322]">{currentTag1 || playersRef.current.get(myIdRef.current)?.tag1 || 'Belum ada'}</span>
+                      </p>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          title="Ubah harga tag & gelar untuk toko"
+                          className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded px-2 py-0.5 font-bold cursor-pointer transition-all shadow-xs"
+                          onClick={promptEditTagPrice}
+                        >
+                          ✏️ Edit Harga Tag
+                        </button>
+                      )}
+                    </div>
                     <p className="text-[11px] text-[#784e27] mt-0.5">
                       Gelar akan melayang tepat di atas kepalamu dan terlihat oleh semua pemain.
                     </p>
@@ -7723,148 +8199,261 @@ export default function GamePage() {
                     </p>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-[#3b1e02] mb-1">Ketik Gelar Baru:</label>
-                    <input
-                      type="text"
-                      maxLength={24}
-                      placeholder="Contoh: JUARA 1, SULTAN, KODING PRO..."
-                      className="w-full rounded-xl border-2 border-[#c9ab81] bg-[#fffcf5] px-3 py-2 text-xs font-bold text-[#3b1e02] focus:outline-none focus:border-[#753202]"
-                      value={shopTagInput}
-                      onChange={(e) => setShopTagInput(e.target.value)}
-                    />
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        type="button"
-                        disabled={!shopTagInput.trim()}
-                        className="shop-btn-try flex-1 py-2"
-                        onClick={() => startTagPreview(shopTagInput)}
-                      >
-                        Coba Gelar
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!shopTagInput.trim() || shopSubmitting || (!isStaff && userPoints < shopPrices.tag)}
-                        className={`flex-1 py-2 ${(!isStaff && userPoints < shopPrices.tag) || !shopTagInput.trim() ? 'shop-btn-disabled' : 'shop-btn-buy'}`}
-                        onClick={() => buyTag1(shopTagInput.trim())}
-                      >
-                        {shopSubmitting ? 'Memproses...' : `Beli & Pasang (${isStaff ? 'Gratis' : `${shopPrices.tag.toLocaleString()} Poin`})`}
-                      </button>
-                    </div>
-                  </div>
+                  {(() => {
+                    const isTagAlreadyEquipped = Boolean(shopTagInput.trim() && shopTagInput.trim().toLowerCase() === currentTag1.trim().toLowerCase());
+                    const canAffordTag = isStaff || userPoints >= shopPrices.tag;
+                    const isTagBuyDisabled = !shopTagInput.trim() || shopSubmitting || isTagAlreadyEquipped || !canAffordTag;
 
-                  <div>
-                    <p className="text-[11px] font-bold text-[#784e27] mb-1.5">Pilihan Gelar Cepat:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {['JUARA 1', 'MASTER KODING', 'SULTAN', 'SPEEDRUNNER', 'LEGEND', 'GUARDIAN', 'PRO GAMER'].map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          className="px-2.5 py-1 rounded-lg bg-[#fffcf5] border-2 border-[#d4b58e] hover:border-[#8a5322] hover:bg-[#faebd7] text-xs font-bold text-[#5c3710] transition-all shadow-sm"
-                          onClick={() => setShopTagInput(preset)}
-                        >
-                          {preset}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                    return (
+                      <div>
+                        <label className="block text-xs font-bold text-[#3b1e02] mb-1">Ketik Gelar Baru:</label>
+                        <input
+                          type="text"
+                          maxLength={24}
+                          placeholder="Contoh: JUARA 1, SULTAN, KODING PRO..."
+                          className="w-full rounded-xl border-2 border-[#c9ab81] bg-[#fffcf5] px-3 py-2 text-xs font-bold text-[#3b1e02] focus:outline-none focus:border-[#753202]"
+                          value={shopTagInput}
+                          onChange={(e) => setShopTagInput(e.target.value)}
+                        />
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            type="button"
+                            disabled={!shopTagInput.trim()}
+                            className="shop-btn-try flex-1 py-2"
+                            onClick={() => startTagPreview(shopTagInput)}
+                          >
+                            Coba Gelar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isTagBuyDisabled}
+                            className={`flex-1 py-2 ${isTagBuyDisabled ? 'shop-btn-disabled' : 'shop-btn-buy'}`}
+                            onClick={() => buyTag1(shopTagInput.trim())}
+                          >
+                            {shopSubmitting
+                              ? 'Memproses...'
+                              : isTagAlreadyEquipped
+                                ? 'Sudah Terpasang'
+                                : `Beli & Pasang (${isStaff ? 'Gratis' : `${shopPrices.tag.toLocaleString()} Poin`})`}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
               {/* 3. Color Tab */}
               {shopTab === 'color' && (
-                <div className="flex-1 overflow-y-auto pr-1 space-y-3">
-                  <div className="settings-section">
-                    <p className="text-xs font-bold text-[#3b1e02]">Kustomisasi Warna Tubuh, Gelar &amp; Nama</p>
-                    <p className="text-[11px] text-[#784e27] mt-0.5">
-                      Biaya: Warna Statis 1.000 Poin | Warna Animasi Pelangi RGB 5.000 Poin
-                    </p>
-                  </div>
+                (() => {
+                  const staticCost = shopPrices.color?.[`${shopColorPart}_static`] ?? shopPrices.color?.body_static ?? 1000;
+                  const rgbCost = shopPrices.color?.[`${shopColorPart}_rgb`] ?? shopPrices.color?.body_rgb ?? 5000;
+                  const activeCost = shopColorMode === 'rgb' ? rgbCost : staticCost;
+                  const activeColorOnPart = (currentColors[shopColorPart] || '').toLowerCase();
+                  const targetChosenColor = shopColorMode === 'rgb' ? 'rgb' : shopColorVal.toLowerCase();
+                  const isColorAlreadyEquipped = activeColorOnPart === targetChosenColor;
+                  const canAffordColor = isStaff || userPoints >= activeCost;
+                  const isColorBuyDisabled = shopSubmitting || isColorAlreadyEquipped || !canAffordColor;
 
-                  <div>
-                    <label className="block text-xs font-bold text-[#3b1e02] mb-1">Pilih Bagian yang Diwarnai:</label>
-                    <div className="flex gap-2">
-                      {[
-                        { id: 'body', label: 'Tubuh Karakter' },
-                        { id: 'tag1', label: 'Gelar Tag 1' },
-                        { id: 'nick', label: 'Nama Lengkap' },
-                      ].map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${shopColorPart === p.id ? 'bg-[#ffba49] text-[#3b1e02] border-[#753202] shadow' : 'bg-[#fffcf5] border-[#c9ab81] text-[#784e27] hover:bg-[#faebd7]'}`}
-                          onClick={() => setShopColorPart(p.id as 'body' | 'tag1' | 'nick')}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  return (
+                    <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+                      <div className="settings-section">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-[#3b1e02]">Kustomisasi Warna Tubuh, Gelar &amp; Nama</p>
+                          {isAdmin && (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                title="Ubah harga warna statis"
+                                className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded px-2 py-0.5 font-bold cursor-pointer transition-all shadow-xs"
+                                onClick={() => promptEditColorPrice('static')}
+                              >
+                                ✏️ Edit Statis
+                              </button>
+                              <button
+                                type="button"
+                                title="Ubah harga animasi pelangi RGB"
+                                className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded px-2 py-0.5 font-bold cursor-pointer transition-all shadow-xs"
+                                onClick={() => promptEditColorPrice('rgb')}
+                              >
+                                ✏️ Edit RGB
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#784e27] mt-0.5">
+                          Biaya: Warna Statis {staticCost.toLocaleString()} Poin | Warna Animasi Pelangi RGB {rgbCost.toLocaleString()} Poin {isStaff && '(Gratis untuk Guru/Admin)'}
+                        </p>
+                      </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-[#3b1e02] mb-1">Pilih Mode Warna:</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${shopColorMode === 'static' ? 'bg-[#ffba49] text-[#3b1e02] border-[#753202] shadow' : 'bg-[#fffcf5] border-[#c9ab81] text-[#784e27] hover:bg-[#faebd7]'}`}
-                        onClick={() => setShopColorMode('static')}
-                      >
-                        Warna Statis (1.000 Poin)
-                      </button>
-                      <button
-                        type="button"
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${shopColorMode === 'rgb' ? 'bg-gradient-to-r from-red-500 via-green-500 to-blue-500 text-white border-[#5a1a1a] shadow' : 'bg-[#fffcf5] border-[#c9ab81] text-[#784e27] hover:bg-[#faebd7]'}`}
-                        onClick={() => setShopColorMode('rgb')}
-                      >
-                        Pelangi RGB (5.000 Poin)
-                      </button>
-                    </div>
-                  </div>
-
-                  {shopColorMode === 'static' && (
-                    <div>
-                      <label className="block text-xs font-bold text-[#5c3710] mb-1">Pilih Warna:</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={shopColorVal}
-                          onChange={(e) => setShopColorVal(e.target.value)}
-                          className="h-9 w-14 rounded-lg border-2 border-[#c9ab81] bg-[#fffcf5] cursor-pointer"
-                        />
-                        <div className="flex flex-wrap gap-1">
-                          {['#ffd43b', '#60a5fa', '#34d399', '#f87171', '#c084fc', '#f472b6', '#ffffff'].map((c) => (
+                      <div>
+                        <label className="block text-xs font-bold text-[#3b1e02] mb-1">Pilih Bagian yang Diwarnai:</label>
+                        <div className="flex gap-2">
+                          {[
+                            { id: 'body', label: 'Tubuh Karakter' },
+                            { id: 'tag1', label: 'Gelar Tag 1' },
+                            { id: 'nick', label: 'Nama Lengkap' },
+                          ].map((p) => (
                             <button
-                              key={c}
+                              key={p.id}
                               type="button"
-                              className="h-7 w-7 rounded-full border-2 border-[#8a5322] shadow-sm transition-transform hover:scale-110"
-                              style={{ background: c }}
-                              onClick={() => setShopColorVal(c)}
-                            />
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${shopColorPart === p.id ? 'bg-[#ffba49] text-[#3b1e02] border-[#753202] shadow' : 'bg-[#fffcf5] border-[#c9ab81] text-[#784e27] hover:bg-[#faebd7]'}`}
+                              onClick={() => setShopColorPart(p.id as 'body' | 'tag1' | 'nick')}
+                            >
+                              {p.label}
+                            </button>
                           ))}
                         </div>
                       </div>
-                    </div>
-                  )}
 
-                  <div className="pt-2 flex gap-2">
-                    <button
-                      type="button"
-                      className="shop-btn-try flex-1 py-2.5"
-                      onClick={() => startColorPreview(shopColorPart, shopColorMode, shopColorVal)}
-                    >
-                      Coba Warna
-                    </button>
-                    <button
-                      type="button"
-                      disabled={shopSubmitting || (!isStaff && userPoints < (shopColorMode === 'rgb' ? 5000 : 1000))}
-                      className={`flex-1 py-2.5 ${!isStaff && userPoints < (shopColorMode === 'rgb' ? 5000 : 1000) ? 'shop-btn-disabled' : 'shop-btn-buy'}`}
-                      onClick={() => buyColor(shopColorPart, shopColorMode, shopColorVal)}
-                    >
-                      Beli ({shopColorMode === 'rgb' ? '5.000' : '1.000'} Poin)
-                    </button>
-                  </div>
-                </div>
+                      <div>
+                        <label className="block text-xs font-bold text-[#3b1e02] mb-1">Pilih Mode Warna:</label>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${shopColorMode === 'static' ? 'bg-[#ffba49] text-[#3b1e02] border-[#753202] shadow' : 'bg-[#fffcf5] border-[#c9ab81] text-[#784e27] hover:bg-[#faebd7]'}`}
+                            onClick={() => setShopColorMode('static')}
+                          >
+                            Warna Statis ({staticCost.toLocaleString()} Poin)
+                          </button>
+                          <button
+                            type="button"
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${shopColorMode === 'rgb' ? 'bg-gradient-to-r from-red-500 via-green-500 to-blue-500 text-white border-[#5a1a1a] shadow' : 'bg-[#fffcf5] border-[#c9ab81] text-[#784e27] hover:bg-[#faebd7]'}`}
+                            onClick={() => setShopColorMode('rgb')}
+                          >
+                            Pelangi RGB ({rgbCost.toLocaleString()} Poin)
+                          </button>
+                        </div>
+                      </div>
+
+                      {shopColorMode === 'static' && (
+                        <div>
+                          <label className="block text-xs font-bold text-[#5c3710] mb-1">Pilih Warna:</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={shopColorVal}
+                              onChange={(e) => setShopColorVal(e.target.value)}
+                              className="h-9 w-14 rounded-lg border-2 border-[#c9ab81] bg-[#fffcf5] cursor-pointer"
+                            />
+                            <div className="flex flex-wrap gap-1.5 items-center">
+                              {['#ffd43b', '#fb923c', '#60a5fa', '#34d399', '#f87171', '#c084fc', '#f472b6', '#38bdf8', '#0f172a', '#ffffff'].map((c) => {
+                                const isSelected = shopColorVal.toLowerCase() === c.toLowerCase();
+                                return (
+                                  <button
+                                    key={c}
+                                    type="button"
+                                    className={`h-7 w-7 rounded-full border-2 border-[#8a5322] shadow-sm transition-all cursor-pointer hover:scale-110 ${isSelected ? 'ring-2 ring-[#753202] ring-offset-1 scale-110' : 'opacity-85 hover:opacity-100'}`}
+                                    style={{ background: c }}
+                                    onClick={() => setShopColorVal(c)}
+                                    title={c}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="pt-2 flex gap-2">
+                        <button
+                          type="button"
+                          className="shop-btn-try flex-1 py-2.5"
+                          onClick={() => startColorPreview(shopColorPart, shopColorMode, shopColorVal)}
+                        >
+                          Coba Warna
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isColorBuyDisabled}
+                          className={`flex-1 py-2.5 ${isColorBuyDisabled ? 'shop-btn-disabled' : 'shop-btn-buy'}`}
+                          onClick={() => buyColor(shopColorPart, shopColorMode, shopColorVal)}
+                        >
+                          {shopSubmitting
+                            ? 'Memproses...'
+                            : isColorAlreadyEquipped
+                              ? 'Warna Sedang Dipakai'
+                              : `Beli (${isStaff ? 'Gratis' : `${activeCost.toLocaleString()} Poin`})`}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal Edit Item Toko (Admin Only) */}
+        {editingShopItem && (
+          <div className="overlay-backdrop z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+            <div className="parchment-card w-full max-w-md p-5 bg-[#fff8eb] border-4 border-[#753202] rounded-2xl shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b-2 border-[#d4b58e] pb-2">
+                <h3 className="font-black text-base text-[#3b1e02] flex items-center gap-1.5">
+                  <span>✏️ Edit Item Toko [{editingShopItem.id.toUpperCase()}]</span>
+                </h3>
+                <button
+                  type="button"
+                  className="text-[#784e27] hover:text-[#3b1e02] font-black text-lg cursor-pointer"
+                  onClick={() => setEditingShopItem(null)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#5c3710] mb-1">Nama Karakter:</label>
+                  <input
+                    type="text"
+                    maxLength={40}
+                    className="w-full rounded-xl border-2 border-[#c9ab81] bg-[#fffcf5] px-3 py-2 text-xs font-bold text-[#3b1e02] focus:outline-none focus:border-[#753202]"
+                    value={editingShopItem.name}
+                    onChange={(e) => setEditingShopItem({ ...editingShopItem, name: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#5c3710] mb-1">Harga (Poin):</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={500}
+                    className="w-full rounded-xl border-2 border-[#c9ab81] bg-[#fffcf5] px-3 py-2 text-xs font-bold text-[#3b1e02] focus:outline-none focus:border-[#753202]"
+                    value={editingShopItem.price}
+                    onChange={(e) => setEditingShopItem({ ...editingShopItem, price: Math.max(0, parseInt(e.target.value || '0', 10)) })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#5c3710] mb-1">Deskripsi / Detail:</label>
+                  <textarea
+                    rows={3}
+                    maxLength={160}
+                    className="w-full rounded-xl border-2 border-[#c9ab81] bg-[#fffcf5] px-3 py-2 text-xs font-medium text-[#3b1e02] focus:outline-none focus:border-[#753202]"
+                    value={editingShopItem.desc}
+                    onChange={(e) => setEditingShopItem({ ...editingShopItem, desc: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-[#e2c7a7]">
+                <button
+                  type="button"
+                  className="flex-1 py-2 rounded-xl border-2 border-[#c9ab81] bg-[#f5e6d3] text-xs font-bold text-[#5c3710] hover:bg-[#ebd3ba] cursor-pointer"
+                  onClick={() => setEditingShopItem(null)}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={editItemSubmitting || !editingShopItem.name.trim()}
+                  className="flex-1 py-2 rounded-xl border-2 border-[#753202] bg-[#4ade80] hover:bg-[#22c55e] text-xs font-black text-[#0f3818] shadow-md cursor-pointer disabled:opacity-50"
+                  onClick={saveEditedShopItem}
+                >
+                  {editItemSubmitting ? 'Menyimpan...' : '💾 Simpan Perubahan'}
+                </button>
+              </div>
             </div>
           </div>
         )}

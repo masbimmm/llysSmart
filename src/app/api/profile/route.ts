@@ -21,6 +21,14 @@ const avatarEnum = z.enum([
   'ayam',
   'sapi',
   'domba',
+  'kangguru',
+  'pinguin',
+  'penguin',
+  'capybara',
+  'bebek',
+  'duck',
+  'naga',
+  'hacker',
 ]);
 
 export async function GET() {
