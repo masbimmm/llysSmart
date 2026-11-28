@@ -52,6 +52,9 @@ export type Player = {
   // Posisi terakhir admin yang mengikat tali (untuk safe-respawn di belakang admin)
   adminAnchor?: { x: number; y: number };
   adminFacing?: 1 | -1;
+  hp?: number;
+  maxHp?: number;
+  lastHitAt?: number;
 };
 
 export type Projectile = {
@@ -107,6 +110,7 @@ function respawnToStart(p: Player, onRespawn?: (p: Player) => void) {
   p.isDying = false;
   p.deathStartedAt = undefined;
   p.burnUntil = undefined;
+  p.hp = 5;
   if (p.hasAdminGun && p.gun) {
     p.blasterAmmo = Infinity;
     p.blasterUntil = undefined;
@@ -444,6 +448,29 @@ export function updatePlayerPhysics(
           stageOptions?.onPlayerHitByRound?.(p.id, pr.shooterId, pr.damage ?? 1, 'stunt', pr.id);
           return;
         }
+
+        // Mode Saling Tembak Siswa (PvP): 5x kena tembak baru gugur
+        const isStudentPvPHit = shooterRole === 'student' && p.role === 'student';
+        if (isStudentPvPHit && stageOptions?.isPvpEnabled !== false) {
+          if (p.lastHitAt && now - p.lastHitAt < 200) {
+            // i-frame 200ms per player agar tidak kena double hit instan
+            continue;
+          }
+          const currentHp = typeof p.hp === 'number' ? p.hp : 5;
+          const nextHp = Math.max(0, currentHp - 1);
+          p.hp = nextHp;
+          p.lastHitAt = now;
+          if (nextHp > 0) {
+            p.vx = p.x < pr.x ? -3.8 : 3.8;
+            p.vy = -3;
+            p.onGround = false;
+            onSoundEvent?.('bounce');
+            stageOptions?.onPlayerHitByRound?.(p.id, pr.shooterId, 1, pr.weapon, pr.id);
+            return;
+          }
+          p.hp = 0;
+        }
+
         p.isDying = true;
         p.deathStartedAt = now;
         p.vx = 0;
@@ -887,6 +914,15 @@ export function updatePlayerPhysics(
         if (pr.shooterId !== p.id) continue;
         const shooterRole = pr.shooterRole ?? p.role ?? 'student';
         if (!canShooterHitTarget(shooterRole, other.role, stageOptions?.isPvpEnabled !== false)) continue;
+
+        // Mode Siswa vs Siswa (PvP): Victim-authoritative.
+        // Korban sendiri yang mendeteksi peluru masuk di client-nya (baris 450),
+        // sehingga damage & knockback terhitung tepat 1x per peluru dan sinkron di semua layar.
+        // Penembak tidak mendeteksi hit korban untuk menghindari double-hit / desync HP.
+        const isStudentPvP = shooterRole === 'student' && (other.role ?? 'student') === 'student';
+        if (isStudentPvP && stageOptions?.isPvpEnabled !== false) {
+          continue;
+        }
 
         const rW = pr.w ?? 28;
         const rH = pr.h ?? 18;

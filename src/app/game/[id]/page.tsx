@@ -662,6 +662,7 @@ export default function GamePage() {
     tag3?: string | null;
     colors?: PlayerColors | null;
     ropedById?: string | null;
+    hp?: number;
   }) {
     if (!rp.id || rp.id === myIdRef.current) return;
     const nowPerf = performance.now();
@@ -684,7 +685,14 @@ export default function GamePage() {
       if (rp.customNick !== undefined) existing.customNick = rp.customNick || undefined;
       if (typeof rp.stage === 'number') existing.stage = rp.stage;
       if (typeof rp.onGround === 'boolean') existing.onGround = rp.onGround;
-      if (typeof rp.isDying === 'boolean') existing.isDying = rp.isDying;
+      if (typeof rp.isDying === 'boolean') {
+        if (existing.isDying && !rp.isDying) {
+          existing.hp = typeof rp.hp === 'number' ? rp.hp : 5;
+          existing.deathStartedAt = undefined;
+        }
+        existing.isDying = rp.isDying;
+      }
+      if (typeof rp.hp === 'number') existing.hp = rp.hp;
       if (rp.deathStartedAt !== undefined) existing.deathStartedAt = rp.deathStartedAt;
       if (rp.burnUntil !== undefined) existing.burnUntil = rp.burnUntil;
       if (rp.role) existing.role = rp.role;
@@ -746,6 +754,7 @@ export default function GamePage() {
         facing: rp.facing,
         onGround: rp.onGround ?? true,
         isDying: rp.isDying,
+        hp: typeof rp.hp === 'number' ? rp.hp : 5,
         deathStartedAt: rp.deathStartedAt,
         burnUntil: rp.burnUntil,
         jailedUntil: rp.jailedUntil,
@@ -916,6 +925,7 @@ export default function GamePage() {
           tag3: me.tag3,
           customNick: me.customNick,
           colors: me.colors,
+          hp: me.hp ?? 5,
         });
       }
     }
@@ -1396,8 +1406,22 @@ export default function GamePage() {
         }
       }
     } else if (cmd.op === 'pvp_mode') {
-      isStudentPvpEnabledRef.current = Boolean(cmd.value);
-      setIsStudentPvpEnabled(Boolean(cmd.value));
+      const isTurnOn = Boolean(cmd.value);
+      isStudentPvpEnabledRef.current = isTurnOn;
+      setIsStudentPvpEnabled(isTurnOn);
+      for (const p of playersRef.current.values()) {
+        p.hp = 5;
+        if (isTurnOn && (p.role === 'student' || (!p.role && p.id !== myIdRef.current))) {
+          p.isGodMode = false;
+        }
+      }
+      if (isTurnOn && myRoleRef.current === 'student') {
+        isGodModeRef.current = false;
+        setIsGodMode(false);
+        showBanner('⚔️ Mode Saling Tembak DIAKTIFKAN! Bar darah aktif (5 HP). Siswa bisa saling tembak!', 4500);
+      } else if (!isTurnOn) {
+        showBanner('🕊️ Mode Damai DIAKTIFKAN. Bar darah ditutup.', 3500);
+      }
     } else if (cmd.op === 'cmd_access') {
       // Admin / Guru broadcast siapa aja yang di-enable / di-disable cmd access-nya
       if (cmd.targetId === 'all') {
@@ -1513,10 +1537,16 @@ export default function GamePage() {
         playersRef.current.get(cmd.by)?.username ??
         (shooterRole === 'admin' ? 'Admin' : shooterRole === 'teacher' ? 'Guru' : 'Player');
 
+      const isStudentPvP = shooterRole === 'student';
+
       if (cmd.targetId === myIdRef.current) {
         const me = playersRef.current.get(myIdRef.current);
         if (me && !me.isDying && !me.ropedById) {
           if (canShooterHitTarget(shooterRole, me.role, isStudentPvpEnabledRef.current)) {
+            if (me.lastHitAt && Date.now() - me.lastHitAt < 250) {
+              return;
+            }
+            me.lastHitAt = Date.now();
             if (cmd.weapon === 'ice') {
               me.isDying = false;
               me.frozenUntil = Date.now() + 1200;
@@ -1534,6 +1564,24 @@ export default function GamePage() {
               me.frozenByWeapon = 'stunt';
               me.vx = 0;
               me.vy = 0;
+            } else if (isStudentPvP && isStudentPvpEnabledRef.current) {
+              const newHp = typeof cmd.hp === 'number' ? cmd.hp : Math.max(0, (me.hp ?? 5) - 1);
+              me.hp = newHp;
+              if (newHp > 0) {
+                me.vx = me.x < (projectilesRef.current.find((r) => r.shooterId === cmd.by)?.x ?? me.x) ? -4 : 4;
+                me.vy = -3;
+                soundEngine.playZap();
+                showBanner(`💥 Kena tembak ${shooterName}! Sisa darah: ${newHp}/5`, 2000);
+              } else {
+                me.hp = 0;
+                me.isDying = true;
+                me.deathStartedAt = Date.now();
+                me.vx = 0;
+                me.vy = -13.2;
+                soundEngine.playDeath();
+                showBanner(`💀 Kamu gugur ditembak ${shooterName}! (Respawn dalam 2 detik)`, 3500);
+                addSystemChatMessage(`⚔️ ${me.username} gugur ditembak oleh ${shooterName}!`);
+              }
             } else {
               me.isDying = true;
               me.deathStartedAt = Date.now();
@@ -1546,8 +1594,9 @@ export default function GamePage() {
       } else {
         // Remote player: update efek visual di player lain juga
         const target = playersRef.current.get(cmd.targetId);
-        if (target && !target.isDying && !target.ropedById) {
+        if (target && !target.ropedById) {
           if (canShooterHitTarget(shooterRole, target.role, isStudentPvpEnabledRef.current)) {
+            target.lastHitAt = Date.now();
             if (cmd.weapon === 'ice') {
               target.isDying = false;
               target.frozenUntil = Date.now() + 1200;
@@ -1565,6 +1614,22 @@ export default function GamePage() {
               target.frozenByWeapon = 'stunt';
               target.vx = 0;
               target.vy = 0;
+            } else if (isStudentPvP && isStudentPvpEnabledRef.current) {
+              const newHp = typeof cmd.hp === 'number' ? cmd.hp : Math.max(0, (target.hp ?? 5) - 1);
+              target.hp = newHp;
+              if (newHp <= 0) {
+                target.hp = 0;
+                target.isDying = true;
+                target.deathStartedAt = Date.now();
+                target.vx = 0;
+                target.vy = -13.2;
+                soundEngine.playDeath();
+                addSystemChatMessage(`⚔️ ${target.username} gugur ditembak oleh ${shooterName}!`);
+              } else {
+                target.vx = target.x < (projectilesRef.current.find((r) => r.shooterId === cmd.by)?.x ?? target.x) ? -4 : 4;
+                target.vy = -3;
+                soundEngine.playZap();
+              }
             } else {
               target.isDying = true;
               target.deathStartedAt = Date.now();
@@ -2444,6 +2509,7 @@ export default function GamePage() {
             customNick: meInit.customNick,
             colors: meInit.colors,
             ropedById: meInit.ropedById ?? undefined,
+            hp: 5,
           });
         }
 
@@ -3180,7 +3246,33 @@ export default function GamePage() {
                 }
               },
               onRespawn: (p) => {
+                p.hp = 5;
+                p.isDying = false;
+                p.deathStartedAt = undefined;
                 if (p.id === myIdRef.current) {
+                  if (ably.connected) {
+                    ably.publishPosition({
+                      id: p.id,
+                      username: p.username,
+                      avatar: p.avatar,
+                      role: myRoleRef.current,
+                      stage: p.stage ?? currentStageRef.current,
+                      x: p.x,
+                      y: p.y,
+                      vx: 0,
+                      vy: 0,
+                      facing: p.facing,
+                      onGround: p.onGround,
+                      isDying: false,
+                      hp: 5,
+                      tag: p.tag,
+                      tag1: p.tag1,
+                      tag2: p.tag2,
+                      tag3: p.tag3,
+                      customNick: p.customNick,
+                      colors: p.colors,
+                    });
+                  }
                   const newAmmo = p.hasAdminGun && p.gun ? Infinity : (p.blasterAmmo ?? 0);
                   setAmmoCount(newAmmo);
                   if (previewBodyRef.current || previewTag1Ref.current || previewColorsRef.current) {
@@ -3270,6 +3362,8 @@ export default function GamePage() {
                             const victim = playersRef.current.get(victimId);
                             if (victim && !canShooterHitTarget(shooterRole, victim.role, isStudentPvpEnabledRef.current)) return;
 
+                            const isStudentPvP = shooterRole === 'student' && ((victim?.role ?? 'student') === 'student');
+
                             if (victimId === myIdRef.current) {
                               const me = playersRef.current.get(myIdRef.current);
                               if (me && !me.isDying && !me.ropedById) {
@@ -3293,6 +3387,22 @@ export default function GamePage() {
                                   me.frozenByWeapon = 'stunt';
                                   me.vx = 0;
                                   me.vy = 0;
+                                } else if (isStudentPvP && isStudentPvpEnabledRef.current) {
+                                  // Local player HP was updated by updatePlayerPhysics (nextHp)
+                                  const currentHp = me.hp ?? 5;
+                                  if (currentHp > 0) {
+                                    soundEngine.playZap();
+                                    showBanner(`💥 Kena tembak ${shooterName}! Sisa darah: ${currentHp}/5`, 2000);
+                                  } else {
+                                    me.hp = 0;
+                                    me.isDying = true;
+                                    me.deathStartedAt = Date.now();
+                                    me.vx = 0;
+                                    me.vy = -13.2;
+                                    soundEngine.playDeath();
+                                    showBanner(`💀 Kamu gugur ditembak ${shooterName}! (Respawn dalam 2 detik)`, 3500);
+                                    addSystemChatMessage(`⚔️ ${me.username} gugur ditembak oleh ${shooterName}!`);
+                                  }
                                 } else {
                                   me.isDying = true;
                                   me.deathStartedAt = Date.now();
@@ -3301,8 +3411,12 @@ export default function GamePage() {
                                   soundEngine.playDeath();
                                 }
                               }
+                            } else if (victim && isStudentPvP && isStudentPvpEnabledRef.current) {
+                              // Victim-authoritative: penembak tidak menghitung damage korban, hanya korban yang broadcast hit
+                              return;
                             }
-                            ably.publishCommand({ op: 'hit', targetId: victimId, by: shooterId, dmg, weapon, shooterRole });
+                            const updatedVictimHp = victimId === myIdRef.current ? playersRef.current.get(myIdRef.current)?.hp : victim?.hp;
+                            ably.publishCommand({ op: 'hit', targetId: victimId, by: shooterId, dmg, weapon, shooterRole, hp: updatedVictimHp });
                           },
           },
         );
@@ -3360,6 +3474,7 @@ export default function GamePage() {
               tag3: me.tag3,
               customNick: me.customNick,
               colors: me.colors,
+              hp: me.hp ?? 5,
             });
           }
         }
@@ -3461,6 +3576,9 @@ export default function GamePage() {
               frozenUntil: p.frozenUntil,
               stunnedUntil: p.stunnedUntil,
               velocity: { vx: p.vx, vy: p.vy },
+              hp: p.hp ?? 5,
+              maxHp: 5,
+              isPvpEnabled: isStudentPvpEnabledRef.current,
             },
           );
         }
@@ -4144,6 +4262,39 @@ export default function GamePage() {
       const arg1 = parts[1]?.toLowerCase();
       const arg2 = parts[2]?.toLowerCase();
 
+      const isMinigunCmd =
+        cmd === 'minigun' ||
+        ((cmd === 'spawn' || cmd === 'gun') && (arg1 === 'minigun' || (arg1 === 'gun' && (arg2 === 'minigun' || !arg2))));
+
+      if (!isStaff && isStudentPvpEnabledRef.current) {
+        if (cmd === 'god' || cmd === 'godmode' || (cmd === 'set' && arg1 === 'god') || (cmd === 'unset' && arg1 === 'god')) {
+          addSystemChatMessage('🚫 Mode God dinonaktifkan saat Mode Saling Tembak (PvP) aktif!');
+          soundEngine.playBounce();
+          return;
+        }
+        if (!isMinigunCmd && cmd !== 'help' && cmd !== 'cls') {
+          addSystemChatMessage('⚔️ Saat Mode Saling Tembak aktif, siswa hanya diizinkan menggunakan perintah spawn minigun (/spawn minigun atau /gun minigun).');
+          soundEngine.playBounce();
+          return;
+        }
+      }
+
+      if (isMinigunCmd) {
+        const me = playersRef.current.get(myIdRef.current);
+        if (me) {
+          me.gun = 'minigun';
+          me.blasterAmmo = Infinity;
+          me.hasAdminGun = true;
+          me.blasterUntil = undefined;
+          setAmmoCount(Infinity);
+          soundEngine.playPowerUp();
+          ably.publishCommand({ op: 'gun', targetId: myIdRef.current, value: true, weapon: 'minigun' });
+          addSystemChatMessage('🔫 Minigun berhasil diaktifkan! Siap saling tembak!');
+          showBanner('🔫 Minigun Aktif! Tekan [X] / [F] atau tombol Tembak untuk menembak!', 3500);
+        }
+        return;
+      }
+
       // Helper to find player by username or 'me'
       const findPlayer = (nameQuery?: string) => {
         if (!nameQuery) return null;
@@ -4524,11 +4675,21 @@ export default function GamePage() {
         const isTurnOn = cmd === 'set' && (arg2 === 'on' || !arg2 || arg2 === 'true');
         isStudentPvpEnabledRef.current = isTurnOn;
         setIsStudentPvpEnabled(isTurnOn);
+        for (const p of playersRef.current.values()) {
+          p.hp = 5;
+          if (isTurnOn && (p.role === 'student' || (!p.role && p.id !== myIdRef.current))) {
+            p.isGodMode = false;
+          }
+        }
+        if (isTurnOn && myRoleRef.current === 'student') {
+          isGodModeRef.current = false;
+          setIsGodMode(false);
+        }
         ably.publishCommand({ op: 'pvp_mode', value: isTurnOn });
         addSystemChatMessage(
           isTurnOn
-            ? '⚔️ Mode Tawuran Siswa DIAKTIFKAN oleh Guru/Admin! Siswa sekarang bisa saling tembak/prank.'
-            : '🕊️ Mode Damai DIAKTIFKAN. Tembakan antar siswa dinonaktifkan.',
+            ? '⚔️ Mode Tawuran Siswa DIAKTIFKAN oleh Guru/Admin! Bar darah aktif (5 HP), siswa bisa saling tembak & mode god siswa dinonaktifkan.'
+            : '🕊️ Mode Damai DIAKTIFKAN. Tembakan antar siswa dinonaktifkan & bar darah ditutup.',
         );
         if (isTurnOn) soundEngine.playPowerUp();
         else soundEngine.playBounce();
@@ -4549,10 +4710,19 @@ export default function GamePage() {
             return;
           }
           for (const p of playersRef.current.values()) {
-            p.isGodMode = isTurnOn;
+            if (isTurnOn && isStudentPvpEnabledRef.current && (p.role === 'student' || (!p.role && p.id !== myIdRef.current))) {
+              p.isGodMode = false;
+            } else {
+              p.isGodMode = isTurnOn;
+            }
           }
-          isGodModeRef.current = isTurnOn;
-          setIsGodMode(isTurnOn);
+          if (isTurnOn && isStudentPvpEnabledRef.current && myRoleRef.current === 'student') {
+            isGodModeRef.current = false;
+            setIsGodMode(false);
+          } else {
+            isGodModeRef.current = isTurnOn;
+            setIsGodMode(isTurnOn);
+          }
           ably.publishCommand({ op: 'god', targetId: 'all', value: isTurnOn });
           addSystemChatMessage(
             isTurnOn
@@ -4578,6 +4748,11 @@ export default function GamePage() {
           }
           for (const t of targets) {
             const p = playersRef.current.get(t.id);
+            const tRole = p?.role ?? (t.id === myIdRef.current ? myRoleRef.current : 'student');
+            if (isTurnOn && isStudentPvpEnabledRef.current && tRole === 'student') {
+              if (p) p.isGodMode = false;
+              continue;
+            }
             if (p) p.isGodMode = isTurnOn;
             if (t.id === myIdRef.current) {
               isGodModeRef.current = isTurnOn;
@@ -4598,6 +4773,14 @@ export default function GamePage() {
 
         const target = resolveTarget(targetQuery);
         if (!target) return;
+        const targetRole = target.id === myIdRef.current
+          ? myRoleRef.current
+          : (playersRef.current.get(target.id)?.role ?? 'student');
+        if (isTurnOn && isStudentPvpEnabledRef.current && targetRole === 'student') {
+          addSystemChatMessage(`🚫 Mode God tidak dapat diaktifkan untuk siswa '${target.username}' saat Mode Saling Tembak (PvP) aktif!`);
+          soundEngine.playBounce();
+          return;
+        }
         const p = playersRef.current.get(target.id);
         if (p) p.isGodMode = isTurnOn;
         if (target.id === myIdRef.current) {

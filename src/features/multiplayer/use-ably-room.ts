@@ -30,6 +30,7 @@ export type PresencePlayer = {
   colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null;
   bodyModel?: string;
   ropedById?: string | null;
+  hp?: number;
 };
 
 export type ChatMessage = {
@@ -70,6 +71,7 @@ export type PositionData = {
   colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null;
   bodyModel?: string;
   ropedById?: string | null;
+  hp?: number;
 };
 
 export type ScoreData = {
@@ -106,7 +108,7 @@ export type RoomCommandEvent =
   | { op: 'gun'; targetId: string; value: boolean; weapon?: string }
   | { op: 'jail'; targetId: string; value: boolean }
   | { op: 'cosmetics'; targetId: string; tag?: string | null; tag1?: string | null; tag2?: string | null; tag3?: string | null; avatar?: string; bodyModel?: string; colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null }
-  | { op: 'hit'; targetId: string; by: string; dmg: number; weapon?: string; shooterRole?: string }
+  | { op: 'hit'; targetId: string; by: string; dmg: number; weapon?: string; shooterRole?: string; hp?: number }
   | { op: 'change_nick'; targetId: string; value: string }
   | { op: 'rope'; targetId: string; value: boolean; byId?: string; byName?: string }
   | { op: 'rope_all_clear' }
@@ -269,6 +271,7 @@ export function useAblyRoom(
             tag: typeof raw.tag === 'string' ? raw.tag : undefined,
             colors: (raw.colors && typeof raw.colors === 'object' ? raw.colors : undefined) as PositionData['colors'],
             ropedById: typeof raw.rp === 'string' ? raw.rp : typeof raw.ropedById === 'string' ? raw.ropedById : undefined,
+            hp: typeof raw.hp === 'number' ? raw.hp : undefined,
             ts: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
           });
         }
@@ -321,6 +324,7 @@ export function useAblyRoom(
           tag: typeof msg.tg === 'string' ? msg.tg : undefined,
           colors: (msg.cl && typeof msg.cl === 'object' ? msg.cl : undefined) as PositionData['colors'],
           ropedById: typeof msg.rp === 'string' ? msg.rp : undefined,
+          hp: typeof msg.hp === 'number' ? msg.hp : undefined,
           ts: typeof msg.ts === 'number' ? msg.ts : Date.now(),
         });
         return;
@@ -415,7 +419,7 @@ export function useAblyRoom(
 
       if (t === 'cmd') {
         const op = msg.op;
-        if (typeof op === 'string' && (op === 'rope_all_clear' || op === 'shop_prices_update' || op === 'change_map' || typeof msg.targetId === 'string')) {
+        if (typeof op === 'string') {
           callbacksRef.current?.onCommandEvent?.(msg as unknown as RoomCommandEvent);
         }
         return;
@@ -695,6 +699,7 @@ export function useAblyRoom(
             gn: pos.gun ?? undefined,
             tg: pos.tag ?? undefined,
             cl: pos.colors ?? undefined,
+            hp: typeof pos.hp === 'number' ? pos.hp : undefined,
             ts: Date.now(),
           }),
         );

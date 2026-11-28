@@ -17,6 +17,7 @@ export type LivePlayerState = {
   tag?: string | null;
   colors?: { body?: string; tag?: string; nick?: string } | null;
   ropedById?: string | null;
+  hp?: number;
   updatedAt: number;
 };
 

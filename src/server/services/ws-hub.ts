@@ -61,6 +61,9 @@ const globalForWsHub = globalThis as unknown as {
   __llysWsHubV4?: WsHubState;
 };
 
+// Cache status PvP per room agar player yang baru connect / refresh langsung sinkron
+const roomPvpState = new Map<string, boolean>();
+
 function getHub(): WsHubState {
   if (globalForWsHub.__llysWsHub?.server) {
     try {
@@ -301,6 +304,7 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
         onGround: Boolean(msg.g ?? true),
         tag: client.tag,
         colors: client.colors,
+        hp: typeof msg.hp === 'number' ? msg.hp : 5,
       });
     }
 
@@ -315,6 +319,10 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
     );
     if (!client.socket.destroyed && client.socket.writable) {
       client.socket.write(initFrame);
+      if (roomPvpState.get(roomId)) {
+        const pvpFrame = encodeWsTextFrame(JSON.stringify({ t: 'cmd', op: 'pvp_mode', value: true }));
+        client.socket.write(pvpFrame);
+      }
     }
 
     broadcastRoomEvent(
@@ -484,7 +492,13 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
   }
 
   if (t === 'cmd') {
-    if (msg.op !== 'hit' && client.role !== 'teacher' && client.role !== 'admin') return;
+    const isSelfTarget = typeof msg.targetId === 'string' && msg.targetId === client.userId;
+    const isAllowedStudentOp = msg.op === 'hit' || msg.op === 'cosmetics' || (msg.op === 'gun' && isSelfTarget);
+    if (!isAllowedStudentOp && client.role !== 'teacher' && client.role !== 'admin') return;
+
+    if (msg.op === 'pvp_mode') {
+      roomPvpState.set(client.roomId, Boolean(msg.value));
+    }
     // rope_all_clear: server ikut melepas tali di live-state & connection semua client
     // supaya snapshot/heartbeat berikutnya tidak mengembalikan tali yang sudah dilepas.
     if (msg.op === 'rope_all_clear') {
@@ -549,6 +563,7 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
     const isDying = Boolean(msg.d);
     const deathStartedAt = typeof msg.ds === 'number' ? msg.ds : undefined;
     const burnUntil = typeof msg.b === 'number' ? msg.b : undefined;
+    const hp = typeof msg.hp === 'number' ? msg.hp : undefined;
     const stage = typeof msg.stg === 'number' ? msg.stg : typeof msg.stage === 'number' ? msg.stage : client.stage;
     client.stage = stage;
 
@@ -567,6 +582,7 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
       isDying,
       deathStartedAt,
       burnUntil,
+      hp,
       tag: msg.tg === null || typeof msg.tg === 'string' ? (client.tag = msg.tg) : client.tag,
       colors:
         msg.cl === null || (msg.cl && typeof msg.cl === 'object')
@@ -593,6 +609,7 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
         d: isDying ? 1 : 0,
         ds: deathStartedAt,
         b: burnUntil,
+        hp,
         ts: typeof msg.ts === 'number' ? msg.ts : Date.now(),
         tg: client.tag,
         cl: client.colors,
@@ -834,6 +851,7 @@ function handleRawPosHttpRequest(req: http.IncomingMessage, res: http.ServerResp
           const isDying = Boolean(body.d);
           const deathStartedAt = typeof body.ds === 'number' ? body.ds : undefined;
           const burnUntil = typeof body.b === 'number' ? body.b : undefined;
+          const hp = typeof body.hp === 'number' ? body.hp : undefined;
 
           const updated = updateLivePlayerPosition(roomId, {
             userId,
@@ -849,6 +867,7 @@ function handleRawPosHttpRequest(req: http.IncomingMessage, res: http.ServerResp
             isDying,
             deathStartedAt,
             burnUntil,
+            hp,
           });
 
           if (updated) {
@@ -869,6 +888,7 @@ function handleRawPosHttpRequest(req: http.IncomingMessage, res: http.ServerResp
                 d: isDying ? 1 : 0,
                 ds: deathStartedAt,
                 b: burnUntil,
+                hp,
                 ts: Date.now(),
               },
               userId,

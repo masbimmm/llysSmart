@@ -60,6 +60,9 @@ export type CatHazardState = {
   tag3?: string | null;
   customNick?: string | null;
   colors?: { body?: string; tag?: string; tag1?: string; tag2?: string; tag3?: string; nick?: string } | null;
+  hp?: number;
+  maxHp?: number;
+  isPvpEnabled?: boolean;
 };
 
 function drawCat(
@@ -1881,6 +1884,53 @@ function drawCat(
   ctx.font = 'bold 11px Nunito, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(displayName, drawX + w / 2, y - 14);
+
+  // Bar Darah PvP (Mode Saling Tembak: 5 Hit Bar) - Otomatis hilang saat Mode Damai
+  if (hazard?.isPvpEnabled && !isDying) {
+    const maxHp = hazard.maxHp ?? 5;
+    const curHp = Math.max(0, Math.min(maxHp, hazard.hp ?? 5));
+    const barW = 36;
+    const barH = 5;
+    const barX = drawX + w / 2 - barW / 2;
+    const barY = y - 7;
+
+    ctx.save();
+    // Background frame
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.strokeStyle = '#020617';
+    ctx.lineWidth = 1;
+    roundRect(ctx, barX - 1, barY - 1, barW + 2, barH + 2, 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 5 Segmented pips
+    const segGap = 1.2;
+    const totalGap = segGap * (maxHp - 1);
+    const segW = (barW - totalGap) / maxHp;
+
+    for (let i = 0; i < maxHp; i++) {
+      const segX = barX + i * (segW + segGap);
+      const isFilled = i < curHp;
+
+      if (isFilled) {
+        if (curHp >= 4) {
+          ctx.fillStyle = '#22c55e';
+        } else if (curHp >= 2) {
+          ctx.fillStyle = '#f59e0b';
+        } else {
+          const redPulse = 0.75 + 0.25 * Math.sin(now * 0.02);
+          ctx.fillStyle = `rgba(239, 68, 68, ${redPulse})`;
+        }
+      } else {
+        ctx.fillStyle = 'rgba(71, 85, 105, 0.5)';
+      }
+
+      ctx.beginPath();
+      roundRect(ctx, segX, barY, segW, barH, 1);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 
   for (let i = 0; i < activeTags.length; i++) {
     const item = activeTags[i];
