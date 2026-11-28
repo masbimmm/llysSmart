@@ -1024,10 +1024,9 @@ export default function GamePage() {
         enemy.stompedUntil = Math.max(enemy.stompedUntil ?? 0, evt.until);
       }
     } else if (evt.op === 'powerup') {
-      const pu = stagePowerUpsRef.current.find((p) => p.id === evt.id);
-      if (pu) {
-        pu.collectedUntil = Math.max(pu.collectedUntil ?? 0, evt.until);
-      }
+      // Power-up sekarang client-local (masing-masing pemain punya cooldown 5 detik sendiri).
+      // Jangan timpa cooldown lokal dari event remote pemain lain.
+      return;
     } else if (evt.op === 'shoot') {
       if (projectilesRef.current.some((pr) => pr.id === evt.pid)) return;
       projectilesRef.current.push({
@@ -1792,530 +1791,2068 @@ export default function GamePage() {
   }, [showBanner]);
 
   const startTagPreview = useCallback((tag: string) => {
-      const cleanTag = tag.trim().slice(0, 24);
-      if (!cleanTag) return;
-      setPreviewTag1(cleanTag);
-      previewTag1Ref.current = cleanTag;
-      setShowShopModal(false);
-      soundEngine.playPowerUp();
-      showBanner(`👁️ Mode Coba Aktif: Gelar "${cleanTag}". Hanya terlihat olehmu dan batal otomatis jika gugur!`, 4500);
-    }, [showBanner]);
+    const cleanTag = tag.trim().slice(0, 24);
+    if (!cleanTag) return;
+    setPreviewTag1(cleanTag);
+    previewTag1Ref.current = cleanTag;
+    setShowShopModal(false);
+    soundEngine.playPowerUp();
+    showBanner(`👁️ Mode Coba Aktif: Gelar "${cleanTag}". Hanya terlihat olehmu dan batal otomatis jika gugur!`, 4500);
+  }, [showBanner]);
 
-    const startColorPreview = useCallback((part: 'body' | 'tag1' | 'nick', mode: 'static' | 'rgb', colorVal: string) => {
-      const nextColors = { ...(previewColorsRef.current ?? {}) };
-      nextColors[part] = mode === 'rgb' ? 'rgb' : colorVal;
-      setPreviewColors(nextColors);
-      previewColorsRef.current = nextColors;
-      setShowShopModal(false);
-      soundEngine.playPowerUp();
-      showBanner(`👁️ Mode Coba Aktif: Warna [${part.toUpperCase()} ${mode.toUpperCase()}]. Hanya terlihat olehmu!`, 4500);
-    }, [showBanner]);
+  const startColorPreview = useCallback((part: 'body' | 'tag1' | 'nick', mode: 'static' | 'rgb', colorVal: string) => {
+    const nextColors = { ...(previewColorsRef.current ?? {}) };
+    nextColors[part] = mode === 'rgb' ? 'rgb' : colorVal;
+    setPreviewColors(nextColors);
+    previewColorsRef.current = nextColors;
+    setShowShopModal(false);
+    soundEngine.playPowerUp();
+    showBanner(`👁️ Mode Coba Aktif: Warna [${part.toUpperCase()} ${mode.toUpperCase()}]. Hanya terlihat olehmu!`, 4500);
+  }, [showBanner]);
 
-    const cancelAllPreviews = useCallback(() => {
-      const hadPreview = previewBodyRef.current || previewTag1Ref.current || previewColorsRef.current;
-      if (!hadPreview) return;
-      const restore = equippedBodyRef.current || 'cat';
+  const cancelAllPreviews = useCallback(() => {
+    const hadPreview = previewBodyRef.current || previewTag1Ref.current || previewColorsRef.current;
+    if (!hadPreview) return;
+    const restore = equippedBodyRef.current || 'cat';
+    setPreviewBody(null);
+    previewBodyRef.current = null;
+    setPreviewTag1(null);
+    previewTag1Ref.current = null;
+    setPreviewColors(null);
+    previewColorsRef.current = null;
+    const me = playersRef.current.get(myIdRef.current);
+    if (me) {
+      me.bodyModel = restore;
+      me.avatar = restore === 'cat' ? 'cat-blue' : restore;
+    }
+    soundEngine.playBounce();
+    showBanner(`Preview dibatalkan. Kembali ke karakter [${restore.toUpperCase()}].`, 3000);
+    showBanner('Mode coba dibatalkan. Kembali ke pengaturan awal.', 2500);
+  }, [showBanner]);
+
+  const cancelPreview = cancelAllPreviews;
+
+  const buyBody = useCallback(async (bodyId: string) => {
+    if (shopSubmitting) return;
+    setShopSubmitting(true);
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'buy_body', body: bodyId, roomId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showBanner(`❌ ${data.error || 'Gagal membeli karakter.'}`, 4000);
+        soundEngine.playDeath();
+        return;
+      }
+      setUserPoints(data.totalPoints);
+      setUnlockedBodies(data.unlockedBodies);
+      const newBody = data.equippedBody || bodyId;
+      setEquippedBody(newBody);
+      equippedBodyRef.current = newBody;
       setPreviewBody(null);
       previewBodyRef.current = null;
-      setPreviewTag1(null);
-      previewTag1Ref.current = null;
-      setPreviewColors(null);
-      previewColorsRef.current = null;
+      const canonicalAvatar = newBody === 'cat' ? 'cat-blue' : newBody;
       const me = playersRef.current.get(myIdRef.current);
       if (me) {
-        me.bodyModel = restore;
-        me.avatar = restore === 'cat' ? 'cat-blue' : restore;
+        me.bodyModel = newBody;
+        me.avatar = canonicalAvatar;
       }
-      soundEngine.playBounce();
-      showBanner(`Preview dibatalkan. Kembali ke karakter [${restore.toUpperCase()}].`, 3000);
-      showBanner('Mode coba dibatalkan. Kembali ke pengaturan awal.', 2500);
-    }, [showBanner]);
-
-    const cancelPreview = cancelAllPreviews;
-
-    const buyBody = useCallback(async (bodyId: string) => {
-      if (shopSubmitting) return;
-      setShopSubmitting(true);
       try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'buy_body', body: bodyId, roomId }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          showBanner(`❌ ${data.error || 'Gagal membeli karakter.'}`, 4000);
-          soundEngine.playDeath();
+        window.localStorage.setItem('llys_avatar', canonicalAvatar);
+        window.localStorage.setItem('llys_body', newBody);
+      } catch { }
+      ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, avatar: canonicalAvatar });
+      soundEngine.playPowerUp();
+      showBanner(`Berhasil membeli karakter [${bodyId.toUpperCase()}]! Tersimpan permanen.`, 5000);
+    } catch {
+      showBanner('❌ Gagal menghubungi server toko.', 4000);
+    } finally {
+      setShopSubmitting(false);
+    }
+  }, [shopSubmitting, roomId, showBanner, ably]);
+
+  const equipBody = useCallback(async (bodyId: string) => {
+    if (shopSubmitting) return;
+    setShopSubmitting(true);
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'equip_body', body: bodyId, roomId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showBanner(`❌ ${data.error || 'Gagal equip karakter.'}`, 4000);
+        return;
+      }
+      const newBody = data.equippedBody || bodyId;
+      setEquippedBody(newBody);
+      equippedBodyRef.current = newBody;
+      setPreviewBody(null);
+      previewBodyRef.current = null;
+      const canonicalAvatar = newBody === 'cat' ? 'cat-blue' : newBody;
+      const me = playersRef.current.get(myIdRef.current);
+      if (me) {
+        me.bodyModel = newBody;
+        me.avatar = canonicalAvatar;
+      }
+      try {
+        window.localStorage.setItem('llys_avatar', canonicalAvatar);
+        window.localStorage.setItem('llys_body', newBody);
+      } catch { }
+      ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, avatar: canonicalAvatar });
+      soundEngine.playPowerUp();
+      showBanner(`Karakter [${bodyId.toUpperCase()}] berhasil dipasang permanen!`, 3500);
+    } catch {
+      showBanner('❌ Gagal menghubungi server.', 4000);
+    } finally {
+      setShopSubmitting(false);
+    }
+  }, [shopSubmitting, roomId, showBanner, ably]);
+
+  const toggleHideBody = useCallback(async (bodyId: string) => {
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_hide', itemId: bodyId, roomId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShopPrices(data.prices);
+        shopPricesRef.current = data.prices;
+        showBanner(data.message, 4000);
+        addSystemChatMessage(data.message);
+        soundEngine.playPowerUp();
+      } else {
+        showBanner(data.error || 'Gagal mengubah status hide', 4000);
+      }
+    } catch {
+      showBanner('Koneksi bermasalah', 3000);
+    }
+  }, [roomId, showBanner]);
+
+  const promptEditPrice = useCallback(async (bodyId: string, currentPrice: number) => {
+    const raw = window.prompt(`Masukkan harga baru (Poin) untuk karakter [${bodyId.toUpperCase()}]:`, String(currentPrice));
+    if (raw === null) return;
+    const newPrice = parseInt(raw, 10);
+    if (isNaN(newPrice) || newPrice < 0) {
+      showBanner('Harga poin tidak valid!', 3000);
+      return;
+    }
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_price', category: 'body', item: bodyId, price: newPrice, roomId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShopPrices(data.prices);
+        shopPricesRef.current = data.prices;
+        showBanner(`Harga [${bodyId.toUpperCase()}] diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
+        addSystemChatMessage(`🎭 Harga karakter [${bodyId.toUpperCase()}] berhasil diatur menjadi 💰 ${newPrice.toLocaleString()} Poin!`);
+        soundEngine.playPowerUp();
+      } else {
+        showBanner(data.error || 'Gagal mengubah harga', 4000);
+      }
+    } catch {
+      showBanner('Koneksi bermasalah', 3000);
+    }
+  }, [roomId, showBanner]);
+
+  const promptEditTagPrice = useCallback(async () => {
+    const cur = shopPrices.tag ?? 5000;
+    const raw = window.prompt(`Masukkan harga baru (Poin) untuk Tag & Gelar:`, String(cur));
+    if (raw === null) return;
+    const newPrice = parseInt(raw, 10);
+    if (isNaN(newPrice) || newPrice < 0) {
+      showBanner('Harga poin tidak valid!', 3000);
+      return;
+    }
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_price', category: 'tag', price: newPrice, roomId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShopPrices(data.prices);
+        shopPricesRef.current = data.prices;
+        showBanner(`Harga Tag diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
+        addSystemChatMessage(`🏷️ Harga Tag & Gelar berhasil diatur jadi 💰 ${newPrice.toLocaleString()} Poin!`);
+        soundEngine.playPowerUp();
+      } else {
+        showBanner(data.error || 'Gagal mengubah harga', 4000);
+      }
+    } catch {
+      showBanner('Koneksi bermasalah', 3000);
+    }
+  }, [roomId, shopPrices.tag, showBanner]);
+
+  const promptEditColorPrice = useCallback(async (mode: 'static' | 'rgb') => {
+    const key = `body_${mode}`;
+    const cur = shopPrices.color?.[key] ?? (mode === 'rgb' ? 5000 : 1000);
+    const label = mode === 'rgb' ? 'Warna Animasi RGB' : 'Warna Statis';
+    const raw = window.prompt(`Masukkan harga baru (Poin) untuk ${label}:`, String(cur));
+    if (raw === null) return;
+    const newPrice = parseInt(raw, 10);
+    if (isNaN(newPrice) || newPrice < 0) {
+      showBanner('Harga poin tidak valid!', 3000);
+      return;
+    }
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_price', category: 'color', item: 'body', mode, price: newPrice, roomId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShopPrices(data.prices);
+        shopPricesRef.current = data.prices;
+        showBanner(`Harga ${label} diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
+        addSystemChatMessage(`🎨 Harga ${label} berhasil diatur jadi 💰 ${newPrice.toLocaleString()} Poin!`);
+        soundEngine.playPowerUp();
+      } else {
+        showBanner(data.error || 'Gagal mengubah harga', 4000);
+      }
+    } catch {
+      showBanner('Koneksi bermasalah', 3000);
+    }
+  }, [roomId, shopPrices.color, showBanner]);
+
+  const saveEditedShopItem = useCallback(async () => {
+    if (!editingShopItem || editItemSubmitting) return;
+    setEditItemSubmitting(true);
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'edit_item',
+          itemId: editingShopItem.id,
+          name: editingShopItem.name,
+          desc: editingShopItem.desc,
+          price: editingShopItem.price,
+          roomId,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShopPrices(data.prices);
+        shopPricesRef.current = data.prices;
+        showBanner(data.message, 4000);
+        addSystemChatMessage(`🎭 ${data.message}`);
+        soundEngine.playPowerUp();
+        setEditingShopItem(null);
+      } else {
+        showBanner(data.error || 'Gagal menyimpan perubahan.', 4000);
+      }
+    } catch {
+      showBanner('Koneksi bermasalah.', 3000);
+    } finally {
+      setEditItemSubmitting(false);
+    }
+  }, [editingShopItem, editItemSubmitting, roomId, showBanner]);
+
+  const buyTag1 = useCallback(async (newTag: string) => {
+    if (shopSubmitting) return;
+    const cleanTag = newTag.trim();
+    if (!cleanTag) return;
+    if (cleanTag.toLowerCase() === currentTag1.trim().toLowerCase()) {
+      showBanner('🏷️ Gelar ini sudah terpasang di karaktermu.', 3000);
+      return;
+    }
+    setShopSubmitting(true);
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'buy_tag1', title: cleanTag, tag: cleanTag, roomId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showBanner(`❌ ${data.error || 'Gagal mengganti tag.'}`, 4000);
+        soundEngine.playDeath();
+        return;
+      }
+      setUserPoints(data.totalPoints);
+      setCurrentTag1(data.tag1);
+      setShopTagInput(data.tag1);
+      setPreviewTag1(null);
+      previewTag1Ref.current = null;
+      const me = playersRef.current.get(myIdRef.current);
+      if (me) {
+        me.tag1 = data.tag1;
+        me.tag = data.tag1;
+      }
+      ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, tag1: data.tag1 });
+      soundEngine.playPowerUp();
+      showBanner(`🏷️ Gelar Tag 1 berhasil diubah jadi "${data.tag1}"!`, 4000);
+    } catch {
+      showBanner('❌ Gagal menghubungi server.', 4000);
+    } finally {
+      setShopSubmitting(false);
+    }
+  }, [shopSubmitting, currentTag1, roomId, showBanner, ably]);
+
+  const buyColor = useCallback(async (part: 'body' | 'tag1' | 'nick', mode: 'static' | 'rgb', colorVal: string) => {
+    if (shopSubmitting) return;
+    const targetVal = mode === 'rgb' ? 'rgb' : colorVal;
+    const cur = (currentColors[part] || '').toLowerCase();
+    if (cur === targetVal.toLowerCase()) {
+      showBanner('🎨 Warna ini sudah aktif di bagian tersebut.', 3000);
+      return;
+    }
+    setShopSubmitting(true);
+    try {
+      const res = await fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'buy_color', part, mode, color: colorVal, colorVal, roomId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showBanner(`❌ ${data.error || 'Gagal mengubah warna.'}`, 4000);
+        soundEngine.playDeath();
+        return;
+      }
+      setUserPoints(data.totalPoints);
+      setCurrentColors(data.customColors || {});
+      if (previewColorsRef.current) {
+        const next = { ...previewColorsRef.current };
+        delete next[part];
+        if (Object.keys(next).length === 0) {
+          previewColorsRef.current = null;
+          setPreviewColors(null);
+        } else {
+          previewColorsRef.current = next;
+          setPreviewColors(next);
+        }
+      }
+      const me = playersRef.current.get(myIdRef.current);
+      if (me) {
+        me.colors = data.customColors;
+        me.customColors = data.customColors;
+      }
+      ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, colors: data.customColors });
+      soundEngine.playPowerUp();
+      showBanner(`🎨 Warna [${part.toUpperCase()} ${mode.toUpperCase()}] berhasil dipasang!`, 4000);
+    } catch {
+      showBanner('❌ Gagal menghubungi server.', 4000);
+    } finally {
+      setShopSubmitting(false);
+    }
+  }, [shopSubmitting, currentColors, roomId, showBanner, ably]);
+
+  useEffect(() => {
+    hasLeftRef.current = false;
+    manualLeaveRef.current = false;
+    const onUnload = () => notifyLeaveRoom();
+    window.addEventListener('pagehide', onUnload);
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      window.removeEventListener('pagehide', onUnload);
+      window.removeEventListener('beforeunload', onUnload);
+    };
+  }, [roomId]);
+
+  useEffect(() => {
+    chatMinimizedRef.current = chatMinimized;
+    if (!chatMinimized) {
+      setUnreadCount(0);
+    }
+  }, [chatMinimized]);
+
+  useEffect(() => {
+    setBgmEnabled(soundEngine.bgmEnabled);
+    setBgmVolume(soundEngine.bgmVolume);
+    setSfxEnabled(soundEngine.sfxEnabled);
+    setSfxVolume(soundEngine.sfxVolume);
+
+    try {
+      const raw = window.localStorage.getItem(HUD_CONTROLS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<HudControlsConfig>;
+        setHudControls((prev) => ({
+          size: typeof parsed.size === 'number' ? Math.max(64, Math.min(128, parsed.size)) : prev.size,
+          gap: typeof parsed.gap === 'number' ? Math.max(8, Math.min(44, parsed.gap)) : prev.gap,
+          opacity: typeof parsed.opacity === 'number' ? Math.max(0.35, Math.min(1, parsed.opacity)) : prev.opacity,
+          swapSides: typeof parsed.swapSides === 'boolean' ? parsed.swapSides : prev.swapSides,
+          dpadX: typeof parsed.dpadX === 'number' ? parsed.dpadX : prev.dpadX,
+          dpadY: typeof parsed.dpadY === 'number' ? parsed.dpadY : prev.dpadY,
+          jumpX: typeof parsed.jumpX === 'number' ? parsed.jumpX : prev.jumpX,
+          jumpY: typeof parsed.jumpY === 'number' ? parsed.jumpY : prev.jumpY,
+        }));
+      }
+    } catch {
+      // ignore storage read error
+    }
+
+    const unlockAudio = () => {
+      soundEngine.unlockAndStartBgm();
+    };
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      soundEngine.stopBgm();
+    };
+  }, []);
+
+  function updateHudControls(patch: Partial<HudControlsConfig>) {
+    setHudControls((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        window.localStorage.setItem(HUD_CONTROLS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore storage error
+      }
+      return next;
+    });
+  }
+
+  function resetHudControls() {
+    soundEngine.playClick();
+    setHudControls(DEFAULT_HUD_CONTROLS);
+    try {
+      window.localStorage.setItem(HUD_CONTROLS_STORAGE_KEY, JSON.stringify(DEFAULT_HUD_CONTROLS));
+    } catch {
+      // ignore
+    }
+  }
+
+  function ingestMessages(incoming: ChatMsg[]) {
+    if (!incoming || incoming.length === 0) return;
+    const newMsgs: ChatMsg[] = [];
+    let unreadAdded = 0;
+
+    for (const m of incoming) {
+      if (!m || !m.id || seenMsgIdsRef.current.has(m.id)) continue;
+      seenMsgIdsRef.current.add(m.id);
+      newMsgs.push(m);
+
+      const player =
+        (m.userId ? playersRef.current.get(m.userId) : undefined) ??
+        Array.from(playersRef.current.values()).find((pl) => pl.username === m.senderName);
+      if (player) {
+        bubblesRef.current.set(player.id, { text: m.text, at: Date.now() });
+      }
+
+      const isMe =
+        (Boolean(m.userId) && m.userId === myIdRef.current) ||
+        (Boolean(myUsernameRef.current) && m.senderName === myUsernameRef.current);
+      if (chatMinimizedRef.current && !isMe) {
+        unreadAdded += 1;
+      }
+    }
+
+    if (newMsgs.length > 0) {
+      setChat((prev) => [...prev.slice(-49), ...newMsgs]);
+    }
+    if (unreadAdded > 0) {
+      setUnreadCount((prev) => prev + unreadAdded);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    chatCursorRef.current = -1;
+    seenMsgIdsRef.current.clear();
+    setChat([]);
+    setUnreadCount(0);
+
+    async function init() {
+      const res = await fetch('/api/rooms/' + roomId + '?bootstrap=1');
+      if (res.status === 401) {
+        router.replace('/login');
+        return;
+      }
+      if (!res.ok) {
+        if (res.status === 404) {
+          triggerForcedExit('deleted');
           return;
         }
-        setUserPoints(data.totalPoints);
-        setUnlockedBodies(data.unlockedBodies);
-        const newBody = data.equippedBody || bodyId;
-        setEquippedBody(newBody);
-        equippedBodyRef.current = newBody;
-        setPreviewBody(null);
-        previewBodyRef.current = null;
-        const canonicalAvatar = newBody === 'cat' ? 'cat-blue' : newBody;
-        const me = playersRef.current.get(myIdRef.current);
-        if (me) {
-          me.bodyModel = newBody;
-          me.avatar = canonicalAvatar;
-        }
+        setError('Ruang tidak ditemukan');
+        return;
+      }
+      const data = await res.json();
+      if (cancelled) return;
+
+      const p = data.profile;
+      const r: RoomData = data.room;
+      myIdRef.current = p.id;
+      myUsernameRef.current = p.username;
+      if (data.shopPrices) {
+        setShopPrices(data.shopPrices);
+        shopPricesRef.current = data.shopPrices;
+      }
+      if (Array.isArray(p.unlockedBodies)) {
+        setUnlockedBodies(p.unlockedBodies);
+      }
+      const effectiveEquipped = (p.equippedBody && p.equippedBody.trim()) ? p.equippedBody.trim() : 'cat';
+      setEquippedBody(effectiveEquipped);
+      equippedBodyRef.current = effectiveEquipped;
+      if (typeof p.totalPoints === 'number') {
+        setUserPoints(p.totalPoints);
+      }
+      if (p.tag1) {
+        setCurrentTag1(p.tag1);
+        setShopTagInput(p.tag1);
+      }
+      if (p.customColors) {
         try {
-          window.localStorage.setItem('llys_avatar', canonicalAvatar);
-          window.localStorage.setItem('llys_body', newBody);
+          const parsed = typeof p.customColors === 'string' ? JSON.parse(p.customColors) : (p.customColors as any);
+          if (parsed && typeof parsed === 'object') setCurrentColors(parsed);
         } catch { }
-        ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, avatar: canonicalAvatar });
-        soundEngine.playPowerUp();
-        showBanner(`Berhasil membeli karakter [${bodyId.toUpperCase()}]! Tersimpan permanen.`, 5000);
-      } catch {
-        showBanner('❌ Gagal menghubungi server toko.', 4000);
-      } finally {
-        setShopSubmitting(false);
       }
-    }, [shopSubmitting, roomId, showBanner, ably]);
+      myRoleRef.current = p.role;
+      setMyRole(p.role);
 
-    const equipBody = useCallback(async (bodyId: string) => {
-      if (shopSubmitting) return;
-      setShopSubmitting(true);
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'equip_body', body: bodyId, roomId }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          showBanner(`❌ ${data.error || 'Gagal equip karakter.'}`, 4000);
-          return;
-        }
-        const newBody = data.equippedBody || bodyId;
-        setEquippedBody(newBody);
-        equippedBodyRef.current = newBody;
-        setPreviewBody(null);
-        previewBodyRef.current = null;
-        const canonicalAvatar = newBody === 'cat' ? 'cat-blue' : newBody;
-        const me = playersRef.current.get(myIdRef.current);
-        if (me) {
-          me.bodyModel = newBody;
-          me.avatar = canonicalAvatar;
-        }
-        try {
-          window.localStorage.setItem('llys_avatar', canonicalAvatar);
-          window.localStorage.setItem('llys_body', newBody);
-        } catch { }
-        ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, avatar: canonicalAvatar });
-        soundEngine.playPowerUp();
-        showBanner(`Karakter [${bodyId.toUpperCase()}] berhasil dipasang permanen!`, 3500);
-      } catch {
-        showBanner('❌ Gagal menghubungi server.', 4000);
-      } finally {
-        setShopSubmitting(false);
+      if (Array.isArray(data.rejoinRequests)) {
+        setRejoinRequests(data.rejoinRequests);
       }
-    }, [shopSubmitting, roomId, showBanner, ably]);
 
-    const toggleHideBody = useCallback(async (bodyId: string) => {
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'toggle_hide', itemId: bodyId, roomId }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setShopPrices(data.prices);
-          shopPricesRef.current = data.prices;
-          showBanner(data.message, 4000);
-          addSystemChatMessage(data.message);
-          soundEngine.playPowerUp();
-        } else {
-          showBanner(data.error || 'Gagal mengubah status hide', 4000);
-        }
-      } catch {
-        showBanner('Koneksi bermasalah', 3000);
+      if (typeof data.sessionId === 'string' && data.sessionId) {
+        sessionIdRef.current = data.sessionId;
       }
-    }, [roomId, showBanner]);
-
-    const promptEditPrice = useCallback(async (bodyId: string, currentPrice: number) => {
-      const raw = window.prompt(`Masukkan harga baru (Poin) untuk karakter [${bodyId.toUpperCase()}]:`, String(currentPrice));
-      if (raw === null) return;
-      const newPrice = parseInt(raw, 10);
-      if (isNaN(newPrice) || newPrice < 0) {
-        showBanner('Harga poin tidak valid!', 3000);
-        return;
+      if (typeof data.chatCursor === 'number' && data.chatCursor > chatCursorRef.current) {
+        chatCursorRef.current = data.chatCursor;
       }
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set_price', category: 'body', item: bodyId, price: newPrice, roomId }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setShopPrices(data.prices);
-          shopPricesRef.current = data.prices;
-          showBanner(`Harga [${bodyId.toUpperCase()}] diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
-          addSystemChatMessage(`🎭 Harga karakter [${bodyId.toUpperCase()}] berhasil diatur menjadi 💰 ${newPrice.toLocaleString()} Poin!`);
-          soundEngine.playPowerUp();
-        } else {
-          showBanner(data.error || 'Gagal mengubah harga', 4000);
-        }
-      } catch {
-        showBanner('Koneksi bermasalah', 3000);
-      }
-    }, [roomId, showBanner]);
-
-    const promptEditTagPrice = useCallback(async () => {
-      const cur = shopPrices.tag ?? 5000;
-      const raw = window.prompt(`Masukkan harga baru (Poin) untuk Tag & Gelar:`, String(cur));
-      if (raw === null) return;
-      const newPrice = parseInt(raw, 10);
-      if (isNaN(newPrice) || newPrice < 0) {
-        showBanner('Harga poin tidak valid!', 3000);
-        return;
-      }
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set_price', category: 'tag', price: newPrice, roomId }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setShopPrices(data.prices);
-          shopPricesRef.current = data.prices;
-          showBanner(`Harga Tag diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
-          addSystemChatMessage(`🏷️ Harga Tag & Gelar berhasil diatur jadi 💰 ${newPrice.toLocaleString()} Poin!`);
-          soundEngine.playPowerUp();
-        } else {
-          showBanner(data.error || 'Gagal mengubah harga', 4000);
-        }
-      } catch {
-        showBanner('Koneksi bermasalah', 3000);
-      }
-    }, [roomId, shopPrices.tag, showBanner]);
-
-    const promptEditColorPrice = useCallback(async (mode: 'static' | 'rgb') => {
-      const key = `body_${mode}`;
-      const cur = shopPrices.color?.[key] ?? (mode === 'rgb' ? 5000 : 1000);
-      const label = mode === 'rgb' ? 'Warna Animasi RGB' : 'Warna Statis';
-      const raw = window.prompt(`Masukkan harga baru (Poin) untuk ${label}:`, String(cur));
-      if (raw === null) return;
-      const newPrice = parseInt(raw, 10);
-      if (isNaN(newPrice) || newPrice < 0) {
-        showBanner('Harga poin tidak valid!', 3000);
-        return;
-      }
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set_price', category: 'color', item: 'body', mode, price: newPrice, roomId }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setShopPrices(data.prices);
-          shopPricesRef.current = data.prices;
-          showBanner(`Harga ${label} diubah jadi ${newPrice.toLocaleString()} Poin!`, 4000);
-          addSystemChatMessage(`🎨 Harga ${label} berhasil diatur jadi 💰 ${newPrice.toLocaleString()} Poin!`);
-          soundEngine.playPowerUp();
-        } else {
-          showBanner(data.error || 'Gagal mengubah harga', 4000);
-        }
-      } catch {
-        showBanner('Koneksi bermasalah', 3000);
-      }
-    }, [roomId, shopPrices.color, showBanner]);
-
-    const saveEditedShopItem = useCallback(async () => {
-      if (!editingShopItem || editItemSubmitting) return;
-      setEditItemSubmitting(true);
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'edit_item',
-            itemId: editingShopItem.id,
-            name: editingShopItem.name,
-            desc: editingShopItem.desc,
-            price: editingShopItem.price,
-            roomId,
-          }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setShopPrices(data.prices);
-          shopPricesRef.current = data.prices;
-          showBanner(data.message, 4000);
-          addSystemChatMessage(`🎭 ${data.message}`);
-          soundEngine.playPowerUp();
-          setEditingShopItem(null);
-        } else {
-          showBanner(data.error || 'Gagal menyimpan perubahan.', 4000);
-        }
-      } catch {
-        showBanner('Koneksi bermasalah.', 3000);
-      } finally {
-        setEditItemSubmitting(false);
-      }
-    }, [editingShopItem, editItemSubmitting, roomId, showBanner]);
-
-    const buyTag1 = useCallback(async (newTag: string) => {
-      if (shopSubmitting) return;
-      const cleanTag = newTag.trim();
-      if (!cleanTag) return;
-      if (cleanTag.toLowerCase() === currentTag1.trim().toLowerCase()) {
-        showBanner('🏷️ Gelar ini sudah terpasang di karaktermu.', 3000);
-        return;
-      }
-      setShopSubmitting(true);
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'buy_tag1', title: cleanTag, tag: cleanTag, roomId }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          showBanner(`❌ ${data.error || 'Gagal mengganti tag.'}`, 4000);
-          soundEngine.playDeath();
-          return;
-        }
-        setUserPoints(data.totalPoints);
-        setCurrentTag1(data.tag1);
-        setShopTagInput(data.tag1);
-        setPreviewTag1(null);
-        previewTag1Ref.current = null;
-        const me = playersRef.current.get(myIdRef.current);
-        if (me) {
-          me.tag1 = data.tag1;
-          me.tag = data.tag1;
-        }
-        ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, tag1: data.tag1 });
-        soundEngine.playPowerUp();
-        showBanner(`🏷️ Gelar Tag 1 berhasil diubah jadi "${data.tag1}"!`, 4000);
-      } catch {
-        showBanner('❌ Gagal menghubungi server.', 4000);
-      } finally {
-        setShopSubmitting(false);
-      }
-    }, [shopSubmitting, currentTag1, roomId, showBanner, ably]);
-
-    const buyColor = useCallback(async (part: 'body' | 'tag1' | 'nick', mode: 'static' | 'rgb', colorVal: string) => {
-      if (shopSubmitting) return;
-      const targetVal = mode === 'rgb' ? 'rgb' : colorVal;
-      const cur = (currentColors[part] || '').toLowerCase();
-      if (cur === targetVal.toLowerCase()) {
-        showBanner('🎨 Warna ini sudah aktif di bagian tersebut.', 3000);
-        return;
-      }
-      setShopSubmitting(true);
-      try {
-        const res = await fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'buy_color', part, mode, color: colorVal, colorVal, roomId }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          showBanner(`❌ ${data.error || 'Gagal mengubah warna.'}`, 4000);
-          soundEngine.playDeath();
-          return;
-        }
-        setUserPoints(data.totalPoints);
-        setCurrentColors(data.customColors || {});
-        if (previewColorsRef.current) {
-          const next = { ...previewColorsRef.current };
-          delete next[part];
-          if (Object.keys(next).length === 0) {
-            previewColorsRef.current = null;
-            setPreviewColors(null);
-          } else {
-            previewColorsRef.current = next;
-            setPreviewColors(next);
+      if (!data.kicked) {
+        if (data.answerResults && typeof data.answerResults === 'object') {
+          for (const [qid, okAns] of Object.entries(data.answerResults as Record<string, boolean | 'assisted'>)) {
+            answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
           }
         }
-        const me = playersRef.current.get(myIdRef.current);
-        if (me) {
-          me.colors = data.customColors;
-          me.customColors = data.customColors;
+        if (Array.isArray(data.answeredQuestionIds)) {
+          for (const qid of data.answeredQuestionIds) answeredIdsRef.current.add(qid);
+          const list = Array.from(answeredIdsRef.current);
+          setAnsweredQuestionIds(list);
+          setCorrectCount(list.length);
         }
-        ably.publishCommand({ op: 'cosmetics', targetId: myIdRef.current, colors: data.customColors });
-        soundEngine.playPowerUp();
-        showBanner(`🎨 Warna [${part.toUpperCase()} ${mode.toUpperCase()}] berhasil dipasang!`, 4000);
-      } catch {
-        showBanner('❌ Gagal menghubungi server.', 4000);
-      } finally {
-        setShopSubmitting(false);
       }
-    }, [shopSubmitting, currentColors, roomId, showBanner, ably]);
 
-    useEffect(() => {
-      hasLeftRef.current = false;
-      manualLeaveRef.current = false;
-      const onUnload = () => notifyLeaveRoom();
-      window.addEventListener('pagehide', onUnload);
-      window.addEventListener('beforeunload', onUnload);
-      return () => {
-        window.removeEventListener('pagehide', onUnload);
-        window.removeEventListener('beforeunload', onUnload);
-      };
-    }, [roomId]);
-
-    useEffect(() => {
-      chatMinimizedRef.current = chatMinimized;
-      if (!chatMinimized) {
-        setUnreadCount(0);
+      if (data.isPvpEnabled) {
+        isStudentPvpEnabledRef.current = true;
+        setIsStudentPvpEnabled(true);
+        if (p.role === 'student') {
+          isGodModeRef.current = false;
+          setIsGodMode(false);
+        }
       }
-    }, [chatMinimized]);
+      if (Array.isArray(data.cmdAccessUsers)) {
+        for (const uid of data.cmdAccessUsers) {
+          cmdEnabledUsersRef.current.add(uid);
+          if (uid === '__ALL_STUDENTS__' && p.id) {
+            cmdEnabledUsersRef.current.add(p.id);
+          }
+        }
+      }
 
-    useEffect(() => {
-      setBgmEnabled(soundEngine.bgmEnabled);
-      setBgmVolume(soundEngine.bgmVolume);
-      setSfxEnabled(soundEngine.sfxEnabled);
-      setSfxVolume(soundEngine.sfxVolume);
+      if (r.status === 'completed' || (!isStaffRole(p.role) && r.status !== 'in_progress' && r.status !== 'paused')) {
+        router.replace(isStaffRole(p.role) ? '/dashboard/teacher/rooms' : '/dashboard/student');
+        return;
+      }
 
+      if (isStaffRole(p.role)) {
+        mirrorTargetRef.current = null;
+        setMirrorTarget(null);
+      }
+      setRoom(r);
+      roomRef.current = r;
+      const myEntry = (r.players ?? []).find((pl: RoomPlayer) => pl.userId === p.id);
+      myFullNameRef.current = p.fullName || myEntry?.fullName || '';
+
+      for (const pl of r.players ?? []) {
+        const isMe = pl.userId === p.id;
+        if (!playersRef.current.has(pl.userId)) {
+          const spawn = SPAWN_POINTS[playersRef.current.size % SPAWN_POINTS.length];
+          const px = pl.lastX ?? spawn.x;
+          const py = pl.lastY ?? spawn.y;
+          let parsedColors: PlayerColors | undefined;
+          if (pl.customColors) {
+            try {
+              parsedColors = typeof pl.customColors === 'string' ? JSON.parse(pl.customColors) : (pl.customColors as any);
+            } catch { }
+          }
+          playersRef.current.set(pl.userId, {
+            id: pl.userId,
+            username: pl.username,
+            fullName: pl.fullName || undefined,
+            customNick: pl.customNick || undefined,
+            tag: pl.tag1 || undefined,
+            tag1: pl.tag1 || undefined,
+            tag2: pl.tag2 || undefined,
+            tag3: pl.tag3 || undefined,
+            colors: parsedColors,
+            avatar: isMe ? (effectiveEquipped === 'cat' ? (pl.avatar && pl.avatar.startsWith('cat') ? pl.avatar : 'cat-blue') : effectiveEquipped) : pl.avatar,
+            bodyModel: isMe ? effectiveEquipped : (pl.avatar && pl.avatar !== 'cat' && !pl.avatar.startsWith('cat') ? pl.avatar : 'cat'),
+            role: isMe ? p.role : pl.role,
+            stage: pl.stage ?? 1,
+            x: px,
+            y: py,
+            spawnX: spawn.x,
+            spawnY: spawn.y,
+            targetX: px,
+            targetY: py,
+            vx: 0,
+            vy: 0,
+            facing: (pl.lastFacing as 1 | -1) ?? 1,
+            onGround: false,
+          });
+        }
+      }
+      if (!playersRef.current.has(p.id)) {
+        const spawn = SPAWN_POINTS[playersRef.current.size % SPAWN_POINTS.length];
+        playersRef.current.set(p.id, {
+          id: p.id,
+          username: p.username,
+          fullName: p.fullName || myEntry?.fullName || undefined,
+          avatar: effectiveEquipped === 'cat' ? (p.avatar && p.avatar.startsWith('cat') ? p.avatar : 'cat-blue') : effectiveEquipped,
+          bodyModel: effectiveEquipped,
+          role: p.role,
+          stage: myEntry?.stage ?? 1,
+          x: myEntry?.lastX ?? spawn.x,
+          y: myEntry?.lastY ?? spawn.y,
+          spawnX: spawn.x,
+          spawnY: spawn.y,
+          vx: 0,
+          vy: 0,
+          facing: (myEntry?.lastFacing as 1 | -1) ?? 1,
+          onGround: false,
+        });
+      }
+
+      // Muat nick, tag & warna kustom yang tersimpan dari DB (dan fallback storage)
       try {
-        const raw = window.localStorage.getItem(HUD_CONTROLS_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Partial<HudControlsConfig>;
-          setHudControls((prev) => ({
-            size: typeof parsed.size === 'number' ? Math.max(64, Math.min(128, parsed.size)) : prev.size,
-            gap: typeof parsed.gap === 'number' ? Math.max(8, Math.min(44, parsed.gap)) : prev.gap,
-            opacity: typeof parsed.opacity === 'number' ? Math.max(0.35, Math.min(1, parsed.opacity)) : prev.opacity,
-            swapSides: typeof parsed.swapSides === 'boolean' ? parsed.swapSides : prev.swapSides,
-            dpadX: typeof parsed.dpadX === 'number' ? parsed.dpadX : prev.dpadX,
-            dpadY: typeof parsed.dpadY === 'number' ? parsed.dpadY : prev.dpadY,
-            jumpX: typeof parsed.jumpX === 'number' ? parsed.jumpX : prev.jumpX,
-            jumpY: typeof parsed.jumpY === 'number' ? parsed.jumpY : prev.jumpY,
-          }));
+        const meP = playersRef.current.get(p.id);
+        if (meP) {
+          const canonicalAvatar = effectiveEquipped === 'cat' ? 'cat-blue' : effectiveEquipped;
+          meP.bodyModel = effectiveEquipped;
+          meP.avatar = canonicalAvatar;
+          if (p.customNick) meP.customNick = p.customNick;
+          if (p.tag1) meP.tag1 = p.tag1;
+          if (p.tag2) meP.tag2 = p.tag2;
+          if (p.tag3) meP.tag3 = p.tag3;
+          if (p.tag1 || p.tag2 || p.tag3) meP.tag = p.tag1 || p.tag2 || p.tag3;
+          if (p.customColors) {
+            try {
+              const parsed = typeof p.customColors === 'string' ? JSON.parse(p.customColors) : (p.customColors as any);
+              meP.colors = {
+                body: parsed.body || undefined,
+                tag: parsed.tag || undefined,
+                nick: parsed.nick || undefined,
+              };
+            } catch { }
+          }
+        }
+      } catch { }
+
+      const rawQs: Question[] = data.questions ?? [];
+      const shuffleSeed = `${p.id}:${roomId}:${Date.now()}`;
+      const qs: Question[] = rawQs.map((q) => shuffleQuestionOptions(q, shuffleSeed));
+      setLevelQuestions(qs);
+      levelQuestionsRef.current = qs;
+
+      const selStages = resolveSelectedStages(r);
+      selectedStagesRef.current = selStages;
+      setSelectedStages(selStages);
+      const tStg = selStages.length;
+      totalStagesRef.current = tStg;
+      setTotalStages(tStg);
+
+      let initialStage = 1;
+      try {
+        const savedStage = Number(window.localStorage.getItem(`llys_stage_${roomId}_${p.id}`));
+        if (Number.isFinite(savedStage) && savedStage >= 1 && savedStage <= tStg) {
+          initialStage = savedStage;
         }
       } catch {
         // ignore storage read error
       }
 
-      const unlockAudio = () => {
-        soundEngine.unlockAndStartBgm();
-      };
-      window.addEventListener('pointerdown', unlockAudio, { passive: true });
-      window.addEventListener('keydown', unlockAudio, { passive: true });
-      return () => {
-        window.removeEventListener('pointerdown', unlockAudio);
-        window.removeEventListener('keydown', unlockAudio);
-        soundEngine.stopBgm();
-      };
-    }, []);
-
-    function updateHudControls(patch: Partial<HudControlsConfig>) {
-      setHudControls((prev) => {
-        const next = { ...prev, ...patch };
-        try {
-          window.localStorage.setItem(HUD_CONTROLS_STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          // ignore storage error
-        }
-        return next;
-      });
-    }
-
-    function resetHudControls() {
-      soundEngine.playClick();
-      setHudControls(DEFAULT_HUD_CONTROLS);
-      try {
-        window.localStorage.setItem(HUD_CONTROLS_STORAGE_KEY, JSON.stringify(DEFAULT_HUD_CONTROLS));
-      } catch {
-        // ignore
-      }
-    }
-
-    function ingestMessages(incoming: ChatMsg[]) {
-      if (!incoming || incoming.length === 0) return;
-      const newMsgs: ChatMsg[] = [];
-      let unreadAdded = 0;
-
-      for (const m of incoming) {
-        if (!m || !m.id || seenMsgIdsRef.current.has(m.id)) continue;
-        seenMsgIdsRef.current.add(m.id);
-        newMsgs.push(m);
-
-        const player =
-          (m.userId ? playersRef.current.get(m.userId) : undefined) ??
-          Array.from(playersRef.current.values()).find((pl) => pl.username === m.senderName);
-        if (player) {
-          bubblesRef.current.set(player.id, { text: m.text, at: Date.now() });
-        }
-
-        const isMe =
-          (Boolean(m.userId) && m.userId === myIdRef.current) ||
-          (Boolean(myUsernameRef.current) && m.senderName === myUsernameRef.current);
-        if (chatMinimizedRef.current && !isMe) {
-          unreadAdded += 1;
-        }
-      }
-
-      if (newMsgs.length > 0) {
-        setChat((prev) => [...prev.slice(-49), ...newMsgs]);
-      }
-      if (unreadAdded > 0) {
-        setUnreadCount((prev) => prev + unreadAdded);
-      }
-    }
-
-    useEffect(() => {
-      let cancelled = false;
-      chatCursorRef.current = -1;
-      seenMsgIdsRef.current.clear();
-      setChat([]);
-      setUnreadCount(0);
-
-      async function init() {
-        const res = await fetch('/api/rooms/' + roomId + '?bootstrap=1');
-        if (res.status === 401) {
-          router.replace('/login');
-          return;
-        }
-        if (!res.ok) {
-          if (res.status === 404) {
-            triggerForcedExit('deleted');
-            return;
+      // Validasi checkpoint: siswa tidak boleh berada di stage N jika soal stage sebelumnya belum selesai
+      if (!isStaffRole(p.role) && initialStage > 1 && qs.length > 0) {
+        for (let s = 1; s < initialStage; s++) {
+          const sQs = getStageQuestions(qs, s, tStg);
+          const sCleared = sQs.length === 0 || sQs.every((q) => answeredIdsRef.current.has(q.id));
+          if (!sCleared) {
+            initialStage = s;
+            try {
+              window.localStorage.setItem(`llys_stage_${roomId}_${p.id}`, String(initialStage));
+            } catch { }
+            break;
           }
-          setError('Ruang tidak ditemukan');
+        }
+      }
+
+      applyStage(initialStage, {
+        respawnPlayer: false,
+        showToast: false,
+        seedId: p.id,
+        allQuestions: qs,
+        totalStg: tStg,
+        force: true,
+        persistCheckpoint: false,
+      });
+
+      const meInit = playersRef.current.get(p.id);
+      if (meInit && !data.kicked) {
+        meInit.stage = initialStage;
+        ably.publishPosition({
+          id: meInit.id,
+          username: meInit.username,
+          avatar: meInit.avatar,
+          role: p.role,
+          stage: initialStage,
+          x: meInit.x,
+          y: meInit.y,
+          vx: 0,
+          vy: 0,
+          facing: meInit.facing,
+          onGround: meInit.onGround,
+          tag: meInit.tag,
+          tag1: meInit.tag1,
+          tag2: meInit.tag2,
+          tag3: meInit.tag3,
+          customNick: meInit.customNick,
+          colors: meInit.colors,
+          ropedById: meInit.ropedById ?? undefined,
+          hp: 5,
+        });
+      }
+
+      if (data.kicked && !isStaffRole(p.role)) {
+        triggerForcedExit('kicked');
+      }
+    }
+
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, router]);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  const manualExitFsRef = useRef(false);
+
+  function getFullscreenElement(): Element | null {
+    const doc = document as Document & { webkitFullscreenElement?: Element | null };
+    return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+  }
+
+  async function requestElementFullscreen(el: HTMLElement | null): Promise<boolean> {
+    if (!el) return false;
+    const anyEl = el as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+    };
+    try {
+      if (typeof el.requestFullscreen === 'function') {
+        await el.requestFullscreen({ navigationUI: 'hide' });
+        return true;
+      }
+      if (typeof anyEl.webkitRequestFullscreen === 'function') {
+        await anyEl.webkitRequestFullscreen();
+        return true;
+      }
+    } catch {
+      // ignore and allow fallback
+    }
+    return false;
+  }
+
+  async function enterFullscreen() {
+    if (getFullscreenElement()) return;
+    const okMain = await requestElementFullscreen(mainRef.current);
+    if (!okMain) {
+      await requestElementFullscreen(document.documentElement);
+    }
+    try {
+      const scr = screen as Screen & { orientation?: { lock?: (o: string) => Promise<void> } };
+      await scr.orientation?.lock?.('landscape');
+    } catch {
+      // orientation lock optional
+    }
+  }
+
+  useEffect(() => {
+    function onFsChange() {
+      const active = Boolean(getFullscreenElement());
+      setIsFullscreen(active);
+      window.dispatchEvent(new Event('resize'));
+    }
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    function onFirstTouch() {
+      if (manualExitFsRef.current) return;
+      if (window.matchMedia('(pointer: coarse)').matches && !getFullscreenElement()) {
+        void enterFullscreen();
+      }
+    }
+    el.addEventListener('pointerdown', onFirstTouch, { passive: true });
+    return () => el.removeEventListener('pointerdown', onFirstTouch);
+  }, []);
+
+  async function toggleFullscreen() {
+    try {
+      if (getFullscreenElement()) {
+        manualExitFsRef.current = true;
+        const doc = document as Document & { webkitExitFullscreen?: () => Promise<void> | void };
+        if (typeof document.exitFullscreen === 'function') {
+          await document.exitFullscreen();
+        } else if (typeof doc.webkitExitFullscreen === 'function') {
+          await doc.webkitExitFullscreen();
+        }
+      } else {
+        manualExitFsRef.current = false;
+        await enterFullscreen();
+      }
+    } catch {
+      // iOS Safari tidak mendukung requestFullscreen pada elemen; abaikan
+    }
+  }
+
+  useEffect(() => {
+    function blockContext(e: Event) {
+      e.preventDefault();
+    }
+    const el = mainRef.current;
+    el?.addEventListener('contextmenu', blockContext);
+    return () => el?.removeEventListener('contextmenu', blockContext);
+  }, []);
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPos = body.style.position;
+    const prevBodyInset = body.style.inset;
+    const prevBodyWidth = body.style.width;
+    const prevBodyHeight = body.style.height;
+    const prevBodyBg = body.style.backgroundColor;
+
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.inset = '0';
+    body.style.width = '100%';
+    body.style.height = '100%';
+    body.style.backgroundColor = '#1e2d42';
+
+    let lockedH = window.innerHeight;
+
+    function isInputFocused() {
+      const a = document.activeElement as HTMLElement | null;
+      return Boolean(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
+    }
+
+    function syncViewportLock() {
+      const el = mainRef.current;
+      if (!el) return;
+
+      if (!isInputFocused() || window.innerHeight > lockedH) {
+        lockedH = window.innerHeight;
+      }
+
+      el.style.height = `${lockedH}px`;
+    }
+
+    function onOrientationChange() {
+      setTimeout(() => {
+        lockedH = window.innerHeight;
+        syncViewportLock();
+      }, 150);
+    }
+
+    syncViewportLock();
+    window.addEventListener('resize', syncViewportLock);
+    window.addEventListener('scroll', syncViewportLock, { passive: true });
+    window.addEventListener('orientationchange', onOrientationChange);
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', syncViewportLock);
+    vv?.addEventListener('scroll', syncViewportLock);
+
+    return () => {
+      window.removeEventListener('resize', syncViewportLock);
+      window.removeEventListener('scroll', syncViewportLock);
+      window.removeEventListener('orientationchange', onOrientationChange);
+      vv?.removeEventListener('resize', syncViewportLock);
+      vv?.removeEventListener('scroll', syncViewportLock);
+
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPos;
+      body.style.inset = prevBodyInset;
+      body.style.width = prevBodyWidth;
+      body.style.height = prevBodyHeight;
+      body.style.backgroundColor = prevBodyBg;
+    };
+  }, []);
+
+  useEffect(() => {
+    for (const rp of ably.presencePlayers) {
+      if (rp.id === myIdRef.current) continue;
+      const existing = playersRef.current.get(rp.id);
+      if (existing) {
+        existing.targetX = rp.x;
+        existing.targetY = rp.y;
+        existing.facing = rp.facing;
+        if (rp.username) existing.username = rp.username;
+        if ((rp as any).fullName) existing.fullName = (rp as any).fullName;
+        if (typeof rp.stage === 'number') existing.stage = rp.stage;
+        if (rp.role) existing.role = rp.role;
+        const rpTag = (rp as any).tag;
+        if (rpTag !== undefined) existing.tag = rpTag;
+        const rpColors = (rp as any).colors;
+        if (rpColors !== undefined) existing.colors = rpColors;
+        const rpRoped = (rp as any).ropedById;
+        if (rpRoped !== undefined) existing.ropedById = rpRoped ?? null;
+        if (existing.ropedById === null) {
+          existing.adminAnchor = undefined;
+          existing.adminFacing = undefined;
+        }
+      } else {
+        const resolvedFullName = (rp as any).fullName || roomRef.current?.players?.find((pl) => pl.userId === rp.id)?.fullName || undefined;
+        playersRef.current.set(rp.id, {
+          id: rp.id,
+          username: rp.username,
+          fullName: resolvedFullName,
+          avatar: rp.avatar,
+          role: rp.role,
+          stage: rp.stage ?? 1,
+          x: rp.x,
+          y: rp.y,
+          targetX: rp.x,
+          targetY: rp.y,
+          vx: 0,
+          vy: 0,
+          facing: rp.facing,
+          onGround: false,
+          ropedById: (rp as any).ropedById ?? null,
+          adminAnchor: undefined,
+          adminFacing: undefined,
+          tag: (rp as any).tag,
+          colors: (rp as any).colors,
+        });
+      }
+    }
+  }, [ably.presencePlayers]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent, down: boolean) {
+      if (exitNoticeRef.current || (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))) {
+        keysRef.current.left = false;
+        keysRef.current.right = false;
+        keysRef.current.jump = false;
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      const active = document.activeElement as HTMLElement | null;
+      const isTyping =
+        (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) ||
+        (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable));
+      if (isTyping) {
+        keysRef.current.left = false;
+        keysRef.current.right = false;
+        keysRef.current.jump = false;
+        return;
+      }
+      if (e.key === 'Escape' && down) {
+        if (isStaffRole(myRoleRef.current) && questionRef.current) {
+          closeQuestionModal(questionRef.current.id);
           return;
         }
+      }
+      if (
+        down &&
+        (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'A', 'd', 'D', 'w', 'W', ' ', 'f', 'F', 'x', 'X', 'e', 'E', 'j', 'J'].includes(e.key))
+      ) {
+        if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
+          returnCameraToSelf();
+        }
+      }
+      if (['ArrowLeft', 'a', 'A'].includes(e.key)) keysRef.current.left = down;
+      if (['ArrowRight', 'd', 'D'].includes(e.key)) keysRef.current.right = down;
+      if (['ArrowUp', 'w', 'W', ' '].includes(e.key)) {
+        keysRef.current.jump = down;
+        if (down) e.preventDefault();
+      }
+      if (['f', 'F', 'x', 'X', 'e', 'E', 'j', 'J'].includes(e.key) && down) {
+        fireLaser();
+      }
+      if (e.key === '/' && down) {
+        if (!isStaffRole(myRoleRef.current)) return;
+        e.preventDefault();
+        keysRef.current.left = false;
+        keysRef.current.right = false;
+        keysRef.current.jump = false;
+        setPanelsHidden(false);
+        setChatMinimized(false);
+        chatMinimizedRef.current = false;
+        setChatInput('/');
+        setTimeout(() => {
+          const inputEl = document.getElementById('mp-chat-input') as HTMLInputElement | null;
+          if (inputEl) {
+            inputEl.focus();
+            inputEl.setSelectionRange(1, 1);
+          }
+        }, 30);
+      }
+    }
+    const kd = (e: KeyboardEvent) => onKey(e, true);
+    const ku = (e: KeyboardEvent) => onKey(e, false);
+    window.addEventListener('keydown', kd);
+    window.addEventListener('keyup', ku);
+    return () => {
+      window.removeEventListener('keydown', kd);
+      window.removeEventListener('keyup', ku);
+    };
+  }, [fireLaser]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    function resize() {
+      if (!canvas) return;
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      canvas.width = parent.clientWidth;
+      canvas.height = parent.clientHeight;
+      cameraRef.current?.resize(canvas.width, canvas.height);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    const ro = typeof ResizeObserver !== 'undefined' && canvas.parentElement
+      ? new ResizeObserver(() => resize())
+      : null;
+    if (ro && canvas.parentElement) ro.observe(canvas.parentElement);
+
+    const camera = new Camera(canvas.width, canvas.height);
+    cameraRef.current = camera;
+
+    let raf = 0;
+    let tick = 0;
+    let prevSentX = -1;
+    let prevSentY = -1;
+    let prevSentVx = 0;
+    let prevSentVy = 0;
+    let prevSentFacing = 0;
+    let prevSentDying = false;
+    let lastFrameTime = performance.now();
+
+    function loop(now = performance.now()) {
+      if (!ctx || !canvas) return;
+      const elapsedMs = now - lastFrameTime;
+      lastFrameTime = now;
+      // Normalisasi delta-time ke basis 60 FPS (16.6667ms) supaya layar Android 90Hz/120Hz/144Hz
+      // punya kecepatan jalan & lompat yang persis sama dengan iOS dan PC 60Hz
+      const dtScale = elapsedMs > 0 ? Math.min(2.5, Math.max(0.1, elapsedMs / (1000 / 60))) : 1;
+      const camLerp = 1 - Math.pow(1 - 0.12, dtScale);
+      tick += 1;
+
+      const me = playersRef.current.get(myIdRef.current);
+
+      for (const p of playersRef.current.values()) {
+        if (p.id === myIdRef.current) continue;
+        // Adaptive Mobile Legends Snapshot Buffer Interpolation:
+        // - Untuk peer LAN (WebSocket ~16-25ms): interpDelay super rendah (~20ms) -> instan & 60/120 FPS mulus
+        // - Untuk peer luar LAN (HTTP Single-Flight ~70-130ms): interpDelay otomatis menyesuaikan (~90-150ms) -> tetap mulus tanpa patah-patah
+        let desiredX = p.targetX ?? p.x;
+        let desiredY = p.targetY ?? p.y;
+
+        const snaps = p.snapshots;
+        if (snaps && snaps.length >= 2 && !p.isDying) {
+          const avgInt = p.avgInterval ?? 24;
+          const interpDelay = Math.max(18, Math.min(180, avgInt * 1.18));
+          const renderTime = now - interpDelay;
+
+          while (snaps.length > 2 && snaps[1].time <= renderTime) {
+            snaps.shift();
+          }
+
+          const s0 = snaps[0];
+          const s1 = snaps[1];
+          if (renderTime <= s0.time) {
+            desiredX = s0.x;
+            desiredY = s0.y;
+          } else if (renderTime <= s1.time) {
+            const span = Math.max(1, s1.time - s0.time);
+            const alpha = Math.max(0, Math.min(1, (renderTime - s0.time) / span));
+            desiredX = s0.x + (s1.x - s0.x) * alpha;
+            desiredY = s0.y + (s1.y - s0.y) * alpha;
+          } else {
+            const latest = snaps[snaps.length - 1];
+            const overMs = Math.min(55, renderTime - latest.time);
+            const overFrames = overMs / (1000 / 60);
+            desiredX = Math.max(0, Math.min(WORLD.width - PLAYER_W, latest.x + latest.vx * overFrames * 0.7));
+            desiredY = Math.min(WORLD.groundY - PLAYER_H, latest.y + latest.vy * overFrames * 0.7);
+          }
+        }
+
+        const dx = desiredX - p.x;
+        if (Math.abs(dx) > 450) {
+          p.x = desiredX;
+        } else if (Math.abs(dx) <= 0.15) {
+          p.x = desiredX;
+        } else {
+          const smoothX = 1 - Math.pow(1 - 0.45, dtScale);
+          p.x += dx * smoothX;
+        }
+
+        const dy = desiredY - p.y;
+        if (Math.abs(dy) > 450) {
+          p.y = desiredY;
+        } else if (Math.abs(dy) <= 0.15) {
+          p.y = desiredY;
+        } else {
+          const smoothY = 1 - Math.pow(1 - 0.48, dtScale);
+          p.y += dy * smoothY;
+        }
+        for (const plat of stagePlatformsRef.current) {
+          if (
+            plat.type === 'fire' &&
+            p.x + PLAYER_W > plat.x &&
+            p.x < plat.x + plat.w &&
+            p.y + PLAYER_H > plat.y &&
+            p.y < plat.y + plat.h
+          ) {
+            p.burnUntil = Date.now() + 5000;
+            break;
+          }
+        }
+        if (p.ropedById) p.burnUntil = undefined;
+      }
+
+      // Auto-break rope HANYA jika admin (pemilik tali) benar-benar sudah pergi / DC.
+      // CATATAN: admin pindah stage TIDAK memutus tali, malah memaksa player terikut.
+      for (const p of playersRef.current.values()) {
+        if (!p.ropedById) continue;
+        const owner = playersRef.current.get(p.ropedById);
+        if (!owner || !ably.connected) {
+          p.ropedById = null;
+          if (p.id === myIdRef.current) {
+            showBanner('🪢 Tali kamu terlepas (player pergi / disconnect).');
+            setRopedByUserId(null);
+          }
+        } else {
+          // Simpan posisi owner sebagai anchor respawn (jika owner mati, anchor lama tetap dijaga sampai respawn)
+          if (!owner.isDying) {
+            p.adminAnchor = { x: owner.x, y: owner.y };
+            p.adminFacing = owner.facing;
+            if (p.id === myIdRef.current) {
+              meAdminAnchorRef.current = { x: owner.x, y: owner.y };
+              meAdminFacingRef.current = owner.facing;
+            }
+          }
+        }
+      }
+
+      // Tali kaku (rigid leash) lintas stage: jika stage admin != stage player diikat,
+      // TELEPORT paksa player ke belakang admin (tali "menarik" lintas stage).
+      if (me && me.ropedById && !me.isDying) {
+        const owner = playersRef.current.get(me.ropedById);
+        if (owner && !owner.isDying && (owner.stage ?? 1) !== (me.stage ?? 1)) {
+          applyStage(owner.stage ?? 1, { respawnPlayer: false, showToast: false, force: true });
+          const side = owner.facing === 1 ? -1 : 1;
+          me.x = owner.x + side * 60;
+          me.y = owner.y;
+          me.vx = 0;
+          me.vy = 0;
+          me.isDying = false;
+          me.deathStartedAt = undefined;
+          me.burnUntil = undefined;
+          soundEngine.playBounce();
+        }
+      }
+
+      // Rope drag: tali kaku (rigid leash), jarak fixed dari admin, player gabisa kabur
+      const leashLen = 70;
+      const applyLeash = (target: Player, ax: number, ay: number, afacing: number) => {
+        const side = afacing === 1 ? -1 : 1;
+        const tx = ax + side * 60;
+        const ty = ay;
+        const dx = target.x - tx;
+        const dy = target.y - ty;
+        const dist = Math.hypot(dx, dy);
+        if (dist > leashLen) {
+          const s = leashLen / dist;
+          target.x = tx + dx * s;
+          target.y = ty + dy * s;
+        }
+        target.vx = 0;
+        target.vy = 0;
+        target.facing = afacing === 1 ? 1 : -1;
+      };
+      if (me && !me.isDying) {
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          if (p.ropedById !== myIdRef.current) continue;
+          if ((p.stage ?? 1) !== (me.stage ?? 1)) continue;
+          if (p.isDying) continue;
+          applyLeash(p, me.x, me.y, me.facing);
+        }
+      }
+      // Leash di sisi player yang diikat: clamp posisi sendiri realtime (biar ga nimbrung di client sendiri)
+      if (me && me.ropedById && !me.isDying) {
+        const owner = playersRef.current.get(me.ropedById);
+        // Boleh beda stage: leash tetap jalan (cross-stage dipindah paksa di blok atas).
+        if (owner && !owner.isDying && (owner.stage ?? 1) === (me.stage ?? 1)) {
+          applyLeash(me, owner.x, owner.y, owner.facing);
+        } else if (owner && !owner.isDying && meAdminAnchorRef.current) {
+          // Beda stage: clamp ke anchor admin supaya tidak drift jauh sebelum applyStage memindahkan
+          applyLeash(me, meAdminAnchorRef.current.x, meAdminAnchorRef.current.y, meAdminFacingRef.current ?? owner.facing);
+        }
+      }
+
+      const syncedNow = ably.getSyncedServerTime();
+      updateStageEntities(
+        stagePlatformsRef.current,
+        stageEnemiesRef.current,
+        dtScale,
+        syncedNow,
+        stagePowerUpsRef.current,
+        projectilesRef.current,
+        (projId, enemyId) => {
+          soundEngine.playZap();
+          const curStg = currentStageRef.current;
+          const stompEvt = {
+            op: 'stomp' as const,
+            stg: curStg,
+            id: enemyId,
+            until: Date.now() + 9000,
+          };
+          applyObstacleEvent(stompEvt);
+          ably.publishObstacle(stompEvt);
+          pendingObstacleUploadRef.current = stompEvt;
+        },
+        stageBossesRef.current,
+        (projId, bossId, dmg = 1) => {
+          soundEngine.playZap();
+          const b = stageBossesRef.current.find((x) => x.id === bossId);
+          const curStg = currentStageRef.current;
+          if (!b) return;
+          const wasAlive = b.alive;
+          const hitEvt = {
+            op: 'boss_hit' as const,
+            stg: curStg,
+            bid: bossId,
+            dmg,
+            hp: b.hp,
+          };
+          ably.publishObstacle(hitEvt);
+          pendingObstacleUploadRef.current = hitEvt;
+
+          // Update local cache
+          bossStateCacheRef.current.set(`${curStg}:${bossId}`, {
+            hp: b.hp,
+            maxHp: b.maxHp,
+            alive: b.alive,
+            x: b.x,
+            dir: b.dir,
+          });
+
+          if (wasAlive && !b.alive && !bossDiedBannerRef.current.has(curStg)) {
+            const dieEvt = { op: 'boss_died' as const, stg: curStg };
+            applyObstacleEvent(dieEvt);
+            ably.publishObstacle(dieEvt);
+            pendingObstacleUploadRef.current = dieEvt;
+          }
+        },
+        bossProjectilesRef.current,
+        (spit) => {
+          const curStg = currentStageRef.current;
+          const evt = {
+            op: 'boss_spit' as const,
+            stg: curStg,
+            bid: spit.bid,
+            pid: spit.pid,
+            x: spit.x,
+            y: spit.y,
+            vx: spit.vx,
+            vy: spit.vy,
+          };
+          applyObstacleEvent(evt);
+          ably.publishObstacle(evt);
+        },
+        (playerId, bossId) => {
+          const victim = playersRef.current.get(playerId);
+          if (!victim) return;
+          const now = Date.now();
+          victim.isDying = true;
+          victim.deathStartedAt = now;
+          victim.vx = 0;
+          victim.vy = -13.2;
+          victim.onGround = false;
+          victim.ridingPlayerId = null;
+          victim.lastCarrierX = undefined;
+          victim.ridingPlatform = null;
+          soundEngine.playDeath();
+          void bossId;
+        },
+        Array.from(playersRef.current.values()),
+        myIdRef.current,
+      );
+
+      // Periodic Boss Sync Broadcast: sinkronisasi darah & posisi boss ke pemain mode rope/follow
+      const nowSync = Date.now();
+      const curBoss = stageBossesRef.current[0];
+      if (curBoss && nowSync - lastBossSyncBroadcastRef.current > 1800) {
+        lastBossSyncBroadcastRef.current = nowSync;
+        const curStg = currentStageRef.current;
+        const allInStage = Array.from(playersRef.current.values()).filter((p) => (p.stage ?? 1) === curStg);
+        const isAuthority = isStaff || allInStage.length === 0 || allInStage.every((p) => p.id >= myIdRef.current);
+        if (isAuthority) {
+          ably.publishObstacle({
+            op: 'boss_sync',
+            stg: curStg,
+            bid: curBoss.id,
+            hp: curBoss.hp,
+            maxHp: curBoss.maxHp,
+            alive: curBoss.alive,
+            x: Math.round(curBoss.x),
+            dir: curBoss.dir,
+          });
+        }
+      }
+
+      const curStage = currentStageRef.current;
+      const tStages = totalStagesRef.current;
+      const curStageQs = getStageQuestions(levelQuestionsRef.current, curStage, tStages);
+      const stageTotal = curStageQs.length;
+      let stageAnswered = 0;
+      for (const sq of curStageQs) {
+        if (answeredIdsRef.current.has(sq.id)) stageAnswered += 1;
+      }
+      const bossAlive = stageBossesRef.current.some((b) => b.alive);
+      const isGateUnlocked = isStaff || ((stageTotal === 0 || stageAnswered >= stageTotal) && !bossAlive);
+
+      const dynBlocks: Platform[] = questionBlocksRef.current.map((b) => {
+        const qid = b.questionId ?? '';
+        const res = answerResultsRef.current.get(qid);
+        const type = res === 'assisted' ? 'qblock-assisted' : res === true ? 'qblock-correct' : res === false ? 'qblock-wrong' : 'qblock';
+        return { ...b, type };
+      });
+
+      const isStudentPaused = room?.status === 'paused' && !isStaff;
+      const isQuestionModalBusy = !isStaff && Boolean(questionRef.current && !answeredIdsRef.current.has(questionRef.current.id));
+      if (isQuestionModalBusy) {
+        keysRef.current.left = false;
+        keysRef.current.right = false;
+        keysRef.current.jump = false;
+      }
+      // Cek apakah player sudah bergeser/lepas dari kontak kotak yang baru di-close
+      if (dismissedQuestionIdRef.current && me) {
+        const dismissedBlock = questionBlocksRef.current.find((b) => b.questionId === dismissedQuestionIdRef.current);
+        if (!dismissedBlock) {
+          dismissedQuestionIdRef.current = null;
+        } else {
+          const isOverlapping =
+            me.x + PLAYER_W > dismissedBlock.x - 4 &&
+            me.x < dismissedBlock.x + dismissedBlock.w + 4 &&
+            me.y + PLAYER_H >= dismissedBlock.y - 4 &&
+            me.y <= dismissedBlock.y + dismissedBlock.h + 4;
+          if (!isOverlapping) {
+            dismissedQuestionIdRef.current = null;
+          }
+        }
+      }
+
+      if (
+        me &&
+        !exitNoticeRef.current &&
+        !isStudentPaused &&
+        (isStaff || room?.status === 'in_progress' || room?.status === 'waiting')
+      ) {
+        updatePlayerPhysics(
+          me,
+          isQuestionModalBusy ? { left: false, right: false, jump: false } : keysRef.current,
+          playersRef.current.values(),
+          dynBlocks,
+          (qid) => {
+            if (dismissedQuestionIdRef.current === qid) return;
+            const cooldownUntil = closedQuestionCooldownRef.current.get(qid);
+            if (cooldownUntil && Date.now() < cooldownUntil) return;
+            if (questionRef.current?.id === qid) return;
+
+            if (!isStaff) {
+              if (answeredIdsRef.current.has(qid)) return;
+              const found = levelQuestionsRef.current.find((q) => q.id === qid);
+              if (found) {
+                keysRef.current.left = false;
+                keysRef.current.right = false;
+                keysRef.current.jump = false;
+                me.vx = 0;
+                soundEngine.playQuestionOpen();
+                questionRef.current = found;
+                setQuestion(found);
+                setQuestionMinimized(false);
+                setSelected('');
+                setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
+                if (!isStaff) {
+                  ably.publishCommand({ op: 'mirror_question_state', userId: myIdRef.current, qid: found.id });
+                }
+              }
+            } else {
+              // Guru / Admin: bisa iseng mengecek soal kapanpun (baik saat mirroring maupun tidak)
+              if (mirrorTargetRef.current) {
+                const res = answerResultsRef.current.get(qid);
+                if (res === true || res === 'assisted') return;
+              }
+              const found = levelQuestionsRef.current.find((q) => q.id === qid);
+              if (found) {
+                keysRef.current.left = false;
+                keysRef.current.right = false;
+                keysRef.current.jump = false;
+                me.vx = 0;
+                soundEngine.playQuestionOpen();
+                questionRef.current = found;
+                setQuestion(found);
+                setQuestionMinimized(false);
+                setSelected('');
+                setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
+              }
+            }
+          },
+          dtScale,
+          (soundEvt) => {
+            if (isQuestionModalBusy) return;
+            if (soundEvt === 'jump') soundEngine.playJump();
+            else if (soundEvt === 'bounce') soundEngine.playBounce();
+            else if (soundEvt === 'burn') soundEngine.playBurn();
+            else if (soundEvt === 'death') soundEngine.playDeath();
+          },
+          {
+            basePlatforms: stagePlatformsRef.current,
+            enemies: stageEnemiesRef.current,
+            powerUps: stagePowerUpsRef.current,
+            bosses: stageBossesRef.current,
+            isGateUnlocked,
+            isStaff,
+            onObstacleEvent: (evt) => {
+              applyObstacleEvent(evt);
+              ably.publishObstacle(evt);
+              pendingObstacleUploadRef.current = evt;
+            },
+            onCollectPowerUp: () => {
+              soundEngine.playPowerUp();
+              const meNow = playersRef.current.get(myIdRef.current);
+              if (!meNow?.hasAdminGun) {
+                setAmmoCount(10);
+              }
+            },
+            onRespawn: (p) => {
+              p.hp = 5;
+              p.isDying = false;
+              p.deathStartedAt = undefined;
+              if (p.id === myIdRef.current) {
+                if (ably.connected) {
+                  ably.publishPosition({
+                    id: p.id,
+                    username: p.username,
+                    avatar: p.avatar,
+                    role: myRoleRef.current,
+                    stage: p.stage ?? currentStageRef.current,
+                    x: p.x,
+                    y: p.y,
+                    vx: 0,
+                    vy: 0,
+                    facing: p.facing,
+                    onGround: p.onGround,
+                    isDying: false,
+                    hp: 5,
+                    tag: p.tag,
+                    tag1: p.tag1,
+                    tag2: p.tag2,
+                    tag3: p.tag3,
+                    customNick: p.customNick,
+                    colors: p.colors,
+                  });
+                }
+                showBanner('⚡ Peluru Blaster terisi! (10 peluru)', 2500);
+                const newAmmo = p.hasAdminGun && p.gun ? Infinity : (p.blasterAmmo ?? 0);
+                setAmmoCount(newAmmo);
+                if (previewBodyRef.current || previewTag1Ref.current || previewColorsRef.current) {
+                  const restore = equippedBodyRef.current || 'cat';
+                  setPreviewBody(null);
+                  previewBodyRef.current = null;
+                  setPreviewTag1(null);
+                  previewTag1Ref.current = null;
+                  setPreviewColors(null);
+                  previewColorsRef.current = null;
+                  p.bodyModel = restore;
+                  p.avatar = restore === 'cat' ? 'cat-blue' : restore;
+                  soundEngine.playBounce();
+                  showBanner(`⚠️ Mode coba berakhir karena karakter gugur! Kembali ke [${restore.toUpperCase()}].`, 3500);
+                }
+              }
+            },
+            onEnterGate: () => {
+              const curStg = currentStageRef.current;
+              const totStg = totalStagesRef.current;
+              if (gateEnterCooldownRef.current && Date.now() < gateEnterCooldownRef.current) return;
+              gateEnterCooldownRef.current = Date.now() + 1500;
+
+              if (curStg < totStg) {
+                const nextStg = curStg + 1;
+                applyStage(nextStg, {
+                  respawnPlayer: true,
+                  showToast: true,
+                  persistCheckpoint: true,
+                });
+                soundEngine.playPowerUp();
+                showBanner(`🎉 Berhasil melewati pintu! Selamat datang di Stage ${nextStg} (Checkpoint tersimpan).`, 4500);
+              } else {
+                soundEngine.playPowerUp();
+                showBanner(`🏆 SELAMAT! Kamu telah menyelesaikan seluruh stage game ini!`, 6000);
+                setShowFinishCelebration(true);
+              }
+            },
+            onLockedGateTouch: () => {
+              if (gateLockedNoticeCooldownRef.current && Date.now() < gateLockedNoticeCooldownRef.current) return;
+              gateLockedNoticeCooldownRef.current = Date.now() + 3000;
+              const curStg = currentStageRef.current;
+              const totStg = totalStagesRef.current;
+              const curStgQs = getStageQuestions(levelQuestionsRef.current, curStg, totStg);
+              const stageTotal = curStgQs.length;
+              let stageAnswered = 0;
+              for (const sq of curStageQs) {
+                if (answeredIdsRef.current.has(sq.id)) stageAnswered += 1;
+              }
+              const questionsDone = stageTotal === 0 || stageAnswered >= stageTotal;
+              const bossAlive = stageBossesRef.current.some((b) => b.alive);
+              if (!questionsDone && bossAlive) {
+                showBanner(`🔒 Pintu Terkunci! Selesaikan semua soal (${stageAnswered}/${stageTotal}) dan kalahkan Boss Penjaga terlebih dahulu!`, 3500);
+              } else if (!questionsDone) {
+                showBanner(`🔒 Pintu Terkunci! Jawab sisa soal (${stageTotal - stageAnswered} lagi) untuk membuka pintu!`, 3500);
+              } else if (bossAlive) {
+                showBanner('🔒 Pintu Terkunci! Kalahkan Boss Penjaga di depan pintu untuk mendapatkan kunci!', 3500);
+              }
+            },
+            playerRounds: projectilesRef.current
+              .map((r) => ({
+                id: r.id,
+                x: r.x,
+                y: r.y,
+                vx: r.vx,
+                shooterId: r.shooterId,
+                damage: r.damage,
+                len: r.length,
+                w: r.thickness,
+                h: r.thickness,
+                weapon: (r as Projectile & { weapon?: string }).weapon,
+                shooterRole: r.shooterRole ?? playersRef.current.get(r.shooterId)?.role,
+              })),
+            isPvpEnabled: isStudentPvpEnabledRef.current,
+            myPlayerId: myIdRef.current,
+            onPlayerHitByRound: (victimId, shooterId, dmg, weapon, projId) => {
+              if (projId && weapon !== 'megalaser') {
+                const idx = projectilesRef.current.findIndex((r) => r.id === projId);
+                if (idx !== -1) projectilesRef.current.splice(idx, 1);
+              }
+              const shooterRole =
+                shooterId === myIdRef.current
+                  ? myRoleRef.current
+                  : projectilesRef.current.find((r) => r.shooterId === shooterId)?.shooterRole ??
+                  playersRef.current.get(shooterId)?.role ??
+                  'student';
+              const victim = playersRef.current.get(victimId);
+              if (victim && !canShooterHitTarget(shooterRole, victim.role, isStudentPvpEnabledRef.current)) return;
+
+              const isStudentPvP = shooterRole === 'student' && ((victim?.role ?? 'student') === 'student');
+
+              if (victimId === myIdRef.current) {
+                const me = playersRef.current.get(myIdRef.current);
+                if (me && !me.isDying && !me.ropedById) {
+                  const shooterName =
+                    playersRef.current.get(shooterId)?.username ??
+                    (shooterRole === 'admin' ? 'Admin' : shooterRole === 'teacher' ? 'Guru' : 'Player');
+                  if (weapon === 'ice') {
+                    me.isDying = false;
+                    me.frozenUntil = Date.now() + 1200;
+                    me.frozenDeathAt = Date.now() + 1200;
+                    me.frozenByShooterId = shooterId;
+                    me.frozenByWeapon = 'ice';
+                    me.vx = me.x < (projectilesRef.current.find((r) => r.shooterId === shooterId)?.x ?? me.x) ? -4 : 4;
+                    me.vy = -3.5;
+                  } else if (weapon === 'stunt') {
+                    me.isDying = false;
+                    me.frozenUntil = Date.now() + 1200;
+                    me.frozenDeathAt = Date.now() + 1200;
+                    me.stunnedUntil = Date.now() + 1200;
+                    me.frozenByShooterId = shooterId;
+                    me.frozenByWeapon = 'stunt';
+                    me.vx = 0;
+                    me.vy = 0;
+                  } else if (isStudentPvP && isStudentPvpEnabledRef.current) {
+                    // Local player HP was updated by updatePlayerPhysics (nextHp)
+                    const currentHp = me.hp ?? 5;
+                    if (currentHp > 0) {
+                      soundEngine.playZap();
+                      showBanner(`💥 Kena tembak ${shooterName}! Sisa darah: ${currentHp}/5`, 2000);
+                    } else {
+                      me.hp = 0;
+                      me.isDying = true;
+                      me.deathStartedAt = Date.now();
+                      me.vx = 0;
+                      me.vy = -13.2;
+                      soundEngine.playDeath();
+                      showBanner(`💀 Kamu gugur ditembak ${shooterName}! (Respawn dalam 2 detik)`, 3500);
+                      addSystemChatMessage(`⚔️ ${me.username} gugur ditembak oleh ${shooterName}!`);
+                    }
+                  } else {
+                    me.isDying = true;
+                    me.deathStartedAt = Date.now();
+                    me.vx = 0;
+                    me.vy = -13.2;
+                    soundEngine.playDeath();
+                  }
+                }
+              } else if (victim && isStudentPvP && isStudentPvpEnabledRef.current) {
+                // Victim-authoritative: penembak tidak menghitung damage korban, hanya korban yang broadcast hit
+                return;
+              }
+              const updatedVictimHp = victimId === myIdRef.current ? playersRef.current.get(myIdRef.current)?.hp : victim?.hp;
+              ably.publishCommand({ op: 'hit', targetId: victimId, by: shooterId, dmg, weapon, shooterRole, hp: updatedVictimHp });
+            },
+          },
+        );
+      }
+
+      // Jalur 1 (WebSocket Port 3000 /ws-game atau Port 3001):
+      // - Adaptif tick rate: 60Hz (16ms) di LAN, 42Hz (24ms) di luar jaringan agar bebas TCP bufferbloat
+      // - Mengirim 1 paket "berhenti" terakhir saat vx=0 & vy=0 agar interpolasi player lain berhenti presisi
+      if (me && ably.connected) {
+        const nowMs = Date.now();
+        const isMovingNow = Math.abs(me.vx) > 0.04 || Math.abs(me.vy) > 0.04;
+        const wasMovingPrev = Math.abs(prevSentVx) > 0.04 || Math.abs(prevSentVy) > 0.04;
+        const justStopped = !isMovingNow && wasMovingPrev;
+        const moved =
+          justStopped ||
+          Math.abs(me.x - prevSentX) > 0.25 ||
+          Math.abs(me.y - prevSentY) > 0.25 ||
+          Math.abs(me.vx - prevSentVx) > 0.08 ||
+          Math.abs(me.vy - prevSentVy) > 0.08 ||
+          me.facing !== prevSentFacing ||
+          Boolean(me.isDying) !== prevSentDying;
+        const minSendInterval = justStopped ? 0 : ably.pingMs > 25 ? 24 : 16;
+        if (moved && nowMs - lastSentRef.current >= minSendInterval) {
+          lastSentRef.current = nowMs;
+          prevSentX = me.x;
+          prevSentY = me.y;
+          prevSentVx = isMovingNow ? me.vx : 0;
+          prevSentVy = isMovingNow ? me.vy : 0;
+          prevSentFacing = me.facing;
+          prevSentDying = Boolean(me.isDying);
+          ably.publishPosition({
+            id: me.id,
+            username: me.username,
+            avatar: previewBodyRef.current
+              ? (previewBodyRef.current === 'cat' ? 'cat-blue' : previewBodyRef.current)
+              : (equippedBodyRef.current === 'cat' ? 'cat-blue' : (equippedBodyRef.current || me.bodyModel || 'cat-blue')),
+            bodyModel: previewBodyRef.current || equippedBodyRef.current || me.bodyModel || 'cat',
+            role: myRole,
+            stage: curStage,
+            x: me.x,
+            y: me.y,
+            vx: isMovingNow ? me.vx : 0,
+            vy: isMovingNow ? me.vy : 0,
+            facing: me.facing,
+            onGround: me.onGround,
+            isDying: me.isDying,
+            deathStartedAt: me.deathStartedAt,
+            burnUntil: me.burnUntil,
+            jailedUntil: me.jailedUntil,
+            gun: me.gun ?? undefined,
+            hasAdminGun: me.hasAdminGun,
+            tag: me.tag,
+            tag1: me.tag1,
+            tag2: me.tag2,
+            tag3: me.tag3,
+            customNick: me.customNick,
+            colors: me.colors,
+            hp: me.hp ?? 5,
+          });
+        }
+      }
+
+      const spectateP = spectateTargetIdRef.current ? playersRef.current.get(spectateTargetIdRef.current) : null;
+      const followTarget = spectateP || me;
+      if (!isCameraFreePanningRef.current && followTarget) {
+        camera.follow(followTarget.x + PLAYER_W / 2, followTarget.y, camLerp);
+      }
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      camera.applyTransform(ctx);
+
+      const curMapTheme = getMapThemeForStage(curStage, selectedStagesRef.current);
+      drawWorld(ctx, {
+        stage: curMapTheme,
+        totalStages: tStages,
+        stageAnswered,
+        stageTotal,
+        isGateUnlocked,
+        bossAlive: stageBossesRef.current.some((b) => b.alive),
+      });
+      drawPlatforms(
+        ctx,
+        [...stagePlatformsRef.current, ...dynBlocks],
+        curMapTheme,
+        stageBossesRef.current.some((b) => b.alive),
+      );
+      drawEnemies(ctx, stageEnemiesRef.current, syncedNow);
+      drawBosses(ctx, stageBossesRef.current, syncedNow);
+      drawBossProjectiles(ctx, bossProjectilesRef.current, syncedNow);
+      drawPowerUps(ctx, stagePowerUpsRef.current, syncedNow);
+      drawProjectiles(ctx, projectilesRef.current, syncedNow);
+
+      // Render tali: garis putus-putus admin <-> player yang diikat (terlihat di semua client)
+      for (const p of playersRef.current.values()) {
+        if (!p.ropedById) continue;
+        const owner = playersRef.current.get(p.ropedById);
+        if (!owner) continue;
+        if ((p.stage ?? 1) !== (owner.stage ?? 1)) continue;
+        if ((p.stage ?? 1) !== curStage) continue;
+        ctx.save();
+        ctx.setLineDash([8, 6]);
+        ctx.strokeStyle = '#a97b4f';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(owner.x + PLAYER_W / 2, owner.y + PLAYER_H / 2);
+        ctx.lineTo(p.x + PLAYER_W / 2, p.y + PLAYER_H / 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      for (const p of playersRef.current.values()) {
+        const pStage = p.stage ?? 1;
+        if (pStage !== curStage) continue;
+
+        const role = p.id === myIdRef.current ? myRole : (p.role ?? (room?.hostId === p.id ? 'teacher' : 'student'));
+        const displayName = p.customNick?.trim() || p.fullName?.trim() || p.username;
+        const effectiveAvatar =
+          p.id === myIdRef.current
+            ? (previewBodyRef.current
+              ? (previewBodyRef.current === 'cat' ? 'cat-blue' : previewBodyRef.current)
+              : (equippedBodyRef.current === 'cat'
+                ? 'cat-blue'
+                : (equippedBodyRef.current || (p.bodyModel === 'cat' ? 'cat-blue' : (p.bodyModel || p.avatar || 'cat-blue')))))
+            : (p.bodyModel && p.bodyModel !== 'cat'
+              ? p.bodyModel
+              : (p.avatar || 'cat-blue'));
+        drawCat(
+          ctx,
+          p.x,
+          p.y,
+          PLAYER_W,
+          PLAYER_H,
+          effectiveAvatar,
+          p.facing,
+          displayName,
+          role,
+          bubblesRef.current.get(p.id) ?? null,
+          {
+            isDying: p.isDying,
+            deathStartedAt: p.deathStartedAt,
+            burnUntil: p.burnUntil,
+            blasterAmmo: p.blasterAmmo,
+            blasterUntil: p.blasterUntil,
+            jailedUntil: p.jailedUntil,
+            gun: p.gun,
+            tag: (p.id === myIdRef.current && previewTag1Ref.current) ? previewTag1Ref.current : (p.tag1 || p.tag),
+            tag1: (p.id === myIdRef.current && previewTag1Ref.current) ? previewTag1Ref.current : p.tag1,
+            tag2: p.tag2,
+            tag3: p.tag3,
+            customNick: p.customNick,
+            colors: (p.id === myIdRef.current && previewColorsRef.current)
+              ? { ...(p.colors ?? {}), ...previewColorsRef.current }
+              : p.colors,
+            isGodMode: p.isGodMode || (p.id === myIdRef.current && isGodModeRef.current),
+            frozenUntil: p.frozenUntil,
+            stunnedUntil: p.stunnedUntil,
+            velocity: { vx: p.vx, vy: p.vy },
+            hp: p.hp ?? 5,
+            maxHp: 5,
+            isPvpEnabled: isStudentPvpEnabledRef.current,
+          },
+        );
+      }
+
+      ctx.restore();
+      raf = requestAnimationFrame(loop);
+    }
+    raf = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+      ro?.disconnect();
+    };
+  }, [room?.status, room?.hostId, roomId, myRole, ablyEnabled, ably.connected, ably.publishPosition]);
+
+  // Jalur 2 (Khusus Pemain Luar LAN / Tunnel Port 3000 yang tidak tembus port WebSocket 3001):
+  // - HANYA aktif jika WebSocket belum terhubung (!ably.connected), sehingga pemain LAN tidak mengirim HTTP sama sekali
+  // - Single-flight: request berikutnya hanya dikirim setelah request sebelumnya selesai (0 antrean / tidak bikin ping pemain lain naik!)
+  // - Server /api/pos otomatis mem-broadcast gerakan pemain luar LAN ke semua pemain WebSocket LAN dalam < 0.2ms
+  useEffect(() => {
+    if (ably.connected) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    let lastUploadX = -9999;
+    let lastUploadY = -9999;
+    let lastUploadVx = 0;
+    let lastUploadVy = 0;
+    let lastUploadFacing = 1;
+    let lastUploadDying = false;
+    let lastHeartbeatAt = 0;
+
+    async function posLoop() {
+      if (!active || ably.connected) return;
+      const tStart = performance.now();
+      let didSendMove = false;
+      try {
+        const me = playersRef.current.get(myIdRef.current);
+        if (me && myIdRef.current) {
+          const nowMs = Date.now();
+          const isMoving = Math.abs(me.vx) > 0.04 || Math.abs(me.vy) > 0.04;
+          const wasMoving = Math.abs(lastUploadVx) > 0.04 || Math.abs(lastUploadVy) > 0.04;
+          const justStopped = !isMoving && wasMoving;
+          const moved =
+            justStopped ||
+            Math.abs(me.x - lastUploadX) > 0.3 ||
+            Math.abs(me.y - lastUploadY) > 0.3 ||
+            me.facing !== lastUploadFacing ||
+            Boolean(me.isDying) !== lastUploadDying;
+
+          // Saat diam, gunakan SSE push stream untuk menerima gerakan player lain secara real-time,
+          // dan hanya kirim heartbeat /api/pos setiap 1400ms agar bandwidth Cloudflare/4G 100% hemat!
+          const pendingObs = pendingObstacleUploadRef.current;
+          if (pendingObs) pendingObstacleUploadRef.current = null;
+
+          if (moved || pendingObs || nowMs - lastHeartbeatAt >= 1400) {
+            didSendMove = moved;
+            lastHeartbeatAt = nowMs;
+            lastUploadX = me.x;
+            lastUploadY = me.y;
+            lastUploadVx = isMoving ? me.vx : 0;
+            lastUploadVy = isMoving ? me.vy : 0;
+            lastUploadFacing = me.facing;
+            lastUploadDying = Boolean(me.isDying);
+
+            const postPayload: Record<string, unknown> = moved
+              ? {
+                r: roomId,
+                u: me.id,
+                un: me.username,
+                fn: myFullNameRef.current || me.fullName || undefined,
+                av: me.avatar,
+                rl: myRole,
+                stg: currentStageRef.current,
+                x: Math.round(me.x * 10) / 10,
+                y: Math.round(me.y * 10) / 10,
+                vx: isMoving ? Math.round(me.vx * 100) / 100 : 0,
+                vy: isMoving ? Math.round(me.vy * 100) / 100 : 0,
+                f: me.facing,
+                g: me.onGround ? 1 : 0,
+                d: me.isDying ? 1 : 0,
+                ds: me.deathStartedAt,
+                b: me.burnUntil,
+                j: me.jailedUntil,
+                gn: me.gun ?? undefined,
+                tg: me.tag,
+                cl: me.colors,
+              }
+              : {
+                r: roomId,
+                u: me.id,
+              };
+            if (pendingObs) {
+              postPayload.obstacle = pendingObs;
+            }
+
+            const res = await fetch('/api/pos', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(postPayload),
+            });
+            if (res.ok && active) {
+              const rtt = Math.max(1, Math.round((performance.now() - tStart) * 0.42));
+              ably.setPingMs((prev) => (prev <= 5 ? rtt : Math.round(prev * 0.6 + rtt * 0.4)));
+              const data = await res.json();
+              if (typeof data.st === 'number') {
+                ably.setServerTimeOffset(Math.round(data.st + rtt / 2 - Date.now()));
+              }
+              if (data.obstacles && typeof data.obstacles === 'object') {
+                const obs = data.obstacles as {
+                  crumbles?: { stage: number; idx: number; startedAt: number }[];
+                  stomps?: { stage: number; id: string; until: number }[];
+                  powerups?: { stage: number; id: string; until: number }[];
+                };
+                if (Array.isArray(obs.crumbles)) {
+                  for (const c of obs.crumbles) {
+                    applyObstacleEvent({ op: 'crumble', stg: c.stage, idx: c.idx, at: c.startedAt });
+                  }
+                }
+                if (Array.isArray(obs.stomps)) {
+                  for (const s of obs.stomps) {
+                    applyObstacleEvent({ op: 'stomp', stg: s.stage, id: s.id, until: s.until });
+                  }
+                }
+                if (Array.isArray(obs.powerups)) {
+                  for (const pu of obs.powerups) {
+                    applyObstacleEvent({ op: 'powerup', stg: pu.stage, id: pu.id, until: pu.until });
+                  }
+                }
+              }
+              if (data.roomDeleted || data.rs === 'deleted') {
+                active = false;
+                applyLiveRoomStatus('deleted');
+                return;
+              }
+              if (data.kicked && !isStaffRole(myRoleRef.current)) {
+                triggerForcedExit('kicked');
+                return;
+              }
+              if (!data.kicked && exitNoticeRef.current === 'kicked') {
+                handleRejoinApproved();
+              }
+              if (typeof data.rs === 'string' && data.rs) {
+                applyLiveRoomStatus(data.rs);
+              }
+              const peers = Array.isArray(data.p) ? data.p : [];
+              for (const rp of peers) {
+                const uid = typeof rp.u === 'string' ? rp.u : '';
+                if (!uid || uid === myIdRef.current) continue;
+                ingestRemotePlayerSnapshot({
+                  id: uid,
+                  username: typeof rp.un === 'string' ? rp.un : 'Player',
+                  fullName: typeof rp.fn === 'string' ? rp.fn : undefined,
+                  avatar: typeof rp.av === 'string' ? rp.av : 'cat-orange',
+                  role: typeof rp.rl === 'string' ? rp.rl : undefined,
+                  stage: typeof rp.stg === 'number' ? rp.stg : typeof rp.stage === 'number' ? rp.stage : 1,
+                  x: typeof rp.x === 'number' ? rp.x : 120,
+                  y: typeof rp.y === 'number' ? rp.y : 600,
+                  vx: typeof rp.vx === 'number' ? rp.vx : 0,
+                  vy: typeof rp.vy === 'number' ? rp.vy : 0,
+                  facing: rp.f === -1 ? -1 : 1,
+                  onGround: Boolean(rp.g),
+                  isDying: Boolean(rp.d),
+                  deathStartedAt: typeof rp.ds === 'number' ? rp.ds : undefined,
+                  burnUntil: typeof rp.b === 'number' ? rp.b : undefined,
+                  jailedUntil: typeof rp.j === 'number' ? rp.j : undefined,
+                  gun: typeof rp.gn === 'string' ? rp.gn : undefined,
+                  tag: typeof rp.tg === 'string' ? rp.tg : undefined,
+                  colors: (rp.cl as PlayerColors | undefined) ?? undefined,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // non-fatal
+      } finally {
+        if (active && !ably.connected) {
+          const elapsed = performance.now() - tStart;
+          const waitMs = didSendMove ? Math.max(28, Math.round(55 - elapsed)) : 32;
+          timer = setTimeout(posLoop, waitMs);
+        }
+      }
+    }
+
+    posLoop();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [ably.connected, roomId, myRole]);
+
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function syncLoop() {
+      if (!active) return;
+      try {
+        const me = playersRef.current.get(myIdRef.current);
+        const payload: Record<string, unknown> = {
+          roomId,
+          chatCursor: chatCursorRef.current,
+          justKicked: justKickedInSessionRef.current,
+        };
+        // Saat mirror siswa tertentu, minta status jawaban siswa itu agar warna kotak real-time
+        if (mirrorFetchTargetRef.current) {
+          payload.targetId = mirrorFetchTargetRef.current;
+        }
+        // Saat WebSocket sudah terhubung, posisi sudah di-stream real-time & disimpan ke DB oleh ws-hub/pos,
+        // sehingga room-sync tidak perlu mengirim duplikat payload koordinat lagi.
+        if (me && !ably.connected) {
+          const rx = Math.round(me.x * 10) / 10;
+          const ry = Math.round(me.y * 10) / 10;
+          const prev = lastSyncedPosRef.current;
+          if (
+            Math.abs(rx - prev.x) > 0.4 ||
+            Math.abs(ry - prev.y) > 0.4 ||
+            me.facing !== prev.facing ||
+            Math.abs(me.vx) > 0.05 ||
+            Boolean(me.isDying)
+          ) {
+            payload.x = rx;
+            payload.y = ry;
+            payload.vx = Math.round(me.vx * 100) / 100;
+            payload.vy = Math.round(me.vy * 100) / 100;
+            payload.onGround = me.onGround;
+            payload.isDying = Boolean(me.isDying);
+            payload.deathStartedAt = me.deathStartedAt;
+            payload.burnUntil = me.burnUntil;
+            payload.facing = me.facing;
+            lastSyncedPosRef.current = { x: rx, y: ry, facing: me.facing };
+          }
+        }
+        const res = await fetch('/api/game/room-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.status === 401) {
+          active = false;
+          handleSessionReplaced();
+          return;
+        }
+        if (!res.ok || !active) return;
         const data = await res.json();
-        if (cancelled) return;
-
-        const p = data.profile;
-        const r: RoomData = data.room;
-        myIdRef.current = p.id;
-        myUsernameRef.current = p.username;
-        if (data.shopPrices) {
-          setShopPrices(data.shopPrices);
-          shopPricesRef.current = data.shopPrices;
+        if (data.roomDeleted || data.room === null || data.room?.status === 'deleted') {
+          active = false;
+          applyLiveRoomStatus('deleted');
+          return;
         }
-        if (Array.isArray(p.unlockedBodies)) {
-          setUnlockedBodies(p.unlockedBodies);
+        if (data.kicked && !isStaffRole(myRoleRef.current)) {
+          triggerForcedExit('kicked');
+          return;
         }
-        const effectiveEquipped = (p.equippedBody && p.equippedBody.trim()) ? p.equippedBody.trim() : 'cat';
-        setEquippedBody(effectiveEquipped);
-        equippedBodyRef.current = effectiveEquipped;
-        if (typeof p.totalPoints === 'number') {
-          setUserPoints(p.totalPoints);
+        if (!data.kicked && exitNoticeRef.current === 'kicked') {
+          handleRejoinApproved();
         }
-        if (p.tag1) {
-          setCurrentTag1(p.tag1);
-          setShopTagInput(p.tag1);
-        }
-        if (p.customColors) {
-          try {
-            const parsed = typeof p.customColors === 'string' ? JSON.parse(p.customColors) : (p.customColors as any);
-            if (parsed && typeof parsed === 'object') setCurrentColors(parsed);
-          } catch { }
-        }
-        myRoleRef.current = p.role;
-        setMyRole(p.role);
-
         if (Array.isArray(data.rejoinRequests)) {
           setRejoinRequests(data.rejoinRequests);
         }
@@ -2323,2621 +3860,1006 @@ export default function GamePage() {
         if (typeof data.sessionId === 'string' && data.sessionId) {
           sessionIdRef.current = data.sessionId;
         }
+        const serverPlayers: RoomPlayer[] = data.players ?? [];
+        setScores((prev) => {
+          const next = { ...prev };
+          for (const p of serverPlayers) next[p.userId] = p.score ?? 0;
+          return next;
+        });
+        const activeIds = new Set(serverPlayers.map((p) => p.userId));
+        for (const id of Array.from(playersRef.current.keys())) {
+          if (id !== myIdRef.current && !activeIds.has(id)) {
+            playersRef.current.delete(id);
+          }
+        }
+        const nowWall = Date.now();
+        for (const p of serverPlayers) {
+          if (p.userId === myIdRef.current) continue;
+          const existing = playersRef.current.get(p.userId);
+          if (existing) {
+            // Jangan timpa posisi dari posLoop yang lebih segar (< 1500ms)
+            if (nowWall - (existing.lastPacketAt ?? 0) > 1500) {
+              if (p.lastX !== undefined) existing.targetX = p.lastX;
+              if (p.lastY !== undefined) existing.targetY = p.lastY;
+              if (p.lastFacing !== undefined) existing.facing = p.lastFacing as 1 | -1;
+            }
+            if (p.username) existing.username = p.username;
+            if (p.fullName) existing.fullName = p.fullName;
+            if (p.role) existing.role = p.role;
+            if (typeof p.stage === 'number') existing.stage = p.stage;
+          } else {
+            const px = p.lastX ?? 120;
+            const py = p.lastY ?? 600;
+            playersRef.current.set(p.userId, {
+              id: p.userId,
+              username: p.username,
+              fullName: p.fullName || undefined,
+              avatar: p.avatar,
+              role: p.role,
+              stage: p.stage ?? 1,
+              x: px,
+              y: py,
+              targetX: px,
+              targetY: py,
+              vx: p.vx ?? 0,
+              vy: p.vy ?? 0,
+              facing: (p.lastFacing as 1 | -1) ?? 1,
+              onGround: p.onGround ?? false,
+            });
+          }
+        }
+        if (data.room?.status === 'completed') {
+          active = false;
+          applyLiveRoomStatus('completed');
+          return;
+        }
+        if (typeof data.room?.status === 'string') {
+          applyLiveRoomStatus(data.room.status);
+        }
+        setRoom((prev) => {
+          if (!prev) return prev;
+          const statusChanged = data.room?.status && data.room.status !== prev.status;
+          const playersChanged =
+            prev.players.length !== serverPlayers.length ||
+            prev.players.some((pl, idx) => pl.userId !== serverPlayers[idx]?.userId) ||
+            prev.players.some((pl, idx) => pl.username !== serverPlayers[idx]?.username || pl.fullName !== serverPlayers[idx]?.fullName);
+          if (!statusChanged && !playersChanged) return prev;
+          const updated = {
+            ...prev,
+            status: data.room?.status ?? prev.status,
+            players: serverPlayers,
+          };
+          roomRef.current = updated;
+          return updated;
+        });
         if (typeof data.chatCursor === 'number' && data.chatCursor > chatCursorRef.current) {
           chatCursorRef.current = data.chatCursor;
         }
-        if (!data.kicked) {
-          if (data.answerResults && typeof data.answerResults === 'object') {
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          ingestMessages(data.messages);
+        }
+        if (data.answerResults && typeof data.answerResults === 'object') {
+          if (Array.isArray(data.answeredQuestionIds) && data.answeredQuestionIds.length === 0) {
+            answerResultsRef.current.clear();
+          } else {
             for (const [qid, okAns] of Object.entries(data.answerResults as Record<string, boolean | 'assisted'>)) {
               answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
             }
           }
-          if (Array.isArray(data.answeredQuestionIds)) {
+        }
+        // Saat mirror siswa tertentu, jawaban yg masuk adalah milik siswa itu:
+        // refresh jawaban siswa yang sudah dihapus dari server (misal habis /reset)
+        if (mirrorFetchTargetRef.current && Array.isArray(data.answeredQuestionIds)) {
+          const serverSet = new Set(data.answeredQuestionIds as string[]);
+          for (const qid of Array.from(answerResultsRef.current.keys())) {
+            if (!serverSet.has(qid)) answerResultsRef.current.delete(qid);
+          }
+        }
+        if (Array.isArray(data.answeredQuestionIds)) {
+          if (data.answeredQuestionIds.length === 0) {
+            answeredIdsRef.current.clear();
+            setAnsweredQuestionIds([]);
+            setCorrectCount(0);
+          } else {
             for (const qid of data.answeredQuestionIds) answeredIdsRef.current.add(qid);
-            const list = Array.from(answeredIdsRef.current);
-            setAnsweredQuestionIds(list);
-            setCorrectCount(list.length);
+            setAnsweredQuestionIds((prev) => (prev.length === answeredIdsRef.current.size ? prev : Array.from(answeredIdsRef.current)));
           }
         }
-
-        if (r.status === 'completed' || (!isStaffRole(p.role) && r.status !== 'in_progress' && r.status !== 'paused')) {
-          router.replace(isStaffRole(p.role) ? '/dashboard/teacher/rooms' : '/dashboard/student');
-          return;
+        if (typeof data.correctCount === 'number') {
+          setCorrectCount(data.correctCount);
         }
-
-        if (isStaffRole(p.role)) {
-          mirrorTargetRef.current = null;
-          setMirrorTarget(null);
-        }
-        setRoom(r);
-        roomRef.current = r;
-        const myEntry = (r.players ?? []).find((pl: RoomPlayer) => pl.userId === p.id);
-        myFullNameRef.current = p.fullName || myEntry?.fullName || '';
-
-        for (const pl of r.players ?? []) {
-          const isMe = pl.userId === p.id;
-          if (!playersRef.current.has(pl.userId)) {
-            const spawn = SPAWN_POINTS[playersRef.current.size % SPAWN_POINTS.length];
-            const px = pl.lastX ?? spawn.x;
-            const py = pl.lastY ?? spawn.y;
-            let parsedColors: PlayerColors | undefined;
-            if (pl.customColors) {
-              try {
-                parsedColors = typeof pl.customColors === 'string' ? JSON.parse(pl.customColors) : (pl.customColors as any);
-              } catch { }
-            }
-            playersRef.current.set(pl.userId, {
-              id: pl.userId,
-              username: pl.username,
-              fullName: pl.fullName || undefined,
-              customNick: pl.customNick || undefined,
-              tag: pl.tag1 || undefined,
-              tag1: pl.tag1 || undefined,
-              tag2: pl.tag2 || undefined,
-              tag3: pl.tag3 || undefined,
-              colors: parsedColors,
-              avatar: isMe ? (effectiveEquipped === 'cat' ? (pl.avatar && pl.avatar.startsWith('cat') ? pl.avatar : 'cat-blue') : effectiveEquipped) : pl.avatar,
-              bodyModel: isMe ? effectiveEquipped : (pl.avatar && pl.avatar !== 'cat' && !pl.avatar.startsWith('cat') ? pl.avatar : 'cat'),
-              role: isMe ? p.role : pl.role,
-              stage: pl.stage ?? 1,
-              x: px,
-              y: py,
-              spawnX: spawn.x,
-              spawnY: spawn.y,
-              targetX: px,
-              targetY: py,
-              vx: 0,
-              vy: 0,
-              facing: (pl.lastFacing as 1 | -1) ?? 1,
-              onGround: false,
-            });
-          }
-        }
-        if (!playersRef.current.has(p.id)) {
-          const spawn = SPAWN_POINTS[playersRef.current.size % SPAWN_POINTS.length];
-          playersRef.current.set(p.id, {
-            id: p.id,
-            username: p.username,
-            fullName: p.fullName || myEntry?.fullName || undefined,
-            avatar: effectiveEquipped === 'cat' ? (p.avatar && p.avatar.startsWith('cat') ? p.avatar : 'cat-blue') : effectiveEquipped,
-            bodyModel: effectiveEquipped,
-            role: p.role,
-            stage: myEntry?.stage ?? 1,
-            x: myEntry?.lastX ?? spawn.x,
-            y: myEntry?.lastY ?? spawn.y,
-            spawnX: spawn.x,
-            spawnY: spawn.y,
-            vx: 0,
-            vy: 0,
-            facing: (myEntry?.lastFacing as 1 | -1) ?? 1,
-            onGround: false,
-          });
-        }
-
-        // Muat nick, tag & warna kustom yang tersimpan dari DB (dan fallback storage)
-        try {
-          const meP = playersRef.current.get(p.id);
-          if (meP) {
-            const canonicalAvatar = effectiveEquipped === 'cat' ? 'cat-blue' : effectiveEquipped;
-            meP.bodyModel = effectiveEquipped;
-            meP.avatar = canonicalAvatar;
-            if (p.customNick) meP.customNick = p.customNick;
-            if (p.tag1) meP.tag1 = p.tag1;
-            if (p.tag2) meP.tag2 = p.tag2;
-            if (p.tag3) meP.tag3 = p.tag3;
-            if (p.tag1 || p.tag2 || p.tag3) meP.tag = p.tag1 || p.tag2 || p.tag3;
-            if (p.customColors) {
-              try {
-                const parsed = typeof p.customColors === 'string' ? JSON.parse(p.customColors) : (p.customColors as any);
-                meP.colors = {
-                  body: parsed.body || undefined,
-                  tag: parsed.tag || undefined,
-                  nick: parsed.nick || undefined,
-                };
-              } catch { }
-            }
-          }
-        } catch { }
-
-        const rawQs: Question[] = data.questions ?? [];
-        const shuffleSeed = `${p.id}:${roomId}:${Date.now()}`;
-        const qs: Question[] = rawQs.map((q) => shuffleQuestionOptions(q, shuffleSeed));
-        setLevelQuestions(qs);
-        levelQuestionsRef.current = qs;
-
-        const selStages = resolveSelectedStages(r);
-        selectedStagesRef.current = selStages;
-        setSelectedStages(selStages);
-        const tStg = selStages.length;
-        totalStagesRef.current = tStg;
-        setTotalStages(tStg);
-
-        let initialStage = 1;
-        try {
-          const savedStage = Number(window.localStorage.getItem(`llys_stage_${roomId}_${p.id}`));
-          if (Number.isFinite(savedStage) && savedStage >= 1 && savedStage <= tStg) {
-            initialStage = savedStage;
-          }
-        } catch {
-          // ignore storage read error
-        }
-
-        // Validasi checkpoint: siswa tidak boleh berada di stage N jika soal stage sebelumnya belum selesai
-        if (!isStaffRole(p.role) && initialStage > 1 && qs.length > 0) {
-          for (let s = 1; s < initialStage; s++) {
-            const sQs = getStageQuestions(qs, s, tStg);
-            const sCleared = sQs.length === 0 || sQs.every((q) => answeredIdsRef.current.has(q.id));
-            if (!sCleared) {
-              initialStage = s;
-              try {
-                window.localStorage.setItem(`llys_stage_${roomId}_${p.id}`, String(initialStage));
-              } catch { }
-              break;
-            }
-          }
-        }
-
-        applyStage(initialStage, {
-          respawnPlayer: false,
-          showToast: false,
-          seedId: p.id,
-          allQuestions: qs,
-          totalStg: tStg,
-          force: true,
-          persistCheckpoint: false,
-        });
-
-        const meInit = playersRef.current.get(p.id);
-        if (meInit && !data.kicked) {
-          meInit.stage = initialStage;
-          ably.publishPosition({
-            id: meInit.id,
-            username: meInit.username,
-            avatar: meInit.avatar,
-            role: p.role,
-            stage: initialStage,
-            x: meInit.x,
-            y: meInit.y,
-            vx: 0,
-            vy: 0,
-            facing: meInit.facing,
-            onGround: meInit.onGround,
-            tag: meInit.tag,
-            tag1: meInit.tag1,
-            tag2: meInit.tag2,
-            tag3: meInit.tag3,
-            customNick: meInit.customNick,
-            colors: meInit.colors,
-            ropedById: meInit.ropedById ?? undefined,
-            hp: 5,
-          });
-        }
-
-        if (data.kicked && !isStaffRole(p.role)) {
-          triggerForcedExit('kicked');
-        }
-      }
-
-      init();
-      return () => {
-        cancelled = true;
-      };
-    }, [roomId, router]);
-
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const mainRef = useRef<HTMLElement>(null);
-    const manualExitFsRef = useRef(false);
-
-    function getFullscreenElement(): Element | null {
-      const doc = document as Document & { webkitFullscreenElement?: Element | null };
-      return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
-    }
-
-    async function requestElementFullscreen(el: HTMLElement | null): Promise<boolean> {
-      if (!el) return false;
-      const anyEl = el as HTMLElement & {
-        webkitRequestFullscreen?: () => Promise<void> | void;
-      };
-      try {
-        if (typeof el.requestFullscreen === 'function') {
-          await el.requestFullscreen({ navigationUI: 'hide' });
-          return true;
-        }
-        if (typeof anyEl.webkitRequestFullscreen === 'function') {
-          await anyEl.webkitRequestFullscreen();
-          return true;
+        if (Array.isArray(data.rejoinRequests)) {
+          setRejoinRequests(data.rejoinRequests);
         }
       } catch {
-        // ignore and allow fallback
-      }
-      return false;
-    }
-
-    async function enterFullscreen() {
-      if (getFullscreenElement()) return;
-      const okMain = await requestElementFullscreen(mainRef.current);
-      if (!okMain) {
-        await requestElementFullscreen(document.documentElement);
-      }
-      try {
-        const scr = screen as Screen & { orientation?: { lock?: (o: string) => Promise<void> } };
-        await scr.orientation?.lock?.('landscape');
-      } catch {
-        // orientation lock optional
+        // polling fallback failure is non-fatal
+      } finally {
+        // Saat WebSocket aktif, semua posisi/chat/skor/soal sudah real-time lewat WS,
+        // sehingga room-sync cukup jalan setiap 4 detik sebagai heartbeat ringan (hemat bandwidth luar LAN 7x lipat!)
+        const syncInterval = ably.connected ? 12000 : 2500;
+        if (active) timer = setTimeout(syncLoop, syncInterval);
       }
     }
+    syncLoop();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [ably.connected, roomId, levelQuestions]);
 
-    useEffect(() => {
-      function onFsChange() {
-        const active = Boolean(getFullscreenElement());
-        setIsFullscreen(active);
-        window.dispatchEvent(new Event('resize'));
+  useEffect(() => {
+    if (!ably.roomStatusEvent) return;
+    applyLiveRoomStatus(ably.roomStatusEvent);
+  }, [ably.roomStatusEvent]);
+
+  useEffect(() => {
+    if (!ably.rejoinRequestsEvent) return;
+    setRejoinRequests(ably.rejoinRequestsEvent);
+  }, [ably.rejoinRequestsEvent]);
+
+  useEffect(() => {
+    if (!ably.scoreEvent) return;
+    setScores((prev) => ({ ...prev, [ably.scoreEvent!.userId]: ably.scoreEvent!.score }));
+  }, [ably.scoreEvent]);
+
+  useEffect(() => {
+    if (!ably.kickedPlayerId) return;
+    if (ably.kickedPlayerId === myIdRef.current || ably.kickedPlayerId === 'me') {
+      if (!manualLeaveRef.current && !isStaffRole(myRoleRef.current)) {
+        justKickedInSessionRef.current = true;
+        triggerForcedExit('kicked');
       }
-      document.addEventListener('fullscreenchange', onFsChange);
-      document.addEventListener('webkitfullscreenchange', onFsChange);
-      return () => {
-        document.removeEventListener('fullscreenchange', onFsChange);
-        document.removeEventListener('webkitfullscreenchange', onFsChange);
-      };
-    }, []);
-
-    useEffect(() => {
-      const el = mainRef.current;
-      if (!el) return;
-      function onFirstTouch() {
-        if (manualExitFsRef.current) return;
-        if (window.matchMedia('(pointer: coarse)').matches && !getFullscreenElement()) {
-          void enterFullscreen();
-        }
-      }
-      el.addEventListener('pointerdown', onFirstTouch, { passive: true });
-      return () => el.removeEventListener('pointerdown', onFirstTouch);
-    }, []);
-
-    async function toggleFullscreen() {
-      try {
-        if (getFullscreenElement()) {
-          manualExitFsRef.current = true;
-          const doc = document as Document & { webkitExitFullscreen?: () => Promise<void> | void };
-          if (typeof document.exitFullscreen === 'function') {
-            await document.exitFullscreen();
-          } else if (typeof doc.webkitExitFullscreen === 'function') {
-            await doc.webkitExitFullscreen();
-          }
-        } else {
-          manualExitFsRef.current = false;
-          await enterFullscreen();
-        }
-      } catch {
-        // iOS Safari tidak mendukung requestFullscreen pada elemen; abaikan
-      }
-    }
-
-    useEffect(() => {
-      function blockContext(e: Event) {
-        e.preventDefault();
-      }
-      const el = mainRef.current;
-      el?.addEventListener('contextmenu', blockContext);
-      return () => el?.removeEventListener('contextmenu', blockContext);
-    }, []);
-
-    useEffect(() => {
-      const html = document.documentElement;
-      const body = document.body;
-      const prevHtmlOverflow = html.style.overflow;
-      const prevBodyOverflow = body.style.overflow;
-      const prevBodyPos = body.style.position;
-      const prevBodyInset = body.style.inset;
-      const prevBodyWidth = body.style.width;
-      const prevBodyHeight = body.style.height;
-      const prevBodyBg = body.style.backgroundColor;
-
-      html.style.overflow = 'hidden';
-      body.style.overflow = 'hidden';
-      body.style.position = 'fixed';
-      body.style.inset = '0';
-      body.style.width = '100%';
-      body.style.height = '100%';
-      body.style.backgroundColor = '#1e2d42';
-
-      let lockedH = window.innerHeight;
-
-      function isInputFocused() {
-        const a = document.activeElement as HTMLElement | null;
-        return Boolean(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
-      }
-
-      function syncViewportLock() {
-        const el = mainRef.current;
-        if (!el) return;
-
-        if (!isInputFocused() || window.innerHeight > lockedH) {
-          lockedH = window.innerHeight;
-        }
-
-        el.style.height = `${lockedH}px`;
-      }
-
-      function onOrientationChange() {
-        setTimeout(() => {
-          lockedH = window.innerHeight;
-          syncViewportLock();
-        }, 150);
-      }
-
-      syncViewportLock();
-      window.addEventListener('resize', syncViewportLock);
-      window.addEventListener('scroll', syncViewportLock, { passive: true });
-      window.addEventListener('orientationchange', onOrientationChange);
-      const vv = window.visualViewport;
-      vv?.addEventListener('resize', syncViewportLock);
-      vv?.addEventListener('scroll', syncViewportLock);
-
-      return () => {
-        window.removeEventListener('resize', syncViewportLock);
-        window.removeEventListener('scroll', syncViewportLock);
-        window.removeEventListener('orientationchange', onOrientationChange);
-        vv?.removeEventListener('resize', syncViewportLock);
-        vv?.removeEventListener('scroll', syncViewportLock);
-
-        html.style.overflow = prevHtmlOverflow;
-        body.style.overflow = prevBodyOverflow;
-        body.style.position = prevBodyPos;
-        body.style.inset = prevBodyInset;
-        body.style.width = prevBodyWidth;
-        body.style.height = prevBodyHeight;
-        body.style.backgroundColor = prevBodyBg;
-      };
-    }, []);
-
-    useEffect(() => {
-      for (const rp of ably.presencePlayers) {
-        if (rp.id === myIdRef.current) continue;
-        const existing = playersRef.current.get(rp.id);
-        if (existing) {
-          existing.targetX = rp.x;
-          existing.targetY = rp.y;
-          existing.facing = rp.facing;
-          if (rp.username) existing.username = rp.username;
-          if ((rp as any).fullName) existing.fullName = (rp as any).fullName;
-          if (typeof rp.stage === 'number') existing.stage = rp.stage;
-          if (rp.role) existing.role = rp.role;
-          const rpTag = (rp as any).tag;
-          if (rpTag !== undefined) existing.tag = rpTag;
-          const rpColors = (rp as any).colors;
-          if (rpColors !== undefined) existing.colors = rpColors;
-          const rpRoped = (rp as any).ropedById;
-          if (rpRoped !== undefined) existing.ropedById = rpRoped ?? null;
-          if (existing.ropedById === null) {
-            existing.adminAnchor = undefined;
-            existing.adminFacing = undefined;
-          }
-        } else {
-          const resolvedFullName = (rp as any).fullName || roomRef.current?.players?.find((pl) => pl.userId === rp.id)?.fullName || undefined;
-          playersRef.current.set(rp.id, {
-            id: rp.id,
-            username: rp.username,
-            fullName: resolvedFullName,
-            avatar: rp.avatar,
-            role: rp.role,
-            stage: rp.stage ?? 1,
-            x: rp.x,
-            y: rp.y,
-            targetX: rp.x,
-            targetY: rp.y,
-            vx: 0,
-            vy: 0,
-            facing: rp.facing,
-            onGround: false,
-            ropedById: (rp as any).ropedById ?? null,
-            adminAnchor: undefined,
-            adminFacing: undefined,
-            tag: (rp as any).tag,
-            colors: (rp as any).colors,
-          });
-        }
-      }
-    }, [ably.presencePlayers]);
-
-    useEffect(() => {
-      function onKey(e: KeyboardEvent, down: boolean) {
-        if (exitNoticeRef.current || (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))) {
-          keysRef.current.left = false;
-          keysRef.current.right = false;
-          keysRef.current.jump = false;
-          return;
-        }
-        const target = e.target as HTMLElement | null;
-        const active = document.activeElement as HTMLElement | null;
-        const isTyping =
-          (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) ||
-          (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable));
-        if (isTyping) {
-          keysRef.current.left = false;
-          keysRef.current.right = false;
-          keysRef.current.jump = false;
-          return;
-        }
-        if (e.key === 'Escape' && down) {
-          if (isStaffRole(myRoleRef.current) && questionRef.current) {
-            closeQuestionModal(questionRef.current.id);
-            return;
-          }
-        }
-        if (
-          down &&
-          (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'A', 'd', 'D', 'w', 'W', ' ', 'f', 'F', 'x', 'X', 'e', 'E', 'j', 'J'].includes(e.key))
-        ) {
-          if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
-            returnCameraToSelf();
-          }
-        }
-        if (['ArrowLeft', 'a', 'A'].includes(e.key)) keysRef.current.left = down;
-        if (['ArrowRight', 'd', 'D'].includes(e.key)) keysRef.current.right = down;
-        if (['ArrowUp', 'w', 'W', ' '].includes(e.key)) {
-          keysRef.current.jump = down;
-          if (down) e.preventDefault();
-        }
-        if (['f', 'F', 'x', 'X', 'e', 'E', 'j', 'J'].includes(e.key) && down) {
-          fireLaser();
-        }
-        if (e.key === '/' && down) {
-          if (!isStaffRole(myRoleRef.current)) return;
-          e.preventDefault();
-          keysRef.current.left = false;
-          keysRef.current.right = false;
-          keysRef.current.jump = false;
-          setPanelsHidden(false);
-          setChatMinimized(false);
-          chatMinimizedRef.current = false;
-          setChatInput('/');
-          setTimeout(() => {
-            const inputEl = document.getElementById('mp-chat-input') as HTMLInputElement | null;
-            if (inputEl) {
-              inputEl.focus();
-              inputEl.setSelectionRange(1, 1);
-            }
-          }, 30);
-        }
-      }
-      const kd = (e: KeyboardEvent) => onKey(e, true);
-      const ku = (e: KeyboardEvent) => onKey(e, false);
-      window.addEventListener('keydown', kd);
-      window.addEventListener('keyup', ku);
-      return () => {
-        window.removeEventListener('keydown', kd);
-        window.removeEventListener('keyup', ku);
-      };
-    }, [fireLaser]);
-
-    useEffect(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      function resize() {
-        if (!canvas) return;
-        const parent = canvas.parentElement;
-        if (!parent) return;
-        canvas.width = parent.clientWidth;
-        canvas.height = parent.clientHeight;
-        cameraRef.current?.resize(canvas.width, canvas.height);
-      }
-      resize();
-      window.addEventListener('resize', resize);
-      const ro = typeof ResizeObserver !== 'undefined' && canvas.parentElement
-        ? new ResizeObserver(() => resize())
-        : null;
-      if (ro && canvas.parentElement) ro.observe(canvas.parentElement);
-
-      const camera = new Camera(canvas.width, canvas.height);
-      cameraRef.current = camera;
-
-      let raf = 0;
-      let tick = 0;
-      let prevSentX = -1;
-      let prevSentY = -1;
-      let prevSentVx = 0;
-      let prevSentVy = 0;
-      let prevSentFacing = 0;
-      let prevSentDying = false;
-      let lastFrameTime = performance.now();
-
-      function loop(now = performance.now()) {
-        if (!ctx || !canvas) return;
-        const elapsedMs = now - lastFrameTime;
-        lastFrameTime = now;
-        // Normalisasi delta-time ke basis 60 FPS (16.6667ms) supaya layar Android 90Hz/120Hz/144Hz
-        // punya kecepatan jalan & lompat yang persis sama dengan iOS dan PC 60Hz
-        const dtScale = elapsedMs > 0 ? Math.min(2.5, Math.max(0.1, elapsedMs / (1000 / 60))) : 1;
-        const camLerp = 1 - Math.pow(1 - 0.12, dtScale);
-        tick += 1;
-
-        const me = playersRef.current.get(myIdRef.current);
-
-        for (const p of playersRef.current.values()) {
-          if (p.id === myIdRef.current) continue;
-          // Adaptive Mobile Legends Snapshot Buffer Interpolation:
-          // - Untuk peer LAN (WebSocket ~16-25ms): interpDelay super rendah (~20ms) -> instan & 60/120 FPS mulus
-          // - Untuk peer luar LAN (HTTP Single-Flight ~70-130ms): interpDelay otomatis menyesuaikan (~90-150ms) -> tetap mulus tanpa patah-patah
-          let desiredX = p.targetX ?? p.x;
-          let desiredY = p.targetY ?? p.y;
-
-          const snaps = p.snapshots;
-          if (snaps && snaps.length >= 2 && !p.isDying) {
-            const avgInt = p.avgInterval ?? 24;
-            const interpDelay = Math.max(18, Math.min(180, avgInt * 1.18));
-            const renderTime = now - interpDelay;
-
-            while (snaps.length > 2 && snaps[1].time <= renderTime) {
-              snaps.shift();
-            }
-
-            const s0 = snaps[0];
-            const s1 = snaps[1];
-            if (renderTime <= s0.time) {
-              desiredX = s0.x;
-              desiredY = s0.y;
-            } else if (renderTime <= s1.time) {
-              const span = Math.max(1, s1.time - s0.time);
-              const alpha = Math.max(0, Math.min(1, (renderTime - s0.time) / span));
-              desiredX = s0.x + (s1.x - s0.x) * alpha;
-              desiredY = s0.y + (s1.y - s0.y) * alpha;
-            } else {
-              const latest = snaps[snaps.length - 1];
-              const overMs = Math.min(55, renderTime - latest.time);
-              const overFrames = overMs / (1000 / 60);
-              desiredX = Math.max(0, Math.min(WORLD.width - PLAYER_W, latest.x + latest.vx * overFrames * 0.7));
-              desiredY = Math.min(WORLD.groundY - PLAYER_H, latest.y + latest.vy * overFrames * 0.7);
-            }
-          }
-
-          const dx = desiredX - p.x;
-          if (Math.abs(dx) > 450) {
-            p.x = desiredX;
-          } else if (Math.abs(dx) <= 0.15) {
-            p.x = desiredX;
-          } else {
-            const smoothX = 1 - Math.pow(1 - 0.45, dtScale);
-            p.x += dx * smoothX;
-          }
-
-          const dy = desiredY - p.y;
-          if (Math.abs(dy) > 450) {
-            p.y = desiredY;
-          } else if (Math.abs(dy) <= 0.15) {
-            p.y = desiredY;
-          } else {
-            const smoothY = 1 - Math.pow(1 - 0.48, dtScale);
-            p.y += dy * smoothY;
-          }
-          for (const plat of stagePlatformsRef.current) {
-            if (
-              plat.type === 'fire' &&
-              p.x + PLAYER_W > plat.x &&
-              p.x < plat.x + plat.w &&
-              p.y + PLAYER_H > plat.y &&
-              p.y < plat.y + plat.h
-            ) {
-              p.burnUntil = Date.now() + 5000;
-              break;
-            }
-          }
-          if (p.ropedById) p.burnUntil = undefined;
-        }
-
-        // Auto-break rope HANYA jika admin (pemilik tali) benar-benar sudah pergi / DC.
-        // CATATAN: admin pindah stage TIDAK memutus tali, malah memaksa player terikut.
-        for (const p of playersRef.current.values()) {
-          if (!p.ropedById) continue;
-          const owner = playersRef.current.get(p.ropedById);
-          if (!owner || !ably.connected) {
-            p.ropedById = null;
-            if (p.id === myIdRef.current) {
-              showBanner('🪢 Tali kamu terlepas (player pergi / disconnect).');
-              setRopedByUserId(null);
-            }
-          } else {
-            // Simpan posisi owner sebagai anchor respawn (jika owner mati, anchor lama tetap dijaga sampai respawn)
-            if (!owner.isDying) {
-              p.adminAnchor = { x: owner.x, y: owner.y };
-              p.adminFacing = owner.facing;
-              if (p.id === myIdRef.current) {
-                meAdminAnchorRef.current = { x: owner.x, y: owner.y };
-                meAdminFacingRef.current = owner.facing;
-              }
-            }
-          }
-        }
-
-        // Tali kaku (rigid leash) lintas stage: jika stage admin != stage player diikat,
-        // TELEPORT paksa player ke belakang admin (tali "menarik" lintas stage).
-        if (me && me.ropedById && !me.isDying) {
-          const owner = playersRef.current.get(me.ropedById);
-          if (owner && !owner.isDying && (owner.stage ?? 1) !== (me.stage ?? 1)) {
-            applyStage(owner.stage ?? 1, { respawnPlayer: false, showToast: false, force: true });
-            const side = owner.facing === 1 ? -1 : 1;
-            me.x = owner.x + side * 60;
-            me.y = owner.y;
-            me.vx = 0;
-            me.vy = 0;
-            me.isDying = false;
-            me.deathStartedAt = undefined;
-            me.burnUntil = undefined;
-            soundEngine.playBounce();
-          }
-        }
-
-        // Rope drag: tali kaku (rigid leash), jarak fixed dari admin, player gabisa kabur
-        const leashLen = 70;
-        const applyLeash = (target: Player, ax: number, ay: number, afacing: number) => {
-          const side = afacing === 1 ? -1 : 1;
-          const tx = ax + side * 60;
-          const ty = ay;
-          const dx = target.x - tx;
-          const dy = target.y - ty;
-          const dist = Math.hypot(dx, dy);
-          if (dist > leashLen) {
-            const s = leashLen / dist;
-            target.x = tx + dx * s;
-            target.y = ty + dy * s;
-          }
-          target.vx = 0;
-          target.vy = 0;
-          target.facing = afacing === 1 ? 1 : -1;
-        };
-        if (me && !me.isDying) {
-          for (const p of playersRef.current.values()) {
-            if (p.id === myIdRef.current) continue;
-            if (p.ropedById !== myIdRef.current) continue;
-            if ((p.stage ?? 1) !== (me.stage ?? 1)) continue;
-            if (p.isDying) continue;
-            applyLeash(p, me.x, me.y, me.facing);
-          }
-        }
-        // Leash di sisi player yang diikat: clamp posisi sendiri realtime (biar ga nimbrung di client sendiri)
-        if (me && me.ropedById && !me.isDying) {
-          const owner = playersRef.current.get(me.ropedById);
-          // Boleh beda stage: leash tetap jalan (cross-stage dipindah paksa di blok atas).
-          if (owner && !owner.isDying && (owner.stage ?? 1) === (me.stage ?? 1)) {
-            applyLeash(me, owner.x, owner.y, owner.facing);
-          } else if (owner && !owner.isDying && meAdminAnchorRef.current) {
-            // Beda stage: clamp ke anchor admin supaya tidak drift jauh sebelum applyStage memindahkan
-            applyLeash(me, meAdminAnchorRef.current.x, meAdminAnchorRef.current.y, meAdminFacingRef.current ?? owner.facing);
-          }
-        }
-
-        const syncedNow = ably.getSyncedServerTime();
-        updateStageEntities(
-          stagePlatformsRef.current,
-          stageEnemiesRef.current,
-          dtScale,
-          syncedNow,
-          stagePowerUpsRef.current,
-          projectilesRef.current,
-          (projId, enemyId) => {
-            soundEngine.playZap();
-            const curStg = currentStageRef.current;
-            const stompEvt = {
-              op: 'stomp' as const,
-              stg: curStg,
-              id: enemyId,
-              until: Date.now() + 9000,
-            };
-            applyObstacleEvent(stompEvt);
-            ably.publishObstacle(stompEvt);
-            pendingObstacleUploadRef.current = stompEvt;
-          },
-          stageBossesRef.current,
-          (projId, bossId, dmg = 1) => {
-            soundEngine.playZap();
-            const b = stageBossesRef.current.find((x) => x.id === bossId);
-            const curStg = currentStageRef.current;
-            if (!b) return;
-            const wasAlive = b.alive;
-            const hitEvt = {
-              op: 'boss_hit' as const,
-              stg: curStg,
-              bid: bossId,
-              dmg,
-              hp: b.hp,
-            };
-            ably.publishObstacle(hitEvt);
-            pendingObstacleUploadRef.current = hitEvt;
-
-            // Update local cache
-            bossStateCacheRef.current.set(`${curStg}:${bossId}`, {
-              hp: b.hp,
-              maxHp: b.maxHp,
-              alive: b.alive,
-              x: b.x,
-              dir: b.dir,
-            });
-
-            if (wasAlive && !b.alive && !bossDiedBannerRef.current.has(curStg)) {
-              const dieEvt = { op: 'boss_died' as const, stg: curStg };
-              applyObstacleEvent(dieEvt);
-              ably.publishObstacle(dieEvt);
-              pendingObstacleUploadRef.current = dieEvt;
-            }
-          },
-          bossProjectilesRef.current,
-          (spit) => {
-            const curStg = currentStageRef.current;
-            const evt = {
-              op: 'boss_spit' as const,
-              stg: curStg,
-              bid: spit.bid,
-              pid: spit.pid,
-              x: spit.x,
-              y: spit.y,
-              vx: spit.vx,
-              vy: spit.vy,
-            };
-            applyObstacleEvent(evt);
-            ably.publishObstacle(evt);
-          },
-          (playerId, bossId) => {
-            const victim = playersRef.current.get(playerId);
-            if (!victim) return;
-            const now = Date.now();
-            victim.isDying = true;
-            victim.deathStartedAt = now;
-            victim.vx = 0;
-            victim.vy = -13.2;
-            victim.onGround = false;
-            victim.ridingPlayerId = null;
-            victim.lastCarrierX = undefined;
-            victim.ridingPlatform = null;
-            soundEngine.playDeath();
-            void bossId;
-          },
-          Array.from(playersRef.current.values()),
-          myIdRef.current,
-        );
-
-        // Periodic Boss Sync Broadcast: sinkronisasi darah & posisi boss ke pemain mode rope/follow
-        const nowSync = Date.now();
-        const curBoss = stageBossesRef.current[0];
-        if (curBoss && nowSync - lastBossSyncBroadcastRef.current > 1800) {
-          lastBossSyncBroadcastRef.current = nowSync;
-          const curStg = currentStageRef.current;
-          const allInStage = Array.from(playersRef.current.values()).filter((p) => (p.stage ?? 1) === curStg);
-          const isAuthority = isStaff || allInStage.length === 0 || allInStage.every((p) => p.id >= myIdRef.current);
-          if (isAuthority) {
-            ably.publishObstacle({
-              op: 'boss_sync',
-              stg: curStg,
-              bid: curBoss.id,
-              hp: curBoss.hp,
-              maxHp: curBoss.maxHp,
-              alive: curBoss.alive,
-              x: Math.round(curBoss.x),
-              dir: curBoss.dir,
-            });
-          }
-        }
-
-        const curStage = currentStageRef.current;
-        const tStages = totalStagesRef.current;
-        const curStageQs = getStageQuestions(levelQuestionsRef.current, curStage, tStages);
-        const stageTotal = curStageQs.length;
-        let stageAnswered = 0;
-        for (const sq of curStageQs) {
-          if (answeredIdsRef.current.has(sq.id)) stageAnswered += 1;
-        }
-        const bossAlive = stageBossesRef.current.some((b) => b.alive);
-        const isGateUnlocked = isStaff || ((stageTotal === 0 || stageAnswered >= stageTotal) && !bossAlive);
-
-        const dynBlocks: Platform[] = questionBlocksRef.current.map((b) => {
-          const qid = b.questionId ?? '';
-          const res = answerResultsRef.current.get(qid);
-          const type = res === 'assisted' ? 'qblock-assisted' : res === true ? 'qblock-correct' : res === false ? 'qblock-wrong' : 'qblock';
-          return { ...b, type };
-        });
-
-        const isStudentPaused = room?.status === 'paused' && !isStaff;
-        const isQuestionModalBusy = !isStaff && Boolean(questionRef.current && !answeredIdsRef.current.has(questionRef.current.id));
-        if (isQuestionModalBusy) {
-          keysRef.current.left = false;
-          keysRef.current.right = false;
-          keysRef.current.jump = false;
-        }
-        // Cek apakah player sudah bergeser/lepas dari kontak kotak yang baru di-close
-        if (dismissedQuestionIdRef.current && me) {
-          const dismissedBlock = questionBlocksRef.current.find((b) => b.questionId === dismissedQuestionIdRef.current);
-          if (!dismissedBlock) {
-            dismissedQuestionIdRef.current = null;
-          } else {
-            const isOverlapping =
-              me.x + PLAYER_W > dismissedBlock.x - 4 &&
-              me.x < dismissedBlock.x + dismissedBlock.w + 4 &&
-              me.y + PLAYER_H >= dismissedBlock.y - 4 &&
-              me.y <= dismissedBlock.y + dismissedBlock.h + 4;
-            if (!isOverlapping) {
-              dismissedQuestionIdRef.current = null;
-            }
-          }
-        }
-
-        if (
-          me &&
-          !exitNoticeRef.current &&
-          !isStudentPaused &&
-          (isStaff || room?.status === 'in_progress' || room?.status === 'waiting')
-        ) {
-          updatePlayerPhysics(
-            me,
-            isQuestionModalBusy ? { left: false, right: false, jump: false } : keysRef.current,
-            playersRef.current.values(),
-            dynBlocks,
-            (qid) => {
-              if (dismissedQuestionIdRef.current === qid) return;
-              const cooldownUntil = closedQuestionCooldownRef.current.get(qid);
-              if (cooldownUntil && Date.now() < cooldownUntil) return;
-              if (questionRef.current?.id === qid) return;
-
-              if (!isStaff) {
-                if (answeredIdsRef.current.has(qid)) return;
-                const found = levelQuestionsRef.current.find((q) => q.id === qid);
-                if (found) {
-                  keysRef.current.left = false;
-                  keysRef.current.right = false;
-                  keysRef.current.jump = false;
-                  me.vx = 0;
-                  soundEngine.playQuestionOpen();
-                  questionRef.current = found;
-                  setQuestion(found);
-                  setQuestionMinimized(false);
-                  setSelected('');
-                  setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
-                  if (!isStaff) {
-                    ably.publishCommand({ op: 'mirror_question_state', userId: myIdRef.current, qid: found.id });
-                  }
-                }
-              } else {
-                // Guru / Admin: bisa iseng mengecek soal kapanpun (baik saat mirroring maupun tidak)
-                if (mirrorTargetRef.current) {
-                  const res = answerResultsRef.current.get(qid);
-                  if (res === true || res === 'assisted') return;
-                }
-                const found = levelQuestionsRef.current.find((q) => q.id === qid);
-                if (found) {
-                  keysRef.current.left = false;
-                  keysRef.current.right = false;
-                  keysRef.current.jump = false;
-                  me.vx = 0;
-                  soundEngine.playQuestionOpen();
-                  questionRef.current = found;
-                  setQuestion(found);
-                  setQuestionMinimized(false);
-                  setSelected('');
-                  setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
-                }
-              }
-            },
-            dtScale,
-            (soundEvt) => {
-              if (isQuestionModalBusy) return;
-              if (soundEvt === 'jump') soundEngine.playJump();
-              else if (soundEvt === 'bounce') soundEngine.playBounce();
-              else if (soundEvt === 'burn') soundEngine.playBurn();
-              else if (soundEvt === 'death') soundEngine.playDeath();
-            },
-            {
-              basePlatforms: stagePlatformsRef.current,
-              enemies: stageEnemiesRef.current,
-              powerUps: stagePowerUpsRef.current,
-              bosses: stageBossesRef.current,
-              isGateUnlocked,
-              isStaff,
-              onObstacleEvent: (evt) => {
-                applyObstacleEvent(evt);
-                ably.publishObstacle(evt);
-                pendingObstacleUploadRef.current = evt;
-              },
-              onCollectPowerUp: () => {
-                soundEngine.playPowerUp();
-                const meNow = playersRef.current.get(myIdRef.current);
-                if (!meNow?.hasAdminGun) {
-                  setAmmoCount(10);
-                }
-              },
-              onRespawn: (p) => {
-                p.hp = 5;
-                p.isDying = false;
-                p.deathStartedAt = undefined;
-                if (p.id === myIdRef.current) {
-                  if (ably.connected) {
-                    ably.publishPosition({
-                      id: p.id,
-                      username: p.username,
-                      avatar: p.avatar,
-                      role: myRoleRef.current,
-                      stage: p.stage ?? currentStageRef.current,
-                      x: p.x,
-                      y: p.y,
-                      vx: 0,
-                      vy: 0,
-                      facing: p.facing,
-                      onGround: p.onGround,
-                      isDying: false,
-                      hp: 5,
-                      tag: p.tag,
-                      tag1: p.tag1,
-                      tag2: p.tag2,
-                      tag3: p.tag3,
-                      customNick: p.customNick,
-                      colors: p.colors,
-                    });
-                  }
-                  const newAmmo = p.hasAdminGun && p.gun ? Infinity : (p.blasterAmmo ?? 0);
-                  setAmmoCount(newAmmo);
-                  if (previewBodyRef.current || previewTag1Ref.current || previewColorsRef.current) {
-                    const restore = equippedBodyRef.current || 'cat';
-                    setPreviewBody(null);
-                    previewBodyRef.current = null;
-                    setPreviewTag1(null);
-                    previewTag1Ref.current = null;
-                    setPreviewColors(null);
-                    previewColorsRef.current = null;
-                    p.bodyModel = restore;
-                    p.avatar = restore === 'cat' ? 'cat-blue' : restore;
-                    soundEngine.playBounce();
-                    showBanner(`⚠️ Mode coba berakhir karena karakter gugur! Kembali ke [${restore.toUpperCase()}].`, 3500);
-                  }
-                }
-              },
-              onEnterGate: () => {
-                  const curStg = currentStageRef.current;
-                  const totStg = totalStagesRef.current;
-                  if (gateEnterCooldownRef.current && Date.now() < gateEnterCooldownRef.current) return;
-                  gateEnterCooldownRef.current = Date.now() + 1500;
-
-                  if (curStg < totStg) {
-                    const nextStg = curStg + 1;
-                    applyStage(nextStg, {
-                      respawnPlayer: true,
-                      showToast: true,
-                      persistCheckpoint: true,
-                    });
-                    soundEngine.playPowerUp();
-                    showBanner(`🎉 Berhasil melewati pintu! Selamat datang di Stage ${nextStg} (Checkpoint tersimpan).`, 4500);
-                  } else {
-                    soundEngine.playPowerUp();
-                    showBanner(`🏆 SELAMAT! Kamu telah menyelesaikan seluruh stage game ini!`, 6000);
-                    setShowFinishCelebration(true);
-                  }
-                },
-                  onLockedGateTouch: () => {
-                    if (gateLockedNoticeCooldownRef.current && Date.now() < gateLockedNoticeCooldownRef.current) return;
-                    gateLockedNoticeCooldownRef.current = Date.now() + 3000;
-                    const curStg = currentStageRef.current;
-                    const totStg = totalStagesRef.current;
-                    const curStgQs = getStageQuestions(levelQuestionsRef.current, curStg, totStg);
-                    const stageTotal = curStgQs.length;
-                    let stageAnswered = 0;
-                    for (const sq of curStageQs) {
-                      if (answeredIdsRef.current.has(sq.id)) stageAnswered += 1;
-                    }
-                    const questionsDone = stageTotal === 0 || stageAnswered >= stageTotal;
-                    const bossAlive = stageBossesRef.current.some((b) => b.alive);
-                    if (!questionsDone && bossAlive) {
-                      showBanner(`🔒 Pintu Terkunci! Selesaikan semua soal (${stageAnswered}/${stageTotal}) dan kalahkan Boss Penjaga terlebih dahulu!`, 3500);
-                    } else if (!questionsDone) {
-                      showBanner(`🔒 Pintu Terkunci! Jawab sisa soal (${stageTotal - stageAnswered} lagi) untuk membuka pintu!`, 3500);
-                    } else if (bossAlive) {
-                      showBanner('🔒 Pintu Terkunci! Kalahkan Boss Penjaga di depan pintu untuk mendapatkan kunci!', 3500);
-                    }
-                  },
-                    playerRounds: projectilesRef.current
-                      .map((r) => ({
-                        id: r.id,
-                        x: r.x,
-                        y: r.y,
-                        vx: r.vx,
-                        shooterId: r.shooterId,
-                        damage: r.damage,
-                        len: r.length,
-                        w: r.thickness,
-                        h: r.thickness,
-                        weapon: (r as Projectile & { weapon?: string }).weapon,
-                        shooterRole: r.shooterRole ?? playersRef.current.get(r.shooterId)?.role,
-                      })),
-                      isPvpEnabled: isStudentPvpEnabledRef.current,
-                        myPlayerId: myIdRef.current,
-                          onPlayerHitByRound: (victimId, shooterId, dmg, weapon, projId) => {
-                            if (projId && weapon !== 'megalaser') {
-                              const idx = projectilesRef.current.findIndex((r) => r.id === projId);
-                              if (idx !== -1) projectilesRef.current.splice(idx, 1);
-                            }
-                            const shooterRole =
-                              shooterId === myIdRef.current
-                                ? myRoleRef.current
-                                : projectilesRef.current.find((r) => r.shooterId === shooterId)?.shooterRole ??
-                                playersRef.current.get(shooterId)?.role ??
-                                'student';
-                            const victim = playersRef.current.get(victimId);
-                            if (victim && !canShooterHitTarget(shooterRole, victim.role, isStudentPvpEnabledRef.current)) return;
-
-                            const isStudentPvP = shooterRole === 'student' && ((victim?.role ?? 'student') === 'student');
-
-                            if (victimId === myIdRef.current) {
-                              const me = playersRef.current.get(myIdRef.current);
-                              if (me && !me.isDying && !me.ropedById) {
-                                const shooterName =
-                                  playersRef.current.get(shooterId)?.username ??
-                                  (shooterRole === 'admin' ? 'Admin' : shooterRole === 'teacher' ? 'Guru' : 'Player');
-                                if (weapon === 'ice') {
-                                  me.isDying = false;
-                                  me.frozenUntil = Date.now() + 1200;
-                                  me.frozenDeathAt = Date.now() + 1200;
-                                  me.frozenByShooterId = shooterId;
-                                  me.frozenByWeapon = 'ice';
-                                  me.vx = me.x < (projectilesRef.current.find((r) => r.shooterId === shooterId)?.x ?? me.x) ? -4 : 4;
-                                  me.vy = -3.5;
-                                } else if (weapon === 'stunt') {
-                                  me.isDying = false;
-                                  me.frozenUntil = Date.now() + 1200;
-                                  me.frozenDeathAt = Date.now() + 1200;
-                                  me.stunnedUntil = Date.now() + 1200;
-                                  me.frozenByShooterId = shooterId;
-                                  me.frozenByWeapon = 'stunt';
-                                  me.vx = 0;
-                                  me.vy = 0;
-                                } else if (isStudentPvP && isStudentPvpEnabledRef.current) {
-                                  // Local player HP was updated by updatePlayerPhysics (nextHp)
-                                  const currentHp = me.hp ?? 5;
-                                  if (currentHp > 0) {
-                                    soundEngine.playZap();
-                                    showBanner(`💥 Kena tembak ${shooterName}! Sisa darah: ${currentHp}/5`, 2000);
-                                  } else {
-                                    me.hp = 0;
-                                    me.isDying = true;
-                                    me.deathStartedAt = Date.now();
-                                    me.vx = 0;
-                                    me.vy = -13.2;
-                                    soundEngine.playDeath();
-                                    showBanner(`💀 Kamu gugur ditembak ${shooterName}! (Respawn dalam 2 detik)`, 3500);
-                                    addSystemChatMessage(`⚔️ ${me.username} gugur ditembak oleh ${shooterName}!`);
-                                  }
-                                } else {
-                                  me.isDying = true;
-                                  me.deathStartedAt = Date.now();
-                                  me.vx = 0;
-                                  me.vy = -13.2;
-                                  soundEngine.playDeath();
-                                }
-                              }
-                            } else if (victim && isStudentPvP && isStudentPvpEnabledRef.current) {
-                              // Victim-authoritative: penembak tidak menghitung damage korban, hanya korban yang broadcast hit
-                              return;
-                            }
-                            const updatedVictimHp = victimId === myIdRef.current ? playersRef.current.get(myIdRef.current)?.hp : victim?.hp;
-                            ably.publishCommand({ op: 'hit', targetId: victimId, by: shooterId, dmg, weapon, shooterRole, hp: updatedVictimHp });
-                          },
-          },
-        );
-        }
-
-        // Jalur 1 (WebSocket Port 3000 /ws-game atau Port 3001):
-        // - Adaptif tick rate: 60Hz (16ms) di LAN, 42Hz (24ms) di luar jaringan agar bebas TCP bufferbloat
-        // - Mengirim 1 paket "berhenti" terakhir saat vx=0 & vy=0 agar interpolasi player lain berhenti presisi
-        if (me && ably.connected) {
-          const nowMs = Date.now();
-          const isMovingNow = Math.abs(me.vx) > 0.04 || Math.abs(me.vy) > 0.04;
-          const wasMovingPrev = Math.abs(prevSentVx) > 0.04 || Math.abs(prevSentVy) > 0.04;
-          const justStopped = !isMovingNow && wasMovingPrev;
-          const moved =
-            justStopped ||
-            Math.abs(me.x - prevSentX) > 0.25 ||
-            Math.abs(me.y - prevSentY) > 0.25 ||
-            Math.abs(me.vx - prevSentVx) > 0.08 ||
-            Math.abs(me.vy - prevSentVy) > 0.08 ||
-            me.facing !== prevSentFacing ||
-            Boolean(me.isDying) !== prevSentDying;
-          const minSendInterval = justStopped ? 0 : ably.pingMs > 25 ? 24 : 16;
-          if (moved && nowMs - lastSentRef.current >= minSendInterval) {
-            lastSentRef.current = nowMs;
-            prevSentX = me.x;
-            prevSentY = me.y;
-            prevSentVx = isMovingNow ? me.vx : 0;
-            prevSentVy = isMovingNow ? me.vy : 0;
-            prevSentFacing = me.facing;
-            prevSentDying = Boolean(me.isDying);
-            ably.publishPosition({
-              id: me.id,
-              username: me.username,
-              avatar: previewBodyRef.current
-                ? (previewBodyRef.current === 'cat' ? 'cat-blue' : previewBodyRef.current)
-                : (equippedBodyRef.current === 'cat' ? 'cat-blue' : (equippedBodyRef.current || me.bodyModel || 'cat-blue')),
-              bodyModel: previewBodyRef.current || equippedBodyRef.current || me.bodyModel || 'cat',
-              role: myRole,
-              stage: curStage,
-              x: me.x,
-              y: me.y,
-              vx: isMovingNow ? me.vx : 0,
-              vy: isMovingNow ? me.vy : 0,
-              facing: me.facing,
-              onGround: me.onGround,
-              isDying: me.isDying,
-              deathStartedAt: me.deathStartedAt,
-              burnUntil: me.burnUntil,
-              jailedUntil: me.jailedUntil,
-              gun: me.gun ?? undefined,
-              hasAdminGun: me.hasAdminGun,
-              tag: me.tag,
-              tag1: me.tag1,
-              tag2: me.tag2,
-              tag3: me.tag3,
-              customNick: me.customNick,
-              colors: me.colors,
-              hp: me.hp ?? 5,
-            });
-          }
-        }
-
-        const spectateP = spectateTargetIdRef.current ? playersRef.current.get(spectateTargetIdRef.current) : null;
-        const followTarget = spectateP || me;
-        if (!isCameraFreePanningRef.current && followTarget) {
-          camera.follow(followTarget.x + PLAYER_W / 2, followTarget.y, camLerp);
-        }
-
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        camera.applyTransform(ctx);
-
-        const curMapTheme = getMapThemeForStage(curStage, selectedStagesRef.current);
-        drawWorld(ctx, {
-          stage: curMapTheme,
-          totalStages: tStages,
-          stageAnswered,
-          stageTotal,
-          isGateUnlocked,
-          bossAlive: stageBossesRef.current.some((b) => b.alive),
-        });
-        drawPlatforms(
-          ctx,
-          [...stagePlatformsRef.current, ...dynBlocks],
-          curMapTheme,
-          stageBossesRef.current.some((b) => b.alive),
-        );
-        drawEnemies(ctx, stageEnemiesRef.current, syncedNow);
-        drawBosses(ctx, stageBossesRef.current, syncedNow);
-        drawBossProjectiles(ctx, bossProjectilesRef.current, syncedNow);
-        drawPowerUps(ctx, stagePowerUpsRef.current, syncedNow);
-        drawProjectiles(ctx, projectilesRef.current, syncedNow);
-
-        // Render tali: garis putus-putus admin <-> player yang diikat (terlihat di semua client)
-        for (const p of playersRef.current.values()) {
-          if (!p.ropedById) continue;
-          const owner = playersRef.current.get(p.ropedById);
-          if (!owner) continue;
-          if ((p.stage ?? 1) !== (owner.stage ?? 1)) continue;
-          if ((p.stage ?? 1) !== curStage) continue;
-          ctx.save();
-          ctx.setLineDash([8, 6]);
-          ctx.strokeStyle = '#a97b4f';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(owner.x + PLAYER_W / 2, owner.y + PLAYER_H / 2);
-          ctx.lineTo(p.x + PLAYER_W / 2, p.y + PLAYER_H / 2);
-          ctx.stroke();
-          ctx.restore();
-        }
-
-        for (const p of playersRef.current.values()) {
-          const pStage = p.stage ?? 1;
-          if (pStage !== curStage) continue;
-
-          const role = p.id === myIdRef.current ? myRole : (p.role ?? (room?.hostId === p.id ? 'teacher' : 'student'));
-          const displayName = p.customNick?.trim() || p.fullName?.trim() || p.username;
-          const effectiveAvatar =
-            p.id === myIdRef.current
-              ? (previewBodyRef.current
-                  ? (previewBodyRef.current === 'cat' ? 'cat-blue' : previewBodyRef.current)
-                  : (equippedBodyRef.current === 'cat'
-                      ? 'cat-blue'
-                      : (equippedBodyRef.current || (p.bodyModel === 'cat' ? 'cat-blue' : (p.bodyModel || p.avatar || 'cat-blue')))))
-              : (p.bodyModel && p.bodyModel !== 'cat'
-                  ? p.bodyModel
-                  : (p.avatar || 'cat-blue'));
-          drawCat(
-            ctx,
-            p.x,
-            p.y,
-            PLAYER_W,
-            PLAYER_H,
-            effectiveAvatar,
-            p.facing,
-            displayName,
-            role,
-            bubblesRef.current.get(p.id) ?? null,
-            {
-              isDying: p.isDying,
-              deathStartedAt: p.deathStartedAt,
-              burnUntil: p.burnUntil,
-              blasterAmmo: p.blasterAmmo,
-              blasterUntil: p.blasterUntil,
-              jailedUntil: p.jailedUntil,
-              gun: p.gun,
-              tag: (p.id === myIdRef.current && previewTag1Ref.current) ? previewTag1Ref.current : (p.tag1 || p.tag),
-              tag1: (p.id === myIdRef.current && previewTag1Ref.current) ? previewTag1Ref.current : p.tag1,
-              tag2: p.tag2,
-              tag3: p.tag3,
-              customNick: p.customNick,
-              colors: (p.id === myIdRef.current && previewColorsRef.current)
-                ? { ...(p.colors ?? {}), ...previewColorsRef.current }
-                : p.colors,
-              isGodMode: p.isGodMode || (p.id === myIdRef.current && isGodModeRef.current),
-              frozenUntil: p.frozenUntil,
-              stunnedUntil: p.stunnedUntil,
-              velocity: { vx: p.vx, vy: p.vy },
-              hp: p.hp ?? 5,
-              maxHp: 5,
-              isPvpEnabled: isStudentPvpEnabledRef.current,
-            },
-          );
-        }
-
-        ctx.restore();
-        raf = requestAnimationFrame(loop);
-      }
-      raf = requestAnimationFrame(loop);
-
-      return () => {
-        cancelAnimationFrame(raf);
-        window.removeEventListener('resize', resize);
-        ro?.disconnect();
-      };
-    }, [room?.status, room?.hostId, roomId, myRole, ablyEnabled, ably.connected, ably.publishPosition]);
-
-    // Jalur 2 (Khusus Pemain Luar LAN / Tunnel Port 3000 yang tidak tembus port WebSocket 3001):
-    // - HANYA aktif jika WebSocket belum terhubung (!ably.connected), sehingga pemain LAN tidak mengirim HTTP sama sekali
-    // - Single-flight: request berikutnya hanya dikirim setelah request sebelumnya selesai (0 antrean / tidak bikin ping pemain lain naik!)
-    // - Server /api/pos otomatis mem-broadcast gerakan pemain luar LAN ke semua pemain WebSocket LAN dalam < 0.2ms
-    useEffect(() => {
-      if (ably.connected) return;
-      let active = true;
-      let timer: ReturnType<typeof setTimeout>;
-      let lastUploadX = -9999;
-      let lastUploadY = -9999;
-      let lastUploadVx = 0;
-      let lastUploadVy = 0;
-      let lastUploadFacing = 1;
-      let lastUploadDying = false;
-      let lastHeartbeatAt = 0;
-
-      async function posLoop() {
-        if (!active || ably.connected) return;
-        const tStart = performance.now();
-        let didSendMove = false;
-        try {
-          const me = playersRef.current.get(myIdRef.current);
-          if (me && myIdRef.current) {
-            const nowMs = Date.now();
-            const isMoving = Math.abs(me.vx) > 0.04 || Math.abs(me.vy) > 0.04;
-            const wasMoving = Math.abs(lastUploadVx) > 0.04 || Math.abs(lastUploadVy) > 0.04;
-            const justStopped = !isMoving && wasMoving;
-            const moved =
-              justStopped ||
-              Math.abs(me.x - lastUploadX) > 0.3 ||
-              Math.abs(me.y - lastUploadY) > 0.3 ||
-              me.facing !== lastUploadFacing ||
-              Boolean(me.isDying) !== lastUploadDying;
-
-            // Saat diam, gunakan SSE push stream untuk menerima gerakan player lain secara real-time,
-            // dan hanya kirim heartbeat /api/pos setiap 1400ms agar bandwidth Cloudflare/4G 100% hemat!
-            const pendingObs = pendingObstacleUploadRef.current;
-            if (pendingObs) pendingObstacleUploadRef.current = null;
-
-            if (moved || pendingObs || nowMs - lastHeartbeatAt >= 1400) {
-              didSendMove = moved;
-              lastHeartbeatAt = nowMs;
-              lastUploadX = me.x;
-              lastUploadY = me.y;
-              lastUploadVx = isMoving ? me.vx : 0;
-              lastUploadVy = isMoving ? me.vy : 0;
-              lastUploadFacing = me.facing;
-              lastUploadDying = Boolean(me.isDying);
-
-              const postPayload: Record<string, unknown> = moved
-                ? {
-                  r: roomId,
-                  u: me.id,
-                  un: me.username,
-                  fn: myFullNameRef.current || me.fullName || undefined,
-                  av: me.avatar,
-                  rl: myRole,
-                  stg: currentStageRef.current,
-                  x: Math.round(me.x * 10) / 10,
-                  y: Math.round(me.y * 10) / 10,
-                  vx: isMoving ? Math.round(me.vx * 100) / 100 : 0,
-                  vy: isMoving ? Math.round(me.vy * 100) / 100 : 0,
-                  f: me.facing,
-                  g: me.onGround ? 1 : 0,
-                  d: me.isDying ? 1 : 0,
-                  ds: me.deathStartedAt,
-                  b: me.burnUntil,
-                  j: me.jailedUntil,
-                  gn: me.gun ?? undefined,
-                  tg: me.tag,
-                  cl: me.colors,
-                }
-                : {
-                  r: roomId,
-                  u: me.id,
-                };
-              if (pendingObs) {
-                postPayload.obstacle = pendingObs;
-              }
-
-              const res = await fetch('/api/pos', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(postPayload),
-              });
-              if (res.ok && active) {
-                const rtt = Math.max(1, Math.round((performance.now() - tStart) * 0.42));
-                ably.setPingMs((prev) => (prev <= 5 ? rtt : Math.round(prev * 0.6 + rtt * 0.4)));
-                const data = await res.json();
-                if (typeof data.st === 'number') {
-                  ably.setServerTimeOffset(Math.round(data.st + rtt / 2 - Date.now()));
-                }
-                if (data.obstacles && typeof data.obstacles === 'object') {
-                  const obs = data.obstacles as {
-                    crumbles?: { stage: number; idx: number; startedAt: number }[];
-                    stomps?: { stage: number; id: string; until: number }[];
-                    powerups?: { stage: number; id: string; until: number }[];
-                  };
-                  if (Array.isArray(obs.crumbles)) {
-                    for (const c of obs.crumbles) {
-                      applyObstacleEvent({ op: 'crumble', stg: c.stage, idx: c.idx, at: c.startedAt });
-                    }
-                  }
-                  if (Array.isArray(obs.stomps)) {
-                    for (const s of obs.stomps) {
-                      applyObstacleEvent({ op: 'stomp', stg: s.stage, id: s.id, until: s.until });
-                    }
-                  }
-                  if (Array.isArray(obs.powerups)) {
-                    for (const pu of obs.powerups) {
-                      applyObstacleEvent({ op: 'powerup', stg: pu.stage, id: pu.id, until: pu.until });
-                    }
-                  }
-                }
-                if (data.roomDeleted || data.rs === 'deleted') {
-                  active = false;
-                  applyLiveRoomStatus('deleted');
-                  return;
-                }
-                if (data.kicked && !isStaffRole(myRoleRef.current)) {
-                  triggerForcedExit('kicked');
-                  return;
-                }
-                if (!data.kicked && exitNoticeRef.current === 'kicked') {
-                  handleRejoinApproved();
-                }
-                if (typeof data.rs === 'string' && data.rs) {
-                  applyLiveRoomStatus(data.rs);
-                }
-                const peers = Array.isArray(data.p) ? data.p : [];
-                for (const rp of peers) {
-                  const uid = typeof rp.u === 'string' ? rp.u : '';
-                  if (!uid || uid === myIdRef.current) continue;
-                  ingestRemotePlayerSnapshot({
-                    id: uid,
-                    username: typeof rp.un === 'string' ? rp.un : 'Player',
-                    fullName: typeof rp.fn === 'string' ? rp.fn : undefined,
-                    avatar: typeof rp.av === 'string' ? rp.av : 'cat-orange',
-                    role: typeof rp.rl === 'string' ? rp.rl : undefined,
-                    stage: typeof rp.stg === 'number' ? rp.stg : typeof rp.stage === 'number' ? rp.stage : 1,
-                    x: typeof rp.x === 'number' ? rp.x : 120,
-                    y: typeof rp.y === 'number' ? rp.y : 600,
-                    vx: typeof rp.vx === 'number' ? rp.vx : 0,
-                    vy: typeof rp.vy === 'number' ? rp.vy : 0,
-                    facing: rp.f === -1 ? -1 : 1,
-                    onGround: Boolean(rp.g),
-                    isDying: Boolean(rp.d),
-                    deathStartedAt: typeof rp.ds === 'number' ? rp.ds : undefined,
-                    burnUntil: typeof rp.b === 'number' ? rp.b : undefined,
-                    jailedUntil: typeof rp.j === 'number' ? rp.j : undefined,
-                    gun: typeof rp.gn === 'string' ? rp.gn : undefined,
-                    tag: typeof rp.tg === 'string' ? rp.tg : undefined,
-                    colors: (rp.cl as PlayerColors | undefined) ?? undefined,
-                  });
-                }
-              }
-            }
-          }
-        } catch {
-          // non-fatal
-        } finally {
-          if (active && !ably.connected) {
-            const elapsed = performance.now() - tStart;
-            const waitMs = didSendMove ? Math.max(28, Math.round(55 - elapsed)) : 32;
-            timer = setTimeout(posLoop, waitMs);
-          }
-        }
-      }
-
-      posLoop();
-      return () => {
-        active = false;
-        clearTimeout(timer);
-      };
-    }, [ably.connected, roomId, myRole]);
-
-    useEffect(() => {
-      let active = true;
-      let timer: ReturnType<typeof setTimeout>;
-      async function syncLoop() {
-        if (!active) return;
-        try {
-          const me = playersRef.current.get(myIdRef.current);
-          const payload: Record<string, unknown> = {
-            roomId,
-            chatCursor: chatCursorRef.current,
-            justKicked: justKickedInSessionRef.current,
-          };
-          // Saat mirror siswa tertentu, minta status jawaban siswa itu agar warna kotak real-time
-          if (mirrorFetchTargetRef.current) {
-            payload.targetId = mirrorFetchTargetRef.current;
-          }
-          // Saat WebSocket sudah terhubung, posisi sudah di-stream real-time & disimpan ke DB oleh ws-hub/pos,
-          // sehingga room-sync tidak perlu mengirim duplikat payload koordinat lagi.
-          if (me && !ably.connected) {
-            const rx = Math.round(me.x * 10) / 10;
-            const ry = Math.round(me.y * 10) / 10;
-            const prev = lastSyncedPosRef.current;
-            if (
-              Math.abs(rx - prev.x) > 0.4 ||
-              Math.abs(ry - prev.y) > 0.4 ||
-              me.facing !== prev.facing ||
-              Math.abs(me.vx) > 0.05 ||
-              Boolean(me.isDying)
-            ) {
-              payload.x = rx;
-              payload.y = ry;
-              payload.vx = Math.round(me.vx * 100) / 100;
-              payload.vy = Math.round(me.vy * 100) / 100;
-              payload.onGround = me.onGround;
-              payload.isDying = Boolean(me.isDying);
-              payload.deathStartedAt = me.deathStartedAt;
-              payload.burnUntil = me.burnUntil;
-              payload.facing = me.facing;
-              lastSyncedPosRef.current = { x: rx, y: ry, facing: me.facing };
-            }
-          }
-          const res = await fetch('/api/game/room-sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          if (res.status === 401) {
-            active = false;
-            handleSessionReplaced();
-            return;
-          }
-          if (!res.ok || !active) return;
-          const data = await res.json();
-          if (data.roomDeleted || data.room === null || data.room?.status === 'deleted') {
-            active = false;
-            applyLiveRoomStatus('deleted');
-            return;
-          }
-          if (data.kicked && !isStaffRole(myRoleRef.current)) {
-            triggerForcedExit('kicked');
-            return;
-          }
-          if (!data.kicked && exitNoticeRef.current === 'kicked') {
-            handleRejoinApproved();
-          }
-          if (Array.isArray(data.rejoinRequests)) {
-            setRejoinRequests(data.rejoinRequests);
-          }
-
-          if (typeof data.sessionId === 'string' && data.sessionId) {
-            sessionIdRef.current = data.sessionId;
-          }
-          const serverPlayers: RoomPlayer[] = data.players ?? [];
-          setScores((prev) => {
-            const next = { ...prev };
-            for (const p of serverPlayers) next[p.userId] = p.score ?? 0;
-            return next;
-          });
-          const activeIds = new Set(serverPlayers.map((p) => p.userId));
-          for (const id of Array.from(playersRef.current.keys())) {
-            if (id !== myIdRef.current && !activeIds.has(id)) {
-              playersRef.current.delete(id);
-            }
-          }
-          const nowWall = Date.now();
-          for (const p of serverPlayers) {
-            if (p.userId === myIdRef.current) continue;
-            const existing = playersRef.current.get(p.userId);
-            if (existing) {
-              // Jangan timpa posisi dari posLoop yang lebih segar (< 1500ms)
-              if (nowWall - (existing.lastPacketAt ?? 0) > 1500) {
-                if (p.lastX !== undefined) existing.targetX = p.lastX;
-                if (p.lastY !== undefined) existing.targetY = p.lastY;
-                if (p.lastFacing !== undefined) existing.facing = p.lastFacing as 1 | -1;
-              }
-              if (p.username) existing.username = p.username;
-              if (p.fullName) existing.fullName = p.fullName;
-              if (p.role) existing.role = p.role;
-              if (typeof p.stage === 'number') existing.stage = p.stage;
-            } else {
-              const px = p.lastX ?? 120;
-              const py = p.lastY ?? 600;
-              playersRef.current.set(p.userId, {
-                id: p.userId,
-                username: p.username,
-                fullName: p.fullName || undefined,
-                avatar: p.avatar,
-                role: p.role,
-                stage: p.stage ?? 1,
-                x: px,
-                y: py,
-                targetX: px,
-                targetY: py,
-                vx: p.vx ?? 0,
-                vy: p.vy ?? 0,
-                facing: (p.lastFacing as 1 | -1) ?? 1,
-                onGround: p.onGround ?? false,
-              });
-            }
-          }
-          if (data.room?.status === 'completed') {
-            active = false;
-            applyLiveRoomStatus('completed');
-            return;
-          }
-          if (typeof data.room?.status === 'string') {
-            applyLiveRoomStatus(data.room.status);
-          }
-          setRoom((prev) => {
-            if (!prev) return prev;
-            const statusChanged = data.room?.status && data.room.status !== prev.status;
-            const playersChanged =
-              prev.players.length !== serverPlayers.length ||
-              prev.players.some((pl, idx) => pl.userId !== serverPlayers[idx]?.userId) ||
-              prev.players.some((pl, idx) => pl.username !== serverPlayers[idx]?.username || pl.fullName !== serverPlayers[idx]?.fullName);
-            if (!statusChanged && !playersChanged) return prev;
-            const updated = {
-              ...prev,
-              status: data.room?.status ?? prev.status,
-              players: serverPlayers,
-            };
-            roomRef.current = updated;
-            return updated;
-          });
-          if (typeof data.chatCursor === 'number' && data.chatCursor > chatCursorRef.current) {
-            chatCursorRef.current = data.chatCursor;
-          }
-          if (Array.isArray(data.messages) && data.messages.length > 0) {
-            ingestMessages(data.messages);
-          }
-          if (data.answerResults && typeof data.answerResults === 'object') {
-            if (Array.isArray(data.answeredQuestionIds) && data.answeredQuestionIds.length === 0) {
-              answerResultsRef.current.clear();
-            } else {
-              for (const [qid, okAns] of Object.entries(data.answerResults as Record<string, boolean | 'assisted'>)) {
-                answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
-              }
-            }
-          }
-          // Saat mirror siswa tertentu, jawaban yg masuk adalah milik siswa itu:
-          // refresh jawaban siswa yang sudah dihapus dari server (misal habis /reset)
-          if (mirrorFetchTargetRef.current && Array.isArray(data.answeredQuestionIds)) {
-            const serverSet = new Set(data.answeredQuestionIds as string[]);
-            for (const qid of Array.from(answerResultsRef.current.keys())) {
-              if (!serverSet.has(qid)) answerResultsRef.current.delete(qid);
-            }
-          }
-          if (Array.isArray(data.answeredQuestionIds)) {
-            if (data.answeredQuestionIds.length === 0) {
-              answeredIdsRef.current.clear();
-              setAnsweredQuestionIds([]);
-              setCorrectCount(0);
-            } else {
-              for (const qid of data.answeredQuestionIds) answeredIdsRef.current.add(qid);
-              setAnsweredQuestionIds((prev) => (prev.length === answeredIdsRef.current.size ? prev : Array.from(answeredIdsRef.current)));
-            }
-          }
-          if (typeof data.correctCount === 'number') {
-            setCorrectCount(data.correctCount);
-          }
-          if (Array.isArray(data.rejoinRequests)) {
-            setRejoinRequests(data.rejoinRequests);
-          }
-        } catch {
-          // polling fallback failure is non-fatal
-        } finally {
-          // Saat WebSocket aktif, semua posisi/chat/skor/soal sudah real-time lewat WS,
-          // sehingga room-sync cukup jalan setiap 4 detik sebagai heartbeat ringan (hemat bandwidth luar LAN 7x lipat!)
-          const syncInterval = ably.connected ? 12000 : 2500;
-          if (active) timer = setTimeout(syncLoop, syncInterval);
-        }
-      }
-      syncLoop();
-      return () => {
-        active = false;
-        clearTimeout(timer);
-      };
-    }, [ably.connected, roomId, levelQuestions]);
-
-    useEffect(() => {
-      if (!ably.roomStatusEvent) return;
-      applyLiveRoomStatus(ably.roomStatusEvent);
-    }, [ably.roomStatusEvent]);
-
-    useEffect(() => {
-      if (!ably.rejoinRequestsEvent) return;
-      setRejoinRequests(ably.rejoinRequestsEvent);
-    }, [ably.rejoinRequestsEvent]);
-
-    useEffect(() => {
-      if (!ably.scoreEvent) return;
-      setScores((prev) => ({ ...prev, [ably.scoreEvent!.userId]: ably.scoreEvent!.score }));
-    }, [ably.scoreEvent]);
-
-    useEffect(() => {
-      if (!ably.kickedPlayerId) return;
-      if (ably.kickedPlayerId === myIdRef.current || ably.kickedPlayerId === 'me') {
-        if (!manualLeaveRef.current && !isStaffRole(myRoleRef.current)) {
-          justKickedInSessionRef.current = true;
-          triggerForcedExit('kicked');
-        }
-      } else {
-        playersRef.current.delete(ably.kickedPlayerId);
-        setRoom((prev) =>
-          prev ? { ...prev, players: prev.players.filter((pl) => pl.userId !== ably.kickedPlayerId) } : prev,
-        );
-      }
-    }, [ably.kickedPlayerId]);
-
-    useEffect(() => {
-      if (!ably.approvedPlayerId) return;
-      if (ably.approvedPlayerId === myIdRef.current || ably.approvedPlayerId === 'me') {
-        handleRejoinApproved();
-      }
-    }, [ably.approvedPlayerId]);
-
-    useEffect(() => {
-      if (!chatMinimized) {
-        const box = chatBoxRef.current;
-        if (box) box.scrollTop = box.scrollHeight;
-      }
-    }, [chat, chatMinimized]);
-
-    useEffect(() => {
-      if (ably.chatMessages.length > 0) {
-        ingestMessages(ably.chatMessages as ChatMsg[]);
-      }
-    }, [ably.chatMessages]);
-
-    function onPointerDown(e: React.PointerEvent) {
-      draggingRef.current = { active: true, x: e.clientX, y: e.clientY, moved: false };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-      setChatMinimized(true);
-    }
-    function onPointerMove(e: React.PointerEvent) {
-      if (!draggingRef.current.active || !cameraRef.current) return;
-      const dx = e.clientX - draggingRef.current.x;
-      const dy = e.clientY - draggingRef.current.y;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        draggingRef.current.moved = true;
-        if (!isCameraFreePanningRef.current) {
-          isCameraFreePanningRef.current = true;
-          setIsCameraFreePanning(true);
-        }
-        if (spectateTargetIdRef.current) {
-          spectateTargetIdRef.current = null;
-          setSpectateTargetId(null);
-        }
-      }
-      cameraRef.current.panBy(dx, dy);
-      draggingRef.current = { active: true, x: e.clientX, y: e.clientY, moved: draggingRef.current.moved };
-    }
-    function onPointerUp(e: React.PointerEvent) {
-      const wasDrag = draggingRef.current.moved;
-      draggingRef.current.active = false;
-      // Admin: klik (bukan drag) langsung pada kotak soal untuk membukanya
-      if (
-        wasDrag ||
-        myRoleRef.current !== 'admin' ||
-        questionRef.current ||
-        questionBlocksRef.current.length === 0
-      )
-        return;
-      const canvas = canvasRef.current;
-      const cam = cameraRef.current;
-      if (!canvas || !cam) return;
-      const rect = canvas.getBoundingClientRect();
-      const worldX = (e.clientX - rect.left) / cam.zoom + cam.x;
-      const worldY = (e.clientY - rect.top) / cam.zoom + cam.y;
-      const hit = questionBlocksRef.current.find(
-        (b) => worldX >= b.x && worldX <= b.x + b.w && worldY >= b.y && worldY <= b.y + b.h,
+    } else {
+      playersRef.current.delete(ably.kickedPlayerId);
+      setRoom((prev) =>
+        prev ? { ...prev, players: prev.players.filter((pl) => pl.userId !== ably.kickedPlayerId) } : prev,
       );
-      if (!hit || !hit.questionId) return;
-      const res = answerResultsRef.current.get(hit.questionId);
-      if (res === true || res === 'assisted') return;
-      const found = levelQuestionsRef.current.find((q) => q.id === hit.questionId);
-      if (!found) return;
-      soundEngine.playQuestionOpen();
-      questionRef.current = found;
-      setQuestion(found);
-      setQuestionMinimized(false);
-      setSelected('');
-      setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
     }
-    function onWheel(e: React.WheelEvent) {
-      e.preventDefault();
-      cameraRef.current?.zoomBy(e.deltaY > 0 ? -0.1 : 0.1);
-    }
+  }, [ably.kickedPlayerId]);
 
-    function startPanelDrag(key: string, e: React.PointerEvent, allowButtonDrag = false) {
-      if (!allowButtonDrag && (e.target as HTMLElement).closest('button, input')) return;
-      e.stopPropagation();
-      const cur = panelOffsets[key] ?? { x: 0, y: 0 };
-      panelDragRef.current = { key, startX: e.clientX, startY: e.clientY, origX: cur.x, origY: cur.y, moved: false };
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  useEffect(() => {
+    if (!ably.approvedPlayerId) return;
+    if (ably.approvedPlayerId === myIdRef.current || ably.approvedPlayerId === 'me') {
+      handleRejoinApproved();
     }
+  }, [ably.approvedPlayerId]);
 
-    function movePanelDrag(e: React.PointerEvent) {
-      const d = panelDragRef.current;
-      if (!d) return;
-      e.stopPropagation();
-      const dx = e.clientX - d.startX;
-      const dy = e.clientY - d.startY;
-      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) d.moved = true;
-      let nx = d.origX + dx;
-      let ny = d.origY + dy;
-      if (d.key === 'question') {
-        const maxW = typeof window !== 'undefined' ? window.innerWidth * 0.42 : 300;
-        const maxH = typeof window !== 'undefined' ? window.innerHeight * 0.42 : 220;
-        nx = Math.max(-maxW, Math.min(maxW, nx));
-        ny = Math.max(-maxH, Math.min(maxH, ny));
+  useEffect(() => {
+    if (!chatMinimized) {
+      const box = chatBoxRef.current;
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+  }, [chat, chatMinimized]);
+
+  useEffect(() => {
+    if (ably.chatMessages.length > 0) {
+      ingestMessages(ably.chatMessages as ChatMsg[]);
+    }
+  }, [ably.chatMessages]);
+
+  function onPointerDown(e: React.PointerEvent) {
+    draggingRef.current = { active: true, x: e.clientX, y: e.clientY, moved: false };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setChatMinimized(true);
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!draggingRef.current.active || !cameraRef.current) return;
+    const dx = e.clientX - draggingRef.current.x;
+    const dy = e.clientY - draggingRef.current.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      draggingRef.current.moved = true;
+      if (!isCameraFreePanningRef.current) {
+        isCameraFreePanningRef.current = true;
+        setIsCameraFreePanning(true);
       }
-      setPanelOffsets((prev) => ({ ...prev, [d.key]: { x: nx, y: ny } }));
-    }
-
-    function endPanelDrag(e: React.PointerEvent, onClickFallback?: () => void) {
-      const d = panelDragRef.current;
-      if (!d) return;
-      e.stopPropagation();
-      const wasMoved = d.moved;
-      panelDragRef.current = null;
-      if (!wasMoved && onClickFallback) onClickFallback();
-    }
-
-    function panelStyle(key: string): React.CSSProperties | undefined {
-      const o = panelOffsets[key];
-      return o ? { transform: `translate(${o.x}px, ${o.y}px)` } : undefined;
-    }
-
-    const activePointersRef = useRef<Map<number, 'left' | 'right' | 'jump' | 'shoot'>>(new Map());
-
-    const touchControl = useCallback((dir: 'left' | 'right' | 'jump', down: boolean) => {
-      if (down) {
-        soundEngine.unlockAndStartBgm();
-        if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
-          returnCameraToSelf();
-        }
+      if (spectateTargetIdRef.current) {
+        spectateTargetIdRef.current = null;
+        setSpectateTargetId(null);
       }
-      if (
-        editingControlsLayout ||
-        exitNoticeRef.current ||
-        (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))
-      ) {
-        keysRef.current.left = false;
-        keysRef.current.right = false;
-        keysRef.current.jump = false;
-        return;
-      }
-      keysRef.current[dir] = down;
-    }, [editingControlsLayout, returnCameraToSelf]);
-
-    const handleTouchControlStart = useCallback(
-      (action: 'left' | 'right' | 'jump' | 'shoot', e: React.PointerEvent) => {
-        if (editingControlsLayout) return;
-        e.preventDefault();
-        e.stopPropagation();
-        soundEngine.unlockAndStartBgm();
-        if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
-          returnCameraToSelf();
-        }
-
-        try {
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        } catch (_) { }
-
-        activePointersRef.current.set(e.pointerId, action);
-
-        if (action === 'shoot') {
-          fireLaser();
-        } else {
-          touchControl(action, true);
-        }
-      },
-      [editingControlsLayout, fireLaser, returnCameraToSelf, touchControl],
+    }
+    cameraRef.current.panBy(dx, dy);
+    draggingRef.current = { active: true, x: e.clientX, y: e.clientY, moved: draggingRef.current.moved };
+  }
+  function onPointerUp(e: React.PointerEvent) {
+    const wasDrag = draggingRef.current.moved;
+    draggingRef.current.active = false;
+    // Admin: klik (bukan drag) langsung pada kotak soal untuk membukanya
+    if (
+      wasDrag ||
+      myRoleRef.current !== 'admin' ||
+      questionRef.current ||
+      questionBlocksRef.current.length === 0
+    )
+      return;
+    const canvas = canvasRef.current;
+    const cam = cameraRef.current;
+    if (!canvas || !cam) return;
+    const rect = canvas.getBoundingClientRect();
+    const worldX = (e.clientX - rect.left) / cam.zoom + cam.x;
+    const worldY = (e.clientY - rect.top) / cam.zoom + cam.y;
+    const hit = questionBlocksRef.current.find(
+      (b) => worldX >= b.x && worldX <= b.x + b.w && worldY >= b.y && worldY <= b.y + b.h,
     );
+    if (!hit || !hit.questionId) return;
+    const res = answerResultsRef.current.get(hit.questionId);
+    if (res === true || res === 'assisted') return;
+    const found = levelQuestionsRef.current.find((q) => q.id === hit.questionId);
+    if (!found) return;
+    soundEngine.playQuestionOpen();
+    questionRef.current = found;
+    setQuestion(found);
+    setQuestionMinimized(false);
+    setSelected('');
+    setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }));
+  }
+  function onWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    cameraRef.current?.zoomBy(e.deltaY > 0 ? -0.1 : 0.1);
+  }
 
-    const handleTouchControlEnd = useCallback(
-      (action: 'left' | 'right' | 'jump' | 'shoot', e: React.PointerEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
+  function startPanelDrag(key: string, e: React.PointerEvent, allowButtonDrag = false) {
+    if (!allowButtonDrag && (e.target as HTMLElement).closest('button, input')) return;
+    e.stopPropagation();
+    const cur = panelOffsets[key] ?? { x: 0, y: 0 };
+    panelDragRef.current = { key, startX: e.clientX, startY: e.clientY, origX: cur.x, origY: cur.y, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
 
-        try {
-          (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-        } catch (_) { }
-
-        activePointersRef.current.delete(e.pointerId);
-
-        let stillHeld = false;
-        for (const act of activePointersRef.current.values()) {
-          if (act === action) {
-            stillHeld = true;
-            break;
-          }
-        }
-        if (!stillHeld && action !== 'shoot') {
-          touchControl(action, false);
-        }
-      },
-      [touchControl],
-    );
-
-    function startControlGroupDrag(group: 'dpad' | 'jump', e: React.PointerEvent) {
-      if (!editingControlsLayout) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const origX = group === 'dpad' ? hudControls.dpadX : hudControls.jumpX;
-      const origY = group === 'dpad' ? hudControls.dpadY : hudControls.jumpY;
-      controlDragRef.current = {
-        group,
-        startX: e.clientX,
-        startY: e.clientY,
-        origX,
-        origY,
-      };
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  function movePanelDrag(e: React.PointerEvent) {
+    const d = panelDragRef.current;
+    if (!d) return;
+    e.stopPropagation();
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) d.moved = true;
+    let nx = d.origX + dx;
+    let ny = d.origY + dy;
+    if (d.key === 'question') {
+      const maxW = typeof window !== 'undefined' ? window.innerWidth * 0.42 : 300;
+      const maxH = typeof window !== 'undefined' ? window.innerHeight * 0.42 : 220;
+      nx = Math.max(-maxW, Math.min(maxW, nx));
+      ny = Math.max(-maxH, Math.min(maxH, ny));
     }
+    setPanelOffsets((prev) => ({ ...prev, [d.key]: { x: nx, y: ny } }));
+  }
 
-    function moveControlGroupDrag(e: React.PointerEvent) {
-      const d = controlDragRef.current;
-      if (!d || !editingControlsLayout) return;
+  function endPanelDrag(e: React.PointerEvent, onClickFallback?: () => void) {
+    const d = panelDragRef.current;
+    if (!d) return;
+    e.stopPropagation();
+    const wasMoved = d.moved;
+    panelDragRef.current = null;
+    if (!wasMoved && onClickFallback) onClickFallback();
+  }
+
+  function panelStyle(key: string): React.CSSProperties | undefined {
+    const o = panelOffsets[key];
+    return o ? { transform: `translate(${o.x}px, ${o.y}px)` } : undefined;
+  }
+
+  const activePointersRef = useRef<Map<number, 'left' | 'right' | 'jump' | 'shoot'>>(new Map());
+
+  const touchControl = useCallback((dir: 'left' | 'right' | 'jump', down: boolean) => {
+    if (down) {
+      soundEngine.unlockAndStartBgm();
+      if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
+        returnCameraToSelf();
+      }
+    }
+    if (
+      editingControlsLayout ||
+      exitNoticeRef.current ||
+      (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))
+    ) {
+      keysRef.current.left = false;
+      keysRef.current.right = false;
+      keysRef.current.jump = false;
+      return;
+    }
+    keysRef.current[dir] = down;
+  }, [editingControlsLayout, returnCameraToSelf]);
+
+  const handleTouchControlStart = useCallback(
+    (action: 'left' | 'right' | 'jump' | 'shoot', e: React.PointerEvent) => {
+      if (editingControlsLayout) return;
       e.preventDefault();
       e.stopPropagation();
-      const nx = Math.round(Math.max(-360, Math.min(360, d.origX + (e.clientX - d.startX))));
-      const ny = Math.round(Math.max(-420, Math.min(120, d.origY + (e.clientY - d.startY))));
-      if (d.group === 'dpad') {
-        updateHudControls({ dpadX: nx, dpadY: ny });
+      soundEngine.unlockAndStartBgm();
+      if (isCameraFreePanningRef.current || spectateTargetIdRef.current) {
+        returnCameraToSelf();
+      }
+
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch (_) { }
+
+      activePointersRef.current.set(e.pointerId, action);
+
+      if (action === 'shoot') {
+        fireLaser();
       } else {
-        updateHudControls({ jumpX: nx, jumpY: ny });
+        touchControl(action, true);
       }
-    }
+    },
+    [editingControlsLayout, fireLaser, returnCameraToSelf, touchControl],
+  );
 
-    function endControlGroupDrag(e: React.PointerEvent) {
-      if (!controlDragRef.current) return;
+  const handleTouchControlEnd = useCallback(
+    (action: 'left' | 'right' | 'jump' | 'shoot', e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      controlDragRef.current = null;
+
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch (_) { }
+
+      activePointersRef.current.delete(e.pointerId);
+
+      let stillHeld = false;
+      for (const act of activePointersRef.current.values()) {
+        if (act === action) {
+          stillHeld = true;
+          break;
+        }
+      }
+      if (!stillHeld && action !== 'shoot') {
+        touchControl(action, false);
+      }
+    },
+    [touchControl],
+  );
+
+  function startControlGroupDrag(group: 'dpad' | 'jump', e: React.PointerEvent) {
+    if (!editingControlsLayout) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const origX = group === 'dpad' ? hudControls.dpadX : hudControls.jumpX;
+    const origY = group === 'dpad' ? hudControls.dpadY : hudControls.jumpY;
+    controlDragRef.current = {
+      group,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX,
+      origY,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function moveControlGroupDrag(e: React.PointerEvent) {
+    const d = controlDragRef.current;
+    if (!d || !editingControlsLayout) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const nx = Math.round(Math.max(-360, Math.min(360, d.origX + (e.clientX - d.startX))));
+    const ny = Math.round(Math.max(-420, Math.min(120, d.origY + (e.clientY - d.startY))));
+    if (d.group === 'dpad') {
+      updateHudControls({ dpadX: nx, dpadY: ny });
+    } else {
+      updateHudControls({ jumpX: nx, jumpY: ny });
+    }
+  }
+
+  function endControlGroupDrag(e: React.PointerEvent) {
+    if (!controlDragRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    controlDragRef.current = null;
+  }
+
+  function addSystemChatMessage(text: string) {
+    const sysMsg: ChatMsg = {
+      id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      senderName: 'SYSTEM',
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    ingestMessages([sysMsg]);
+  }
+
+  // Chat command access control (fitur /enable cmd & /disable cmd):
+  // - admin & guru: bisa pakai perintah, kontrol room
+  // - student: default tidak bisa. Kalau di-enable admin/guru via /enable cmd <user|all>,
+  //   bisa pakai cmd dengan target DIRI SENDIRI (me) saja (sementara di room tsb,
+  //   rejoin / refresh = akses otomatis hilang). /disable cmd <user|all> mencabut akses.
+  const cmdEnabledUsersRef = useRef<Set<string>>(new Set());
+  const isStudentCmdAllowed = (uid: string) =>
+    cmdEnabledUsersRef.current.has(uid) || cmdEnabledUsersRef.current.has('__ALL_STUDENTS__');
+
+  async function handleChatCommand(rawText: string) {
+    const isStaff = isStaffRole(myRoleRef.current);
+    const isAdmin = myRoleRef.current === 'admin';
+
+    if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+      // Siswa yang belum di-enable: ketik '/' dianggap chat biasa, tanpa pesan error
+      return;
     }
 
-    function addSystemChatMessage(text: string) {
-      const sysMsg: ChatMsg = {
-        id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        senderName: 'SYSTEM',
-        text,
-        createdAt: new Date().toISOString(),
-      };
-      ingestMessages([sysMsg]);
+    const parts = rawText.slice(1).trim().split(/\s+/);
+    const cmd = parts[0]?.toLowerCase();
+    const arg1 = parts[1]?.toLowerCase();
+    const arg2 = parts[2]?.toLowerCase();
+
+    const isMinigunCmd =
+      cmd === 'minigun' ||
+      ((cmd === 'spawn' || cmd === 'gun') && (arg1 === 'minigun' || (arg1 === 'gun' && (arg2 === 'minigun' || !arg2))));
+
+    if (!isStaff && isStudentPvpEnabledRef.current) {
+      if (cmd === 'god' || cmd === 'godmode' || (cmd === 'set' && arg1 === 'god') || (cmd === 'unset' && arg1 === 'god')) {
+        addSystemChatMessage('🚫 Mode God dinonaktifkan saat Mode Saling Tembak (PvP) aktif!');
+        soundEngine.playBounce();
+        return;
+      }
+      if (!isMinigunCmd && cmd !== 'help' && cmd !== 'cls') {
+        addSystemChatMessage('⚔️ Saat Mode Saling Tembak aktif, siswa hanya diizinkan menggunakan perintah spawn minigun (/spawn minigun atau /gun minigun).');
+        soundEngine.playBounce();
+        return;
+      }
     }
 
-    // Chat command access control (fitur /enable cmd & /disable cmd):
-    // - admin & guru: bisa pakai perintah, kontrol room
-    // - student: default tidak bisa. Kalau di-enable admin/guru via /enable cmd <user|all>,
-    //   bisa pakai cmd dengan target DIRI SENDIRI (me) saja (sementara di room tsb,
-    //   rejoin / refresh = akses otomatis hilang). /disable cmd <user|all> mencabut akses.
-    const cmdEnabledUsersRef = useRef<Set<string>>(new Set());
-    const isStudentCmdAllowed = (uid: string) =>
-      cmdEnabledUsersRef.current.has(uid) || cmdEnabledUsersRef.current.has('__ALL_STUDENTS__');
-
-    async function handleChatCommand(rawText: string) {
-      const isStaff = isStaffRole(myRoleRef.current);
-      const isAdmin = myRoleRef.current === 'admin';
-
-      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-        // Siswa yang belum di-enable: ketik '/' dianggap chat biasa, tanpa pesan error
-        return;
+    if (isMinigunCmd) {
+      const me = playersRef.current.get(myIdRef.current);
+      if (me) {
+        me.gun = 'minigun';
+        me.blasterAmmo = Infinity;
+        me.hasAdminGun = true;
+        me.blasterUntil = undefined;
+        setAmmoCount(Infinity);
+        soundEngine.playPowerUp();
+        ably.publishCommand({ op: 'gun', targetId: myIdRef.current, value: true, weapon: 'minigun' });
+        addSystemChatMessage('🔫 Minigun berhasil diaktifkan! Siap saling tembak!');
+        showBanner('🔫 Minigun Aktif! Tekan [X] / [F] atau tombol Tembak untuk menembak!', 3500);
       }
+      return;
+    }
 
-      const parts = rawText.slice(1).trim().split(/\s+/);
-      const cmd = parts[0]?.toLowerCase();
-      const arg1 = parts[1]?.toLowerCase();
-      const arg2 = parts[2]?.toLowerCase();
-
-      const isMinigunCmd =
-        cmd === 'minigun' ||
-        ((cmd === 'spawn' || cmd === 'gun') && (arg1 === 'minigun' || (arg1 === 'gun' && (arg2 === 'minigun' || !arg2))));
-
-      if (!isStaff && isStudentPvpEnabledRef.current) {
-        if (cmd === 'god' || cmd === 'godmode' || (cmd === 'set' && arg1 === 'god') || (cmd === 'unset' && arg1 === 'god')) {
-          addSystemChatMessage('🚫 Mode God dinonaktifkan saat Mode Saling Tembak (PvP) aktif!');
-          soundEngine.playBounce();
-          return;
-        }
-        if (!isMinigunCmd && cmd !== 'help' && cmd !== 'cls') {
-          addSystemChatMessage('⚔️ Saat Mode Saling Tembak aktif, siswa hanya diizinkan menggunakan perintah spawn minigun (/spawn minigun atau /gun minigun).');
-          soundEngine.playBounce();
-          return;
+    // Helper to find player by username or 'me'
+    const findPlayer = (nameQuery?: string) => {
+      if (!nameQuery) return null;
+      if (nameQuery === 'me') {
+        const myP = playersRef.current.get(myIdRef.current);
+        return myP ? { id: myIdRef.current, username: myUsernameRef.current || 'Me' } : null;
+      }
+      for (const p of playersRef.current.values()) {
+        if (p.username.toLowerCase() === nameQuery) {
+          return { id: p.id, username: p.username };
         }
       }
-
-      if (isMinigunCmd) {
-        const me = playersRef.current.get(myIdRef.current);
-        if (me) {
-          me.gun = 'minigun';
-          me.blasterAmmo = Infinity;
-          me.hasAdminGun = true;
-          me.blasterUntil = undefined;
-          setAmmoCount(Infinity);
-          soundEngine.playPowerUp();
-          ably.publishCommand({ op: 'gun', targetId: myIdRef.current, value: true, weapon: 'minigun' });
-          addSystemChatMessage('🔫 Minigun berhasil diaktifkan! Siap saling tembak!');
-          showBanner('🔫 Minigun Aktif! Tekan [X] / [F] atau tombol Tembak untuk menembak!', 3500);
-        }
-        return;
+      const foundInRoom = roomRef.current?.players?.find((pl) => pl.username.toLowerCase() === nameQuery);
+      if (foundInRoom) {
+        return { id: foundInRoom.userId, username: foundInRoom.username };
       }
+      return null;
+    };
 
-      // Helper to find player by username or 'me'
-      const findPlayer = (nameQuery?: string) => {
-        if (!nameQuery) return null;
-        if (nameQuery === 'me') {
-          const myP = playersRef.current.get(myIdRef.current);
-          return myP ? { id: myIdRef.current, username: myUsernameRef.current || 'Me' } : null;
-        }
-        for (const p of playersRef.current.values()) {
-          if (p.username.toLowerCase() === nameQuery) {
-            return { id: p.id, username: p.username };
-          }
-        }
-        const foundInRoom = roomRef.current?.players?.find((pl) => pl.username.toLowerCase() === nameQuery);
-        if (foundInRoom) {
-          return { id: foundInRoom.userId, username: foundInRoom.username };
-        }
+    // Batasi target untuk non-admin:
+    // - student yang di-enable: cuman bisa target diri sendri
+    // - teacher: bebas target kecuali role admin
+    const resolveTarget = (targetQuery?: string) => {
+      const target = findPlayer(targetQuery);
+      if (!target) {
+        addSystemChatMessage(`Player '${targetQuery || ''}' tidak ditemukan di room.`);
         return null;
-      };
-
-      // Batasi target untuk non-admin:
-      // - student yang di-enable: cuman bisa target diri sendri
-      // - teacher: bebas target kecuali role admin
-      const resolveTarget = (targetQuery?: string) => {
-        const target = findPlayer(targetQuery);
-        if (!target) {
-          addSystemChatMessage(`Player '${targetQuery || ''}' tidak ditemukan di room.`);
+      }
+      const targetRole = target.id === myIdRef.current
+        ? myRoleRef.current
+        : (playersRef.current.get(target.id)?.role ?? roomRef.current?.players?.find((pl) => pl.userId === target.id)?.role);
+      if (!isAdmin) {
+        if (target.id !== myIdRef.current && targetRole === 'admin') {
+          addSystemChatMessage('Tidak bisa menargetkan Administrator.');
           return null;
         }
-        const targetRole = target.id === myIdRef.current
-          ? myRoleRef.current
-          : (playersRef.current.get(target.id)?.role ?? roomRef.current?.players?.find((pl) => pl.userId === target.id)?.role);
-        if (!isAdmin) {
-          if (target.id !== myIdRef.current && targetRole === 'admin') {
-            addSystemChatMessage('Tidak bisa menargetkan Administrator.');
-            return null;
-          }
-          if (myRoleRef.current === 'student' && target.id !== myIdRef.current) {
-            addSystemChatMessage('Kamu cuman bisa pakai perintah ke diri sendiri.');
-            return null;
-          }
+        if (myRoleRef.current === 'student' && target.id !== myIdRef.current) {
+          addSystemChatMessage('Kamu cuman bisa pakai perintah ke diri sendiri.');
+          return null;
         }
-        return target;
-      };
+      }
+      return target;
+    };
 
-      // /enable cmd <target|all> & /disable cmd <target|all>: khusus Admin & Guru
-      if (cmd === 'enable' && arg1 === 'cmd') {
-        if (!isStaff) {
-          addSystemChatMessage('Perintah /enable cmd hanya untuk Guru dan Administrator.');
-          return;
-        }
-        const targetQuery = arg2;
-        if (!targetQuery) {
-          addSystemChatMessage('Format: /enable cmd <target|all>');
-          return;
-        }
-        if (targetQuery === 'here') {
-          const curStg = currentStageRef.current;
-          for (const p of playersRef.current.values()) {
-            const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
-            if ((role === 'student' || (!role && p.id !== myIdRef.current)) && (p.stage ?? 1) === curStg) {
-              cmdEnabledUsersRef.current.add(p.id);
-              ably.publishCommand({ op: 'cmd_access', targetId: p.id, value: true });
-            }
+    // /enable cmd <target|all> & /disable cmd <target|all>: khusus Admin & Guru
+    if (cmd === 'enable' && arg1 === 'cmd') {
+      if (!isStaff) {
+        addSystemChatMessage('Perintah /enable cmd hanya untuk Guru dan Administrator.');
+        return;
+      }
+      const targetQuery = arg2;
+      if (!targetQuery) {
+        addSystemChatMessage('Format: /enable cmd <target|all>');
+        return;
+      }
+      if (targetQuery === 'here') {
+        const curStg = currentStageRef.current;
+        for (const p of playersRef.current.values()) {
+          const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
+          if ((role === 'student' || (!role && p.id !== myIdRef.current)) && (p.stage ?? 1) === curStg) {
+            cmdEnabledUsersRef.current.add(p.id);
+            ably.publishCommand({ op: 'cmd_access', targetId: p.id, value: true });
           }
-          addSystemChatMessage(`✅ Akses perintah chat DIAKTIFKAN untuk siswa di Stage ${curStg}.`);
-          soundEngine.playPowerUp();
-          return;
         }
-
-        if (targetQuery === 'all') {
-          cmdEnabledUsersRef.current.add('__ALL_STUDENTS__');
-          for (const p of playersRef.current.values()) {
-            const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
-            if (role === 'student' || (!role && p.id !== myIdRef.current)) {
-              cmdEnabledUsersRef.current.add(p.id);
-            }
-          }
-          if (roomRef.current?.players) {
-            for (const pl of roomRef.current.players) {
-              if (pl.role === 'student') cmdEnabledUsersRef.current.add(pl.userId);
-            }
-          }
-          ably.publishCommand({ op: 'cmd_access', targetId: 'all', value: true });
-          addSystemChatMessage('✅ Akses perintah chat DIAKTIFKAN untuk SEMUA siswa di room ini. Berlaku sementara sampai rejoin / di-disable.');
-          soundEngine.playPowerUp();
-          return;
-        }
-
-        const target = findPlayer(targetQuery);
-        if (!target) {
-          addSystemChatMessage(`Player '${targetQuery}' tidak ditemukan di room.`);
-          return;
-        }
-        const targetRole = playersRef.current.get(target.id)?.role ?? roomRef.current?.players?.find((pl) => pl.userId === target.id)?.role;
-        if (targetRole === 'admin' || targetRole === 'teacher') {
-          addSystemChatMessage('Admin & guru sudah otomatis memiliki akses semua perintah.');
-          return;
-        }
-        cmdEnabledUsersRef.current.add(target.id);
-        ably.publishCommand({ op: 'cmd_access', targetId: target.id, value: true });
-        addSystemChatMessage(`✅ '${target.username}' sekarang bisa pakai perintah chat (khusus target diri sendiri). Berlaku sementara sampai rejoin / di-disable.`);
+        addSystemChatMessage(`✅ Akses perintah chat DIAKTIFKAN untuk siswa di Stage ${curStg}.`);
         soundEngine.playPowerUp();
         return;
       }
 
-      if ((cmd === 'disable' && arg1 === 'cmd') || (cmd === 'cmd' && arg1 === 'disable')) {
-        if (!isStaff) {
-          addSystemChatMessage('Perintah /disable cmd hanya untuk Guru dan Administrator.');
-          return;
-        }
-        const targetQuery = arg2;
-        if (!targetQuery) {
-          addSystemChatMessage('Format: /disable cmd <target|all>');
-          return;
-        }
-        if (targetQuery === 'here') {
-          const curStg = currentStageRef.current;
-          for (const p of playersRef.current.values()) {
-            const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
-            if ((role === 'student' || (!role && p.id !== myIdRef.current)) && (p.stage ?? 1) === curStg) {
-              cmdEnabledUsersRef.current.delete(p.id);
-              ably.publishCommand({ op: 'cmd_access', targetId: p.id, value: false });
-            }
+      if (targetQuery === 'all') {
+        cmdEnabledUsersRef.current.add('__ALL_STUDENTS__');
+        for (const p of playersRef.current.values()) {
+          const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
+          if (role === 'student' || (!role && p.id !== myIdRef.current)) {
+            cmdEnabledUsersRef.current.add(p.id);
           }
-          addSystemChatMessage(`⛔ Akses perintah chat untuk siswa di Stage ${curStg} telah dicabut.`);
-          soundEngine.playDeath();
-          return;
         }
+        if (roomRef.current?.players) {
+          for (const pl of roomRef.current.players) {
+            if (pl.role === 'student') cmdEnabledUsersRef.current.add(pl.userId);
+          }
+        }
+        ably.publishCommand({ op: 'cmd_access', targetId: 'all', value: true });
+        addSystemChatMessage('✅ Akses perintah chat DIAKTIFKAN untuk SEMUA siswa di room ini (tetap aktif bagi siswa yang baru join / rejoin).');
+        soundEngine.playPowerUp();
+        return;
+      }
 
-        if (targetQuery === 'all') {
-          cmdEnabledUsersRef.current.clear();
-          ably.publishCommand({ op: 'cmd_access', targetId: 'all', value: false });
-          addSystemChatMessage('⛔ Akses perintah chat untuk SEMUA siswa di room telah dicabut.');
-          soundEngine.playDeath();
-          return;
-        }
+      const target = findPlayer(targetQuery);
+      if (!target) {
+        addSystemChatMessage(`Player '${targetQuery}' tidak ditemukan di room.`);
+        return;
+      }
+      const targetRole = playersRef.current.get(target.id)?.role ?? roomRef.current?.players?.find((pl) => pl.userId === target.id)?.role;
+      if (targetRole === 'admin' || targetRole === 'teacher') {
+        addSystemChatMessage('Admin & guru sudah otomatis memiliki akses semua perintah.');
+        return;
+      }
+      cmdEnabledUsersRef.current.add(target.id);
+      ably.publishCommand({ op: 'cmd_access', targetId: target.id, value: true });
+      addSystemChatMessage(`✅ '${target.username}' sekarang bisa pakai perintah chat (khusus target diri sendiri). Tetap aktif di room ini sampai di-disable.`);
+      soundEngine.playPowerUp();
+      return;
+    }
 
-        const target = findPlayer(targetQuery);
-        if (!target) {
-          addSystemChatMessage(`Player '${targetQuery}' tidak ditemukan di room.`);
-          return;
+    if ((cmd === 'disable' && arg1 === 'cmd') || (cmd === 'cmd' && arg1 === 'disable')) {
+      if (!isStaff) {
+        addSystemChatMessage('Perintah /disable cmd hanya untuk Guru dan Administrator.');
+        return;
+      }
+      const targetQuery = arg2;
+      if (!targetQuery) {
+        addSystemChatMessage('Format: /disable cmd <target|all>');
+        return;
+      }
+      if (targetQuery === 'here') {
+        const curStg = currentStageRef.current;
+        for (const p of playersRef.current.values()) {
+          const role = p.role ?? roomRef.current?.players?.find((pl) => pl.userId === p.id)?.role;
+          if ((role === 'student' || (!role && p.id !== myIdRef.current)) && (p.stage ?? 1) === curStg) {
+            cmdEnabledUsersRef.current.delete(p.id);
+            ably.publishCommand({ op: 'cmd_access', targetId: p.id, value: false });
+          }
         }
-        const targetRole = playersRef.current.get(target.id)?.role ?? roomRef.current?.players?.find((pl) => pl.userId === target.id)?.role;
-        if (targetRole === 'admin' || targetRole === 'teacher') {
-          addSystemChatMessage('Akses perintah admin & guru tidak bisa dicabut.');
-          return;
-        }
-        cmdEnabledUsersRef.current.delete(target.id);
-        cmdEnabledUsersRef.current.delete('__ALL_STUDENTS__');
-        ably.publishCommand({ op: 'cmd_access', targetId: target.id, value: false });
-        addSystemChatMessage(`⛔ Akses perintah chat '${target.username}' telah dicabut.`);
+        addSystemChatMessage(`⛔ Akses perintah chat untuk siswa di Stage ${curStg} telah dicabut.`);
         soundEngine.playDeath();
         return;
       }
 
-      const ALL_COMMANDS: { prefix: string; usage: string; adminOnly?: boolean; staffOnly?: boolean; staffStrict?: boolean }[] = [
-        { prefix: 'cls', usage: '• /cls : Bersihkan seluruh chat di layar' },
-        { prefix: 'set', usage: '• /set god <user|me|here|all> : Aktifkan God Mode (here = di stagemu, all = se-game)' },
-        { prefix: 'unset', usage: '• /unset god <user|me|here|all> : Nonaktifkan God Mode' },
-        { prefix: 'teleport', usage: '• /teleport <username> : Nyamperin player (pindah ke stage & posisinya)', adminOnly: true },
-        { prefix: 'teleport', usage: '• /teleport here [me|<stage>] : Tarik player di stagemu ke posisimu / lempar ke stage lain', adminOnly: true },
-        { prefix: 'teleport', usage: '• /teleport all <me|here|<stage>> : Tarik SELURUH siswa ke posisimu / lempar ke stage', adminOnly: true },
-        { prefix: 'teleport', usage: '• /teleport <user|me> me : Tarik player ke posisimu' },
-        { prefix: 'teleport', usage: `• /teleport <user|me> <stage> : Lempar player ke Stage tertentu (1-${totalStagesRef.current} atau ID S1-S20)` },
-        { prefix: 'mirror', usage: '• /mirror <username> : Tampilkan & bantu jawab kotak soal siswa', staffOnly: true },
-        { prefix: 'mirror', usage: '• /mirror all : Mode soal bonus untuk seluruh kelas', staffOnly: true },
-        { prefix: 'unset', usage: '• /unset mirror : Sembunyikan kembali kotak soal', staffOnly: true },
-        { prefix: 'reset', usage: '• /reset <user|me> : Reset jawaban & skor player ke Stage 1' },
-        { prefix: 'reset', usage: '• /reset all : Reset SEMUA jawaban 1 room ke Stage 1', adminOnly: true },
-        { prefix: 'reset', usage: '• /reset item all <all|username> : Reset SEMUA item toko (Admin Only)', adminOnly: true },
-        { prefix: 'reset', usage: '• /reset item <body|tag|color> <all|username> : Reset item spesifik (Admin Only)', adminOnly: true },
-        { prefix: 'spawn', usage: '• /spawn gun <minigun|laser|megalaser|ice|stunt|none> [user|me|here|all] : Beri / cabut senjata', staffOnly: true },
-        { prefix: 'jail', usage: '• /jail on|off [user|me] : Bekukan player selama 15 detik', staffOnly: true },
-        { prefix: 'set', usage: '• /set tag <1|2|3> <user|me> <title> : Atur title/tag permanen 3 tingkat (1=bawah, 2=tengah, 3=atas)', staffOnly: true },
-        { prefix: 'unset', usage: '• /unset tag <1|2|3|all> <user|me> : Hapus title/tag di posisi 1/2/3 atau all', staffOnly: true },
-        { prefix: 'set', usage: '• /set nick <user|me> <nama> : Ganti nickname permanen di atas kepala', staffOnly: true },
-        { prefix: 'unset', usage: '• /unset nick <user|me> : Kembalikan nickname ke nama asli', staffOnly: true },
-        { prefix: 'change', usage: '• /change map <S1..S20> : Ganti map stage aktif saat ini (contoh: /change map S20)', staffOnly: true },
-        { prefix: 'change', usage: '• /change map <urutan_stage> <S1..S20> : Ganti map stage tertentu (contoh: /change map 2 S20)', staffOnly: true },
-        { prefix: 'change', usage: '• /change map all <S1..S20> : Ganti map semua stage (contoh: /change map all S1)', staffOnly: true },
-        { prefix: 'change', usage: '• /change color <user|me> body|tag|tag1|tag2|tag3|nick <warna> : Ganti warna (bisa per tag: tag1, tag2, tag3, atau tag)', staffOnly: true },
-        { prefix: 'change', usage: '• /change body [user|me] <naga|hacker|virus|cacing|burung|ayam|sapi|domba|cat> : Ganti model karakter animasi (naga mecha [LIMITED ⭐], hacker matrix [CYBER 💻], virus, dll)' },
-        { prefix: 'change', usage: '• /change tag <user|me> <title> : Shortcut atur tag level 1', staffOnly: true },
-        { prefix: 'take', usage: '• /take rope <user|here|all> : Ikat player dengan tali (ikut admin & kebal rintangan)', adminOnly: true },
-        { prefix: 'untake', usage: '• /untake rope <user|here|all> : Lepas tali player', adminOnly: true },
-        { prefix: 'skip', usage: '• /skip stage <username|here|all|rope> : Tandai soal tersisa selesai (here = stagemu, all = se-game)', adminOnly: true },
-        { prefix: 'hide', usage: '• /hide body <nama_karakter> : Sembunyikan karakter dari toko & player (Only Admin)', adminOnly: true },
-        { prefix: 'unhide', usage: '• /unhide body <nama_karakter> : Tampilkan kembali karakter ke toko (Only Admin)', adminOnly: true },
-        { prefix: 'enable', usage: '• /enable cmd <target|all> : Izinkan siswa di room pakai perintah chat (sementara)', staffStrict: true },
-        { prefix: 'disable', usage: '• /disable cmd <target|all> : Cabut akses perintah chat siswa di room', staffStrict: true },
-      ];
-
-      if (cmd === 'help' || cmd === 'cmd') {
-        const sub = (arg1 || parts[1])?.toLowerCase();
-        if (sub && sub !== 'all') {
-          const matching = ALL_COMMANDS.filter((c) => {
-            if (c.adminOnly && !isAdmin) return false;
-            if (c.staffStrict && !isStaff) return false;
-            if (c.staffOnly && !isStaff && !isStudentCmdAllowed(myIdRef.current)) return false;
-            return c.prefix === sub || c.prefix.startsWith(sub);
-          });
-          if (matching.length > 0) {
-            addSystemChatMessage(`Format perintah /${sub}:`);
-            for (const m of matching) {
-              addSystemChatMessage(m.usage);
-            }
-            return;
-          }
-        }
-        // Ringkas: tidak banjir chat menjelaskan semuanya sekaligus
-        addSystemChatMessage('--- DAFTAR PERINTAH CHAT ---');
-        addSystemChatMessage('Ketik perintah untuk melihat format syntaxnya (contoh: /skip):');
-        addSystemChatMessage('• /set, /unset, /teleport, /mirror, /reset');
-        addSystemChatMessage('• /follow <user>, /unfollow');
-        if (isAdmin || isStaff) {
-          addSystemChatMessage('• /spawn, /jail, /enable, /disable, /take, /untake');
-        }
-        if (isAdmin) {
-          addSystemChatMessage('• /skip');
-        }
-        addSystemChatMessage('• /change, /cls');
+      if (targetQuery === 'all') {
+        cmdEnabledUsersRef.current.clear();
+        ably.publishCommand({ op: 'cmd_access', targetId: 'all', value: false });
+        addSystemChatMessage('⛔ Akses perintah chat untuk SEMUA siswa di room telah dicabut.');
+        soundEngine.playDeath();
         return;
       }
-      // /follow <target> & /unfollow
-      if (cmd === 'follow') {
-        const targetQuery = arg1 || parts[1];
-        if (!targetQuery) {
-          addSystemChatMessage('Format: /follow <username>');
-          return;
-        }
-        const target = findPlayer(targetQuery);
-        if (!target) {
-          addSystemChatMessage(`Player '${targetQuery}' tidak ditemukan di room.`);
-          return;
-        }
-        if (target.id === myIdRef.current) {
-          addSystemChatMessage('Kamu tidak bisa mengikuti dirimu sendiri.');
-          return;
-        }
-        const me = playersRef.current.get(myIdRef.current);
-        if (me) {
-          me.ropedById = target.id;
-          const targetP = playersRef.current.get(target.id);
-          if (targetP) {
-            meAdminAnchorRef.current = { x: targetP.x, y: targetP.y };
-            meAdminFacingRef.current = targetP.facing ?? 1;
+
+      const target = findPlayer(targetQuery);
+      if (!target) {
+        addSystemChatMessage(`Player '${targetQuery}' tidak ditemukan di room.`);
+        return;
+      }
+      const targetRole = playersRef.current.get(target.id)?.role ?? roomRef.current?.players?.find((pl) => pl.userId === target.id)?.role;
+      if (targetRole === 'admin' || targetRole === 'teacher') {
+        addSystemChatMessage('Akses perintah admin & guru tidak bisa dicabut.');
+        return;
+      }
+      cmdEnabledUsersRef.current.delete(target.id);
+      cmdEnabledUsersRef.current.delete('__ALL_STUDENTS__');
+      ably.publishCommand({ op: 'cmd_access', targetId: target.id, value: false });
+      addSystemChatMessage(`⛔ Akses perintah chat '${target.username}' telah dicabut.`);
+      soundEngine.playDeath();
+      return;
+    }
+
+    const ALL_COMMANDS: { prefix: string; usage: string; adminOnly?: boolean; staffOnly?: boolean; staffStrict?: boolean }[] = [
+      { prefix: 'cls', usage: '• /cls : Bersihkan seluruh chat di layar' },
+      { prefix: 'set', usage: '• /set god <user|me|here|all> : Aktifkan God Mode (here = di stagemu, all = se-game)' },
+      { prefix: 'unset', usage: '• /unset god <user|me|here|all> : Nonaktifkan God Mode' },
+      { prefix: 'teleport', usage: '• /teleport <username> : Nyamperin player (pindah ke stage & posisinya)', adminOnly: true },
+      { prefix: 'teleport', usage: '• /teleport here [me|<stage>] : Tarik player di stagemu ke posisimu / lempar ke stage lain', adminOnly: true },
+      { prefix: 'teleport', usage: '• /teleport all <me|here|<stage>> : Tarik SELURUH siswa ke posisimu / lempar ke stage', adminOnly: true },
+      { prefix: 'teleport', usage: '• /teleport <user|me> me : Tarik player ke posisimu' },
+      { prefix: 'teleport', usage: `• /teleport <user|me> <stage> : Lempar player ke Stage tertentu (1-${totalStagesRef.current} atau ID S1-S20)` },
+      { prefix: 'mirror', usage: '• /mirror <username> : Tampilkan & bantu jawab kotak soal siswa', staffOnly: true },
+      { prefix: 'mirror', usage: '• /mirror all : Mode soal bonus untuk seluruh kelas', staffOnly: true },
+      { prefix: 'unset', usage: '• /unset mirror : Sembunyikan kembali kotak soal', staffOnly: true },
+      { prefix: 'reset', usage: '• /reset <user|me> : Reset jawaban & skor player ke Stage 1' },
+      { prefix: 'reset', usage: '• /reset all : Reset SEMUA jawaban 1 room ke Stage 1', adminOnly: true },
+      { prefix: 'reset', usage: '• /reset item all <all|username> : Reset SEMUA item toko (Admin Only)', adminOnly: true },
+      { prefix: 'reset', usage: '• /reset item <body|tag|color> <all|username> : Reset item spesifik (Admin Only)', adminOnly: true },
+      { prefix: 'spawn', usage: '• /spawn gun <minigun|laser|megalaser|ice|stunt|none> [user|me|here|all] : Beri / cabut senjata', staffOnly: true },
+      { prefix: 'jail', usage: '• /jail on|off [user|me] : Bekukan player selama 15 detik', staffOnly: true },
+      { prefix: 'set', usage: '• /set tag <1|2|3> <user|me> <title> : Atur title/tag permanen 3 tingkat (1=bawah, 2=tengah, 3=atas)', staffOnly: true },
+      { prefix: 'unset', usage: '• /unset tag <1|2|3|all> <user|me> : Hapus title/tag di posisi 1/2/3 atau all', staffOnly: true },
+      { prefix: 'set', usage: '• /set nick <user|me> <nama> : Ganti nickname permanen di atas kepala', staffOnly: true },
+      { prefix: 'unset', usage: '• /unset nick <user|me> : Kembalikan nickname ke nama asli', staffOnly: true },
+      { prefix: 'change', usage: '• /change map <S1..S20> : Ganti map stage aktif saat ini (contoh: /change map S20)', staffOnly: true },
+      { prefix: 'change', usage: '• /change map <urutan_stage> <S1..S20> : Ganti map stage tertentu (contoh: /change map 2 S20)', staffOnly: true },
+      { prefix: 'change', usage: '• /change map all <S1..S20> : Ganti map semua stage (contoh: /change map all S1)', staffOnly: true },
+      { prefix: 'change', usage: '• /change color <user|me> body|tag|tag1|tag2|tag3|nick <warna> : Ganti warna (bisa per tag: tag1, tag2, tag3, atau tag)', staffOnly: true },
+      { prefix: 'change', usage: '• /change body [user|me] <naga|hacker|virus|cacing|burung|ayam|sapi|domba|cat> : Ganti model karakter animasi (naga mecha [LIMITED ⭐], hacker matrix [CYBER 💻], virus, dll)' },
+      { prefix: 'change', usage: '• /change tag <user|me> <title> : Shortcut atur tag level 1', staffOnly: true },
+      { prefix: 'take', usage: '• /take rope <user|here|all> : Ikat player dengan tali (ikut admin & kebal rintangan)', adminOnly: true },
+      { prefix: 'untake', usage: '• /untake rope <user|here|all> : Lepas tali player', adminOnly: true },
+      { prefix: 'skip', usage: '• /skip stage <username|here|all|rope> : Tandai soal tersisa selesai (here = stagemu, all = se-game)', adminOnly: true },
+      { prefix: 'hide', usage: '• /hide body <nama_karakter> : Sembunyikan karakter dari toko & player (Only Admin)', adminOnly: true },
+      { prefix: 'unhide', usage: '• /unhide body <nama_karakter> : Tampilkan kembali karakter ke toko (Only Admin)', adminOnly: true },
+      { prefix: 'enable', usage: '• /enable cmd <target|all> : Izinkan siswa di room pakai perintah chat (sementara)', staffStrict: true },
+      { prefix: 'disable', usage: '• /disable cmd <target|all> : Cabut akses perintah chat siswa di room', staffStrict: true },
+    ];
+
+    if (cmd === 'help' || cmd === 'cmd') {
+      const sub = (arg1 || parts[1])?.toLowerCase();
+      if (sub && sub !== 'all') {
+        const matching = ALL_COMMANDS.filter((c) => {
+          if (c.adminOnly && !isAdmin) return false;
+          if (c.staffStrict && !isStaff) return false;
+          if (c.staffOnly && !isStaff && !isStudentCmdAllowed(myIdRef.current)) return false;
+          return c.prefix === sub || c.prefix.startsWith(sub);
+        });
+        if (matching.length > 0) {
+          addSystemChatMessage(`Format perintah /${sub}:`);
+          for (const m of matching) {
+            addSystemChatMessage(m.usage);
           }
+          return;
         }
-        setRopedByUserId(target.id);
-        // Mode Follow: otomatis aktifkan mode mirror ke player yang diikuti
-        mirrorTargetRef.current = { userId: target.id, username: target.username };
-        mirrorFetchTargetRef.current = target.id;
-        setMirrorTarget(target.username);
+      }
+      // Ringkas: tidak banjir chat menjelaskan semuanya sekaligus
+      addSystemChatMessage('--- DAFTAR PERINTAH CHAT ---');
+      addSystemChatMessage('Ketik perintah untuk melihat format syntaxnya (contoh: /skip):');
+      addSystemChatMessage('• /set, /unset, /teleport, /mirror, /reset');
+      addSystemChatMessage('• /follow <user>, /unfollow');
+      if (isAdmin || isStaff) {
+        addSystemChatMessage('• /spawn, /jail, /enable, /disable, /take, /untake');
+      }
+      if (isAdmin) {
+        addSystemChatMessage('• /skip');
+      }
+      addSystemChatMessage('• /change, /cls');
+      return;
+    }
+    // /follow <target> & /unfollow
+    if (cmd === 'follow') {
+      const targetQuery = arg1 || parts[1];
+      if (!targetQuery) {
+        addSystemChatMessage('Format: /follow <username>');
+        return;
+      }
+      const target = findPlayer(targetQuery);
+      if (!target) {
+        addSystemChatMessage(`Player '${targetQuery}' tidak ditemukan di room.`);
+        return;
+      }
+      if (target.id === myIdRef.current) {
+        addSystemChatMessage('Kamu tidak bisa mengikuti dirimu sendiri.');
+        return;
+      }
+      const me = playersRef.current.get(myIdRef.current);
+      if (me) {
+        me.ropedById = target.id;
         const targetP = playersRef.current.get(target.id);
-        const followStg = targetP?.stage ?? currentStageRef.current;
-        const followStageQs = getStageQuestions(levelQuestionsRef.current, followStg, totalStagesRef.current);
-        questionBlocksRef.current = generateQuestionBlocks(
-          followStageQs.map((q) => q.id),
-          `${target.id}:${roomId}:s${followStg}`,
-          followStg,
-        );
-        answerResultsRef.current.clear();
-        studentChosenAnswersRef.current.clear();
-        fetch('/api/game/room-sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId, targetId: target.id }),
+        if (targetP) {
+          meAdminAnchorRef.current = { x: targetP.x, y: targetP.y };
+          meAdminFacingRef.current = targetP.facing ?? 1;
+        }
+      }
+      setRopedByUserId(target.id);
+      // Mode Follow: otomatis aktifkan mode mirror ke player yang diikuti
+      mirrorTargetRef.current = { userId: target.id, username: target.username };
+      mirrorFetchTargetRef.current = target.id;
+      setMirrorTarget(target.username);
+      const targetP = playersRef.current.get(target.id);
+      const followStg = targetP?.stage ?? currentStageRef.current;
+      const followStageQs = getStageQuestions(levelQuestionsRef.current, followStg, totalStagesRef.current);
+      questionBlocksRef.current = generateQuestionBlocks(
+        followStageQs.map((q) => q.id),
+        `${target.id}:${roomId}:s${followStg}`,
+        followStg,
+      );
+      answerResultsRef.current.clear();
+      studentChosenAnswersRef.current.clear();
+      fetch('/api/game/room-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, targetId: target.id }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) return;
+          if (d.answerResults) {
+            for (const [qid, okAns] of Object.entries(d.answerResults)) {
+              answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
+            }
+          }
+          if (d.chosenAnswers) {
+            for (const [qid, ans] of Object.entries(d.chosenAnswers)) {
+              studentChosenAnswersRef.current.set(qid, String(ans));
+            }
+            setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
+          }
         })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => {
-            if (!d) return;
-            if (d.answerResults) {
-              for (const [qid, okAns] of Object.entries(d.answerResults)) {
-                answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
-              }
-            }
-            if (d.chosenAnswers) {
-              for (const [qid, ans] of Object.entries(d.chosenAnswers)) {
-                studentChosenAnswersRef.current.set(qid, String(ans));
-              }
-              setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
-            }
-          })
-          .catch(() => { });
+        .catch(() => { });
 
-        ably.publishCommand({
-          op: 'rope',
-          targetId: myIdRef.current,
-          value: true,
-          byId: target.id,
-          byName: target.username,
-        });
-        addSystemChatMessage(`🪢 Kamu sekarang mengikuti '${target.username}'! Gerakan & soalnya otomatis di-mirror ke layarmu. Ketik /unfollow untuk melepas.`);
-        soundEngine.playPowerUp();
+      ably.publishCommand({
+        op: 'rope',
+        targetId: myIdRef.current,
+        value: true,
+        byId: target.id,
+        byName: target.username,
+      });
+      addSystemChatMessage(`🪢 Kamu sekarang mengikuti '${target.username}'! Gerakan & soalnya otomatis di-mirror ke layarmu. Ketik /unfollow untuk melepas.`);
+      soundEngine.playPowerUp();
+      return;
+    }
+
+    if (cmd === 'unfollow') {
+      const me = playersRef.current.get(myIdRef.current);
+      if (!me?.ropedById && !ropedByUserId) {
+        addSystemChatMessage('Kamu sedang tidak mengikuti player siapa pun.');
+        return;
+      }
+      if (me) {
+        me.ropedById = null;
+        me.adminAnchor = undefined;
+        me.adminFacing = undefined;
+      }
+      meAdminAnchorRef.current = null;
+      meAdminFacingRef.current = 1;
+      setRopedByUserId(null);
+      if (mirrorTargetRef.current && mirrorTargetRef.current !== 'all') {
+        mirrorTargetRef.current = null;
+        mirrorFetchTargetRef.current = null;
+        setMirrorTarget(null);
+        questionBlocksRef.current = [];
+      }
+      ably.publishCommand({
+        op: 'rope',
+        targetId: myIdRef.current,
+        value: false,
+      });
+      addSystemChatMessage('🪢 Kamu telah berhenti mengikuti player (Unfollow). Bebas bergerak kembali!');
+      soundEngine.playBounce();
+      return;
+    }
+
+    if (cmd === 'cls' || cmd === 'clear') {
+      setChat([]);
+      seenMsgIdsRef.current.clear();
+      setUnreadCount(0);
+      return;
+    }
+
+    // /set semiadmin <target> & /unset semiadmin <target>
+    if ((cmd === 'set' || cmd === 'unset') && (arg1 === 'semiadmin' || arg1 === 'ketua')) {
+      if (!isStaff) {
+        addSystemChatMessage('Perintah Semi-Admin hanya dapat diatur oleh Guru atau Administrator.');
+        return;
+      }
+      const targetQuery = (arg2 || parts[2])?.toLowerCase();
+      if (!targetQuery) {
+        addSystemChatMessage(`Format: /${cmd} semiadmin <target>`);
+        return;
+      }
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      const isTurnOn = cmd === 'set';
+      const p = playersRef.current.get(target.id);
+      if (p) {
+        p.tag = isTurnOn ? '⭐ SEMI-ADMIN' : undefined;
+        p.gun = isTurnOn ? 'ice' : null;
+        p.blasterAmmo = isTurnOn ? Infinity : 0;
+        p.hasAdminGun = isTurnOn;
+        p.blasterUntil = undefined;
+      }
+      if (target.id === myIdRef.current) {
+        setAmmoCount(isTurnOn ? Infinity : 0);
+      }
+      ably.publishCommand({ op: 'cosmetics', targetId: target.id, tag: isTurnOn ? '⭐ SEMI-ADMIN' : '' });
+      ably.publishCommand({ op: 'gun', targetId: target.id, value: isTurnOn, weapon: isTurnOn ? 'ice' : 'none' });
+      addSystemChatMessage(
+        isTurnOn
+          ? `⭐ '${target.username}' sekarang diangkat menjadi SEMI-ADMIN (Ketua Kelas) dan dibekali Ice Gun!`
+          : `⭐ Status Semi-Admin '${target.username}' telah dicabut.`,
+      );
+      if (isTurnOn) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
+      return;
+    }
+
+    // /set pvp <on|off> & /unset pvp
+    if ((cmd === 'set' && arg1 === 'pvp') || (cmd === 'unset' && arg1 === 'pvp')) {
+      if (!isStaff) {
+        addSystemChatMessage('Pengaturan PvP hanya dapat diatur oleh Guru atau Administrator.');
+        return;
+      }
+      const isTurnOn = cmd === 'set' && (arg2 === 'on' || !arg2 || arg2 === 'true');
+      isStudentPvpEnabledRef.current = isTurnOn;
+      setIsStudentPvpEnabled(isTurnOn);
+      for (const p of playersRef.current.values()) {
+        p.hp = 5;
+        if (isTurnOn && (p.role === 'student' || (!p.role && p.id !== myIdRef.current))) {
+          p.isGodMode = false;
+        }
+      }
+      if (isTurnOn && myRoleRef.current === 'student') {
+        isGodModeRef.current = false;
+        setIsGodMode(false);
+      }
+      ably.publishCommand({ op: 'pvp_mode', value: isTurnOn });
+      addSystemChatMessage(
+        isTurnOn
+          ? '⚔️ Mode Tawuran Siswa DIAKTIFKAN oleh Guru/Admin! Bar darah aktif (5 HP), siswa bisa saling tembak & mode god siswa dinonaktifkan.'
+          : '🕊️ Mode Damai DIAKTIFKAN. Tembakan antar siswa dinonaktifkan & bar darah ditutup.',
+      );
+      if (isTurnOn) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
+      return;
+    }
+
+    if ((cmd === 'set' || cmd === 'unset') && arg1 === 'god') {
+      const isTurnOn = cmd === 'set';
+      const targetQuery = (arg2 || parts[2])?.toLowerCase();
+      if (!targetQuery) {
+        addSystemChatMessage(`Format: /${cmd} god <user|me|here|all>`);
         return;
       }
 
-      if (cmd === 'unfollow') {
-        const me = playersRef.current.get(myIdRef.current);
-        if (!me?.ropedById && !ropedByUserId) {
-          addSystemChatMessage('Kamu sedang tidak mengikuti player siapa pun.');
+      if (targetQuery === 'all') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'all' hanya dapat digunakan oleh Administrator.");
           return;
         }
-        if (me) {
-          me.ropedById = null;
-          me.adminAnchor = undefined;
-          me.adminFacing = undefined;
-        }
-        meAdminAnchorRef.current = null;
-        meAdminFacingRef.current = 1;
-        setRopedByUserId(null);
-        if (mirrorTargetRef.current && mirrorTargetRef.current !== 'all') {
-          mirrorTargetRef.current = null;
-          mirrorFetchTargetRef.current = null;
-          setMirrorTarget(null);
-          questionBlocksRef.current = [];
-        }
-        ably.publishCommand({
-          op: 'rope',
-          targetId: myIdRef.current,
-          value: false,
-        });
-        addSystemChatMessage('🪢 Kamu telah berhenti mengikuti player (Unfollow). Bebas bergerak kembali!');
-        soundEngine.playBounce();
-        return;
-      }
-
-      if (cmd === 'cls' || cmd === 'clear') {
-        setChat([]);
-        seenMsgIdsRef.current.clear();
-        setUnreadCount(0);
-        return;
-      }
-
-      // /set semiadmin <target> & /unset semiadmin <target>
-      if ((cmd === 'set' || cmd === 'unset') && (arg1 === 'semiadmin' || arg1 === 'ketua')) {
-        if (!isStaff) {
-          addSystemChatMessage('Perintah Semi-Admin hanya dapat diatur oleh Guru atau Administrator.');
-          return;
-        }
-        const targetQuery = (arg2 || parts[2])?.toLowerCase();
-        if (!targetQuery) {
-          addSystemChatMessage(`Format: /${cmd} semiadmin <target>`);
-          return;
-        }
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        const isTurnOn = cmd === 'set';
-        const p = playersRef.current.get(target.id);
-        if (p) {
-          p.tag = isTurnOn ? '⭐ SEMI-ADMIN' : undefined;
-          p.gun = isTurnOn ? 'ice' : null;
-          p.blasterAmmo = isTurnOn ? Infinity : 0;
-          p.hasAdminGun = isTurnOn;
-          p.blasterUntil = undefined;
-        }
-        if (target.id === myIdRef.current) {
-          setAmmoCount(isTurnOn ? Infinity : 0);
-        }
-        ably.publishCommand({ op: 'cosmetics', targetId: target.id, tag: isTurnOn ? '⭐ SEMI-ADMIN' : '' });
-        ably.publishCommand({ op: 'gun', targetId: target.id, value: isTurnOn, weapon: isTurnOn ? 'ice' : 'none' });
-        addSystemChatMessage(
-          isTurnOn
-            ? `⭐ '${target.username}' sekarang diangkat menjadi SEMI-ADMIN (Ketua Kelas) dan dibekali Ice Gun!`
-            : `⭐ Status Semi-Admin '${target.username}' telah dicabut.`,
-        );
-        if (isTurnOn) soundEngine.playPowerUp();
-        else soundEngine.playBounce();
-        return;
-      }
-
-      // /set pvp <on|off> & /unset pvp
-      if ((cmd === 'set' && arg1 === 'pvp') || (cmd === 'unset' && arg1 === 'pvp')) {
-        if (!isStaff) {
-          addSystemChatMessage('Pengaturan PvP hanya dapat diatur oleh Guru atau Administrator.');
-          return;
-        }
-        const isTurnOn = cmd === 'set' && (arg2 === 'on' || !arg2 || arg2 === 'true');
-        isStudentPvpEnabledRef.current = isTurnOn;
-        setIsStudentPvpEnabled(isTurnOn);
         for (const p of playersRef.current.values()) {
-          p.hp = 5;
-          if (isTurnOn && (p.role === 'student' || (!p.role && p.id !== myIdRef.current))) {
+          if (isTurnOn && isStudentPvpEnabledRef.current && (p.role === 'student' || (!p.role && p.id !== myIdRef.current))) {
             p.isGodMode = false;
+          } else {
+            p.isGodMode = isTurnOn;
           }
         }
-        if (isTurnOn && myRoleRef.current === 'student') {
+        if (isTurnOn && isStudentPvpEnabledRef.current && myRoleRef.current === 'student') {
           isGodModeRef.current = false;
           setIsGodMode(false);
-        }
-        ably.publishCommand({ op: 'pvp_mode', value: isTurnOn });
-        addSystemChatMessage(
-          isTurnOn
-            ? '⚔️ Mode Tawuran Siswa DIAKTIFKAN oleh Guru/Admin! Bar darah aktif (5 HP), siswa bisa saling tembak & mode god siswa dinonaktifkan.'
-            : '🕊️ Mode Damai DIAKTIFKAN. Tembakan antar siswa dinonaktifkan & bar darah ditutup.',
-        );
-        if (isTurnOn) soundEngine.playPowerUp();
-        else soundEngine.playBounce();
-        return;
-      }
-
-      if ((cmd === 'set' || cmd === 'unset') && arg1 === 'god') {
-        const isTurnOn = cmd === 'set';
-        const targetQuery = (arg2 || parts[2])?.toLowerCase();
-        if (!targetQuery) {
-          addSystemChatMessage(`Format: /${cmd} god <user|me|here|all>`);
-          return;
-        }
-
-        if (targetQuery === 'all') {
-          if (!isAdmin) {
-            addSystemChatMessage("Target 'all' hanya dapat digunakan oleh Administrator.");
-            return;
-          }
-          for (const p of playersRef.current.values()) {
-            if (isTurnOn && isStudentPvpEnabledRef.current && (p.role === 'student' || (!p.role && p.id !== myIdRef.current))) {
-              p.isGodMode = false;
-            } else {
-              p.isGodMode = isTurnOn;
-            }
-          }
-          if (isTurnOn && isStudentPvpEnabledRef.current && myRoleRef.current === 'student') {
-            isGodModeRef.current = false;
-            setIsGodMode(false);
-          } else {
-            isGodModeRef.current = isTurnOn;
-            setIsGodMode(isTurnOn);
-          }
-          ably.publishCommand({ op: 'god', targetId: 'all', value: isTurnOn });
-          addSystemChatMessage(
-            isTurnOn
-              ? '👑 God Mode DIAKTIFKAN untuk SEMUA player di game. (Kebal & Infinite Laser)'
-              : '🛡️ God Mode DINONAKTIFKAN untuk SEMUA player di game.',
-          );
-          if (isTurnOn) soundEngine.playPowerUp();
-          else soundEngine.playBounce();
-          return;
-        }
-
-        if (targetQuery === 'here') {
-          if (!isAdmin) {
-            addSystemChatMessage("Target 'here' hanya dapat digunakan oleh Administrator.");
-            return;
-          }
-          const adminStage = currentStageRef.current;
-          const targets: { id: string; username: string }[] = [];
-          for (const p of playersRef.current.values()) {
-            if ((p.stage ?? 1) === adminStage) {
-              targets.push({ id: p.id, username: p.username });
-            }
-          }
-          for (const t of targets) {
-            const p = playersRef.current.get(t.id);
-            const tRole = p?.role ?? (t.id === myIdRef.current ? myRoleRef.current : 'student');
-            if (isTurnOn && isStudentPvpEnabledRef.current && tRole === 'student') {
-              if (p) p.isGodMode = false;
-              continue;
-            }
-            if (p) p.isGodMode = isTurnOn;
-            if (t.id === myIdRef.current) {
-              isGodModeRef.current = isTurnOn;
-              setIsGodMode(isTurnOn);
-            } else {
-              ably.publishCommand({ op: 'god', targetId: t.id, value: isTurnOn, targetName: t.username });
-            }
-          }
-          addSystemChatMessage(
-            isTurnOn
-              ? `👑 God Mode DIAKTIFKAN untuk SEMUA player di Stage ${adminStage} (${targets.length} player).`
-              : `🛡️ God Mode DINONAKTIFKAN untuk SEMUA player di Stage ${adminStage} (${targets.length} player).`,
-          );
-          if (isTurnOn) soundEngine.playPowerUp();
-          else soundEngine.playBounce();
-          return;
-        }
-
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        const targetRole = target.id === myIdRef.current
-          ? myRoleRef.current
-          : (playersRef.current.get(target.id)?.role ?? 'student');
-        if (isTurnOn && isStudentPvpEnabledRef.current && targetRole === 'student') {
-          addSystemChatMessage(`🚫 Mode God tidak dapat diaktifkan untuk siswa '${target.username}' saat Mode Saling Tembak (PvP) aktif!`);
-          soundEngine.playBounce();
-          return;
-        }
-        const p = playersRef.current.get(target.id);
-        if (p) p.isGodMode = isTurnOn;
-        if (target.id === myIdRef.current) {
+        } else {
           isGodModeRef.current = isTurnOn;
           setIsGodMode(isTurnOn);
         }
-        ably.publishCommand({ op: 'god', targetId: target.id, value: isTurnOn, targetName: target.username });
+        ably.publishCommand({ op: 'god', targetId: 'all', value: isTurnOn });
         addSystemChatMessage(
           isTurnOn
-            ? `👑 God Mode DIAKTIFKAN untuk '${target.username}'. (Kebal & Infinite Laser)`
-            : `🛡️ God Mode DINONAKTIFKAN untuk '${target.username}'.`,
+            ? '👑 God Mode DIAKTIFKAN untuk SEMUA player di game. (Kebal & Infinite Laser)'
+            : '🛡️ God Mode DINONAKTIFKAN untuk SEMUA player di game.',
         );
         if (isTurnOn) soundEngine.playPowerUp();
         else soundEngine.playBounce();
         return;
       }
 
-      if (cmd === 'teleport') {
-        const targetQuery = arg1;
-        const dest = arg2;
-
-        if (!targetQuery) {
-          addSystemChatMessage('Format: /teleport <username>, /teleport <user|here|all> [me|<stage>]');
+      if (targetQuery === 'here') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'here' hanya dapat digunakan oleh Administrator.");
           return;
         }
-
-        if (targetQuery === 'here') {
-          if (!isAdmin) {
-            addSystemChatMessage('Perintah /teleport here hanya dapat digunakan oleh Administrator.');
-            return;
+        const adminStage = currentStageRef.current;
+        const targets: { id: string; username: string }[] = [];
+        for (const p of playersRef.current.values()) {
+          if ((p.stage ?? 1) === adminStage) {
+            targets.push({ id: p.id, username: p.username });
           }
-          const adminStage = currentStageRef.current;
-          const targets: { id: string; username: string }[] = [];
-          for (const p of playersRef.current.values()) {
-            if (p.id === myIdRef.current) continue;
-            if ((p.stage ?? 1) === adminStage) {
-              targets.push({ id: p.id, username: p.username });
-            }
+        }
+        for (const t of targets) {
+          const p = playersRef.current.get(t.id);
+          const tRole = p?.role ?? (t.id === myIdRef.current ? myRoleRef.current : 'student');
+          if (isTurnOn && isStudentPvpEnabledRef.current && tRole === 'student') {
+            if (p) p.isGodMode = false;
+            continue;
           }
-          if (targets.length === 0) {
-            addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
-            return;
-          }
-          if (!dest || dest === 'me') {
-            const me = playersRef.current.get(myIdRef.current);
-            for (const t of targets) {
-              ably.publishCommand({
-                op: 'teleport',
-                targetId: t.id,
-                stage: adminStage,
-                x: me?.x ?? 120,
-                y: me?.y ?? 600,
-              });
-            }
-            addSystemChatMessage(`🌀 Berhasil teleport SEMUA player di Stage ${adminStage} (${targets.length} player) ke posisimu.`);
+          if (p) p.isGodMode = isTurnOn;
+          if (t.id === myIdRef.current) {
+            isGodModeRef.current = isTurnOn;
+            setIsGodMode(isTurnOn);
           } else {
-            const parsed = parseStageInput(dest, totalStagesRef.current, selectedStagesRef.current);
-            if (parsed) {
-              for (const t of targets) {
-                ably.publishCommand({ op: 'teleport', targetId: t.id, stage: parsed.stageOrder });
-              }
-              addSystemChatMessage(`🌀 Berhasil teleport SEMUA player di Stage ${adminStage} (${targets.length} player) ke Stage ${parsed.realStageId} (${getStageShortName(parsed.realStageId)}).`);
-            } else {
-              const choices = selectedStagesRef.current.map((s, i) => `${i + 1} (S${s})`).join(', ');
-              addSystemChatMessage(`Nomor stage tidak valid (Pilihan urutan 1-${totalStagesRef.current} atau ID: ${choices}).`);
-            }
+            ably.publishCommand({ op: 'god', targetId: t.id, value: isTurnOn, targetName: t.username });
           }
-          soundEngine.playBounce();
+        }
+        addSystemChatMessage(
+          isTurnOn
+            ? `👑 God Mode DIAKTIFKAN untuk SEMUA player di Stage ${adminStage} (${targets.length} player).`
+            : `🛡️ God Mode DINONAKTIFKAN untuk SEMUA player di Stage ${adminStage} (${targets.length} player).`,
+        );
+        if (isTurnOn) soundEngine.playPowerUp();
+        else soundEngine.playBounce();
+        return;
+      }
+
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      const targetRole = target.id === myIdRef.current
+        ? myRoleRef.current
+        : (playersRef.current.get(target.id)?.role ?? 'student');
+      if (isTurnOn && isStudentPvpEnabledRef.current && targetRole === 'student') {
+        addSystemChatMessage(`🚫 Mode God tidak dapat diaktifkan untuk siswa '${target.username}' saat Mode Saling Tembak (PvP) aktif!`);
+        soundEngine.playBounce();
+        return;
+      }
+      const p = playersRef.current.get(target.id);
+      if (p) p.isGodMode = isTurnOn;
+      if (target.id === myIdRef.current) {
+        isGodModeRef.current = isTurnOn;
+        setIsGodMode(isTurnOn);
+      }
+      ably.publishCommand({ op: 'god', targetId: target.id, value: isTurnOn, targetName: target.username });
+      addSystemChatMessage(
+        isTurnOn
+          ? `👑 God Mode DIAKTIFKAN untuk '${target.username}'. (Kebal & Infinite Laser)`
+          : `🛡️ God Mode DINONAKTIFKAN untuk '${target.username}'.`,
+      );
+      if (isTurnOn) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
+      return;
+    }
+
+    if (cmd === 'teleport') {
+      const targetQuery = arg1;
+      const dest = arg2;
+
+      if (!targetQuery) {
+        addSystemChatMessage('Format: /teleport <username>, /teleport <user|here|all> [me|<stage>]');
+        return;
+      }
+
+      if (targetQuery === 'here') {
+        if (!isAdmin) {
+          addSystemChatMessage('Perintah /teleport here hanya dapat digunakan oleh Administrator.');
           return;
         }
-
-        if (targetQuery === 'all') {
-          if (!isAdmin) {
-            addSystemChatMessage('Perintah /teleport all hanya dapat digunakan oleh Administrator.');
-            return;
+        const adminStage = currentStageRef.current;
+        const targets: { id: string; username: string }[] = [];
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          if ((p.stage ?? 1) === adminStage) {
+            targets.push({ id: p.id, username: p.username });
           }
-          if (dest === 'me' || dest === 'here' || !dest) {
-            const me = playersRef.current.get(myIdRef.current);
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
+          return;
+        }
+        if (!dest || dest === 'me') {
+          const me = playersRef.current.get(myIdRef.current);
+          for (const t of targets) {
             ably.publishCommand({
               op: 'teleport',
-              targetId: 'all',
-              stage: currentStageRef.current,
+              targetId: t.id,
+              stage: adminStage,
               x: me?.x ?? 120,
               y: me?.y ?? 600,
             });
-            addSystemChatMessage(`Berhasil teleport SELURUH siswa ke posisimu di Stage ${currentStageRef.current}.`);
-          } else {
-            const parsed = parseStageInput(dest, totalStagesRef.current, selectedStagesRef.current);
-            if (parsed) {
-              ably.publishCommand({ op: 'teleport', targetId: 'all', stage: parsed.stageOrder });
-              addSystemChatMessage(`Berhasil teleport SELURUH siswa ke Stage ${parsed.realStageId} (${getStageShortName(parsed.realStageId)}).`);
-            } else {
-              const choices = selectedStagesRef.current.map((s, i) => `${i + 1} (S${s})`).join(', ');
-              addSystemChatMessage(`Nomor stage tidak valid (Pilihan urutan 1-${totalStagesRef.current} atau ID: ${choices}).`);
-            }
           }
-          soundEngine.playBounce();
-          return;
-        }
-
-        // /teleport <username> : admin nyamperin player tersebut (ganti stage + posisi persis)
-        if (!dest) {
-          if (!isAdmin) {
-            addSystemChatMessage('Perintah /teleport hanya dapat digunakan oleh Administrator.');
-            return;
-          }
-          const target = resolveTarget(targetQuery);
-          if (!target) return;
-          const me = playersRef.current.get(myIdRef.current);
-          if (!me) {
-            addSystemChatMessage('Karaktermu belum siap, coba lagi.');
-            return;
-          }
-          const targetLive = playersRef.current.get(target.id);
-          const targetStage =
-            typeof targetLive?.stage === 'number' && targetLive.stage >= 1
-              ? targetLive.stage
-              : currentStageRef.current;
-          const targetX = targetLive?.x ?? 120;
-          const targetY = targetLive?.y ?? 600;
-          if (targetStage !== currentStageRef.current) {
-            applyStage(targetStage, { respawnPlayer: true, showToast: true });
-          }
-          me.x = targetX;
-          me.y = targetY;
-          me.vx = 0;
-          me.vy = 0;
-          me.stage = targetStage;
-          soundEngine.playBounce();
-          const realTargetStageId = selectedStagesRef.current[targetStage - 1] ?? targetStage;
-          showBanner(`🌀 Teleport ke '${target.username}' (Stage ${realTargetStageId}: ${getStageShortName(realTargetStageId)}).`);
-          addSystemChatMessage(`Berhasil teleport ke '${target.username}' di Stage ${realTargetStageId} (${getStageShortName(realTargetStageId)}).`);
-          return;
-        }
-
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-
-        if (dest === 'me') {
-          const me = playersRef.current.get(myIdRef.current);
-          ably.publishCommand({
-            op: 'teleport',
-            targetId: target.id,
-            stage: currentStageRef.current,
-            x: me?.x ?? 120,
-            y: me?.y ?? 600,
-          });
-          addSystemChatMessage(`Berhasil teleport '${target.username}' ke posisimu.`);
+          addSystemChatMessage(`🌀 Berhasil teleport SEMUA player di Stage ${adminStage} (${targets.length} player) ke posisimu.`);
         } else {
           const parsed = parseStageInput(dest, totalStagesRef.current, selectedStagesRef.current);
           if (parsed) {
-            if (target.id === myIdRef.current) {
-              applyStage(parsed.stageOrder, { respawnPlayer: true, showToast: true });
-            } else {
-              ably.publishCommand({ op: 'teleport', targetId: target.id, stage: parsed.stageOrder });
+            for (const t of targets) {
+              ably.publishCommand({ op: 'teleport', targetId: t.id, stage: parsed.stageOrder });
             }
-            addSystemChatMessage(`Berhasil teleport '${target.username}' ke Stage ${parsed.realStageId} (${getStageShortName(parsed.realStageId)}).`);
+            addSystemChatMessage(`🌀 Berhasil teleport SEMUA player di Stage ${adminStage} (${targets.length} player) ke Stage ${parsed.realStageId} (${getStageShortName(parsed.realStageId)}).`);
           } else {
             const choices = selectedStagesRef.current.map((s, i) => `${i + 1} (S${s})`).join(', ');
             addSystemChatMessage(`Nomor stage tidak valid (Pilihan urutan 1-${totalStagesRef.current} atau ID: ${choices}).`);
@@ -4947,3084 +4869,3179 @@ export default function GamePage() {
         return;
       }
 
-      if ((cmd === 'take' || cmd === 'untake') && arg1 === 'rope') {
+      if (targetQuery === 'all') {
         if (!isAdmin) {
-          addSystemChatMessage('Perintah rope hanya dapat digunakan oleh Administrator.');
+          addSystemChatMessage('Perintah /teleport all hanya dapat digunakan oleh Administrator.');
           return;
         }
-        const wantRope = cmd === 'take';
-        const targetQuery = arg2;
-        if (!targetQuery) {
-          addSystemChatMessage(`Format: /${cmd} rope <username|here|all>`);
+        if (dest === 'me' || dest === 'here' || !dest) {
+          const me = playersRef.current.get(myIdRef.current);
+          ably.publishCommand({
+            op: 'teleport',
+            targetId: 'all',
+            stage: currentStageRef.current,
+            x: me?.x ?? 120,
+            y: me?.y ?? 600,
+          });
+          addSystemChatMessage(`Berhasil teleport SELURUH siswa ke posisimu di Stage ${currentStageRef.current}.`);
+        } else {
+          const parsed = parseStageInput(dest, totalStagesRef.current, selectedStagesRef.current);
+          if (parsed) {
+            ably.publishCommand({ op: 'teleport', targetId: 'all', stage: parsed.stageOrder });
+            addSystemChatMessage(`Berhasil teleport SELURUH siswa ke Stage ${parsed.realStageId} (${getStageShortName(parsed.realStageId)}).`);
+          } else {
+            const choices = selectedStagesRef.current.map((s, i) => `${i + 1} (S${s})`).join(', ');
+            addSystemChatMessage(`Nomor stage tidak valid (Pilihan urutan 1-${totalStagesRef.current} atau ID: ${choices}).`);
+          }
+        }
+        soundEngine.playBounce();
+        return;
+      }
+
+      // /teleport <username> : admin nyamperin player tersebut (ganti stage + posisi persis)
+      if (!dest) {
+        if (!isAdmin) {
+          addSystemChatMessage('Perintah /teleport hanya dapat digunakan oleh Administrator.');
           return;
         }
+        const target = resolveTarget(targetQuery);
+        if (!target) return;
         const me = playersRef.current.get(myIdRef.current);
         if (!me) {
           addSystemChatMessage('Karaktermu belum siap, coba lagi.');
           return;
         }
-        const adminStage = currentStageRef.current;
-        const targets: { id: string; username: string }[] = [];
-        if (targetQuery === 'all') {
-          for (const p of playersRef.current.values()) {
-            if (p.id === myIdRef.current) continue;
-            targets.push({ id: p.id, username: p.username });
-          }
-          if (wantRope && targets.length === 0) {
-            addSystemChatMessage('Tidak ada player untuk diikat.');
-            return;
-          }
-        } else if (targetQuery === 'here') {
-          for (const p of playersRef.current.values()) {
-            if (p.id === myIdRef.current) continue;
-            if ((p.stage ?? 1) === adminStage) {
-              targets.push({ id: p.id, username: p.username });
-            }
-          }
-          if (targets.length === 0) {
-            addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
-            return;
-          }
-        } else {
-          const target = resolveTarget(targetQuery);
-          if (!target) return;
-          if (target.id === myIdRef.current) {
-            addSystemChatMessage('Tidak bisa mengikat diri sendiri. 🪢');
-            return;
-          }
-          targets.push(target);
+        const targetLive = playersRef.current.get(target.id);
+        const targetStage =
+          typeof targetLive?.stage === 'number' && targetLive.stage >= 1
+            ? targetLive.stage
+            : currentStageRef.current;
+        const targetX = targetLive?.x ?? 120;
+        const targetY = targetLive?.y ?? 600;
+        if (targetStage !== currentStageRef.current) {
+          applyStage(targetStage, { respawnPlayer: true, showToast: true });
         }
-        if (!wantRope && targetQuery === 'all') {
-          // Paksa lepas SEMUA tali di semua client sekaligus (broadcast rope_all_clear).
-          // Ini menormalkan player yang mungkin sudah pergi / rejoin / pindah stage.
-          ably.publishCommand({ op: 'rope_all_clear' });
-          for (const p of playersRef.current.values()) {
-            p.ropedById = null;
-            p.adminAnchor = undefined;
-            p.adminFacing = undefined;
-          }
-          meAdminAnchorRef.current = null;
-          addSystemChatMessage('🪢 Semua tali dilepas, semua player dinormalkan.');
-          soundEngine.playBounce();
-          return;
-        }
-        for (const t of targets) {
-          const p = playersRef.current.get(t.id);
-          if (p) {
-            p.ropedById = wantRope ? myIdRef.current : null;
-            if (!wantRope) {
-              p.adminAnchor = undefined;
-              p.adminFacing = undefined;
-            }
-          }
-          ably.publishCommand({
-            op: 'rope',
-            targetId: t.id,
-            value: wantRope,
-            byId: myIdRef.current,
-            byName: myUsernameRef.current || 'Admin',
-          });
-        }
-        const names = targetQuery === 'here'
-          ? `SEMUA player di Stage ${adminStage} (${targets.length} player)`
-          : targetQuery === 'all'
-            ? `SEMUA player di game (${targets.length} player)`
-            : `'${targets.map((t) => t.username).join(', ')}'`;
-        addSystemChatMessage(
-          wantRope
-            ? `🪢 Mengikat ${names} dengan tali. Mereka akan mengikutimu & kebal rintangan.`
-            : `🪢 Melepas tali ${names}.`,
-        );
-        if (wantRope) soundEngine.playPowerUp();
-        else soundEngine.playBounce();
+        me.x = targetX;
+        me.y = targetY;
+        me.vx = 0;
+        me.vy = 0;
+        me.stage = targetStage;
+        soundEngine.playBounce();
+        const realTargetStageId = selectedStagesRef.current[targetStage - 1] ?? targetStage;
+        showBanner(`🌀 Teleport ke '${target.username}' (Stage ${realTargetStageId}: ${getStageShortName(realTargetStageId)}).`);
+        addSystemChatMessage(`Berhasil teleport ke '${target.username}' di Stage ${realTargetStageId} (${getStageShortName(realTargetStageId)}).`);
         return;
       }
 
-      if (cmd === 'skip') {
-        if (!isAdmin) {
-          addSystemChatMessage('Perintah /skip stage hanya dapat digunakan oleh Administrator.');
-          return;
-        }
-        if (arg1 !== 'stage' || !arg2) {
-          addSystemChatMessage('Perintah tidak lengkap. Format:');
-          addSystemChatMessage('• /skip stage <username|here|all|rope> : Tandai soal tersisa selesai (here = stagemu, all = se-game, rope = diikat tali).');
-          return;
-        }
-        const targetQuery = arg2?.toLowerCase();
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
 
-        // /skip stage rope: bypass SEMUA player yang sedang diikat tali oleh admin
-        if (targetQuery === 'rope') {
-          const targets: { id: string; username: string; stage: number }[] = [];
-          for (const p of playersRef.current.values()) {
-            if (p.id === myIdRef.current) continue;
-            if (p.ropedById !== myIdRef.current) continue;
-            targets.push({ id: p.id, username: p.username, stage: p.stage ?? 1 });
+      if (dest === 'me') {
+        const me = playersRef.current.get(myIdRef.current);
+        ably.publishCommand({
+          op: 'teleport',
+          targetId: target.id,
+          stage: currentStageRef.current,
+          x: me?.x ?? 120,
+          y: me?.y ?? 600,
+        });
+        addSystemChatMessage(`Berhasil teleport '${target.username}' ke posisimu.`);
+      } else {
+        const parsed = parseStageInput(dest, totalStagesRef.current, selectedStagesRef.current);
+        if (parsed) {
+          if (target.id === myIdRef.current) {
+            applyStage(parsed.stageOrder, { respawnPlayer: true, showToast: true });
+          } else {
+            ably.publishCommand({ op: 'teleport', targetId: target.id, stage: parsed.stageOrder });
           }
-          if (targets.length === 0) {
-            addSystemChatMessage('Tidak ada player yang sedang diikat tali. 🪢');
-            return;
-          }
-          try {
-            let totalMarked = 0;
-            for (const t of targets) {
-              const stageQs = getStageQuestions(levelQuestionsRef.current, t.stage, totalStagesRef.current);
-              if (stageQs.length === 0) continue;
-              const res = await fetch('/api/game/room-sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, targetId: t.id }),
-              });
-              const data = await res.json();
-              const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
-              const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
-              if (unanswered.length === 0) continue;
-              const qids = unanswered.map((q) => q.id);
-              await fetch('/api/game/skip-stage', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, targetId: t.id, stage: t.stage, questionIds: qids }),
-              });
-              ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: t.stage });
-              totalMarked += qids.length;
-            }
-            addSystemChatMessage(`⏭️ Skip stage rope (${targets.length} player diikat): ${totalMarked} soal ditandai selesai (tanpa poin).`);
-            soundEngine.playPowerUp();
-          } catch {
-            addSystemChatMessage('Gagal skip stage rope, coba lagi.');
-          }
+          addSystemChatMessage(`Berhasil teleport '${target.username}' ke Stage ${parsed.realStageId} (${getStageShortName(parsed.realStageId)}).`);
+        } else {
+          const choices = selectedStagesRef.current.map((s, i) => `${i + 1} (S${s})`).join(', ');
+          addSystemChatMessage(`Nomor stage tidak valid (Pilihan urutan 1-${totalStagesRef.current} atau ID: ${choices}).`);
+        }
+      }
+      soundEngine.playBounce();
+      return;
+    }
+
+    if ((cmd === 'take' || cmd === 'untake') && arg1 === 'rope') {
+      if (!isAdmin) {
+        addSystemChatMessage('Perintah rope hanya dapat digunakan oleh Administrator.');
+        return;
+      }
+      const wantRope = cmd === 'take';
+      const targetQuery = arg2;
+      if (!targetQuery) {
+        addSystemChatMessage(`Format: /${cmd} rope <username|here|all>`);
+        return;
+      }
+      const me = playersRef.current.get(myIdRef.current);
+      if (!me) {
+        addSystemChatMessage('Karaktermu belum siap, coba lagi.');
+        return;
+      }
+      const adminStage = currentStageRef.current;
+      const targets: { id: string; username: string }[] = [];
+      if (targetQuery === 'all') {
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          targets.push({ id: p.id, username: p.username });
+        }
+        if (wantRope && targets.length === 0) {
+          addSystemChatMessage('Tidak ada player untuk diikat.');
           return;
         }
-
-        // /skip stage here: bypass SEMUA player yang ada di stage yang sama dengan admin
-        if (targetQuery === 'here') {
-          const adminStage = currentStageRef.current;
-          const stageQs = getStageQuestions(levelQuestionsRef.current, adminStage, totalStagesRef.current);
-          if (stageQs.length === 0) {
-            addSystemChatMessage(`Tidak ada soal di stage ${adminStage}.`);
-            return;
-          }
-          const targets: { id: string; username: string }[] = [];
-          for (const p of playersRef.current.values()) {
-            if (p.id === myIdRef.current) continue;
-            if ((p.stage ?? 1) !== adminStage) continue;
+      } else if (targetQuery === 'here') {
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          if ((p.stage ?? 1) === adminStage) {
             targets.push({ id: p.id, username: p.username });
           }
-          if (targets.length === 0) {
-            addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
-            return;
-          }
-          try {
-            let totalMarked = 0;
-            for (const t of targets) {
-              const res = await fetch('/api/game/room-sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, targetId: t.id }),
-              });
-              const data = await res.json();
-              const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
-              const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
-              if (unanswered.length === 0) continue;
-              const qids = unanswered.map((q) => q.id);
-              await fetch('/api/game/skip-stage', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, targetId: t.id, stage: adminStage, questionIds: qids }),
-              });
-              ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: adminStage });
-              totalMarked += qids.length;
-            }
-            addSystemChatMessage(`⏭️ Skip stage here (${targets.length} player di Stage ${adminStage}): ${totalMarked} soal ditandai selesai (tanpa poin).`);
-            soundEngine.playPowerUp();
-          } catch {
-            addSystemChatMessage('Gagal skip stage here, coba lagi.');
-          }
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
           return;
         }
-
-        // /skip stage all: bypass SEMUA player di seluruh game
-        if (targetQuery === 'all') {
-          const targets: { id: string; username: string; stage: number }[] = [];
-          for (const p of playersRef.current.values()) {
-            if (p.id === myIdRef.current) continue;
-            targets.push({ id: p.id, username: p.username, stage: p.stage ?? 1 });
-          }
-          if (targets.length === 0) {
-            addSystemChatMessage('Tidak ada player lain di game.');
-            return;
-          }
-          try {
-            let totalMarked = 0;
-            for (const t of targets) {
-              const stageQs = getStageQuestions(levelQuestionsRef.current, t.stage, totalStagesRef.current);
-              if (stageQs.length === 0) continue;
-              const res = await fetch('/api/game/room-sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, targetId: t.id }),
-              });
-              const data = await res.json();
-              const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
-              const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
-              if (unanswered.length === 0) continue;
-              const qids = unanswered.map((q) => q.id);
-              await fetch('/api/game/skip-stage', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, targetId: t.id, stage: t.stage, questionIds: qids }),
-              });
-              ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: t.stage });
-              totalMarked += qids.length;
-            }
-            addSystemChatMessage(`⏭️ Skip stage all (${targets.length} player di seluruh game): ${totalMarked} soal ditandai selesai (tanpa poin).`);
-            soundEngine.playPowerUp();
-          } catch {
-            addSystemChatMessage('Gagal skip stage all, coba lagi.');
-          }
-          return;
-        }
+      } else {
         const target = resolveTarget(targetQuery);
         if (!target) return;
         if (target.id === myIdRef.current) {
-          addSystemChatMessage('Tidak bisa skip stage diri sendiri.');
+          addSystemChatMessage('Tidak bisa mengikat diri sendiri. 🪢');
           return;
         }
-        const targetStage = playersRef.current.get(target.id)?.stage ?? currentStageRef.current;
-        const stageQs = getStageQuestions(levelQuestionsRef.current, targetStage, totalStagesRef.current);
-        if (stageQs.length === 0) {
-          addSystemChatMessage(`Tidak ada soal di stage ${targetStage}.`);
+        targets.push(target);
+      }
+      if (!wantRope && targetQuery === 'all') {
+        // Paksa lepas SEMUA tali di semua client sekaligus (broadcast rope_all_clear).
+        // Ini menormalkan player yang mungkin sudah pergi / rejoin / pindah stage.
+        ably.publishCommand({ op: 'rope_all_clear' });
+        for (const p of playersRef.current.values()) {
+          p.ropedById = null;
+          p.adminAnchor = undefined;
+          p.adminFacing = undefined;
+        }
+        meAdminAnchorRef.current = null;
+        addSystemChatMessage('🪢 Semua tali dilepas, semua player dinormalkan.');
+        soundEngine.playBounce();
+        return;
+      }
+      for (const t of targets) {
+        const p = playersRef.current.get(t.id);
+        if (p) {
+          p.ropedById = wantRope ? myIdRef.current : null;
+          if (!wantRope) {
+            p.adminAnchor = undefined;
+            p.adminFacing = undefined;
+          }
+        }
+        ably.publishCommand({
+          op: 'rope',
+          targetId: t.id,
+          value: wantRope,
+          byId: myIdRef.current,
+          byName: myUsernameRef.current || 'Admin',
+        });
+      }
+      const names = targetQuery === 'here'
+        ? `SEMUA player di Stage ${adminStage} (${targets.length} player)`
+        : targetQuery === 'all'
+          ? `SEMUA player di game (${targets.length} player)`
+          : `'${targets.map((t) => t.username).join(', ')}'`;
+      addSystemChatMessage(
+        wantRope
+          ? `🪢 Mengikat ${names} dengan tali. Mereka akan mengikutimu & kebal rintangan.`
+          : `🪢 Melepas tali ${names}.`,
+      );
+      if (wantRope) soundEngine.playPowerUp();
+      else soundEngine.playBounce();
+      return;
+    }
+
+    if (cmd === 'skip') {
+      if (!isAdmin) {
+        addSystemChatMessage('Perintah /skip stage hanya dapat digunakan oleh Administrator.');
+        return;
+      }
+      if (arg1 !== 'stage' || !arg2) {
+        addSystemChatMessage('Perintah tidak lengkap. Format:');
+        addSystemChatMessage('• /skip stage <username|here|all|rope> : Tandai soal tersisa selesai (here = stagemu, all = se-game, rope = diikat tali).');
+        return;
+      }
+      const targetQuery = arg2?.toLowerCase();
+
+      // /skip stage rope: bypass SEMUA player yang sedang diikat tali oleh admin
+      if (targetQuery === 'rope') {
+        const targets: { id: string; username: string; stage: number }[] = [];
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          if (p.ropedById !== myIdRef.current) continue;
+          targets.push({ id: p.id, username: p.username, stage: p.stage ?? 1 });
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage('Tidak ada player yang sedang diikat tali. 🪢');
           return;
         }
         try {
-          const res = await fetch('/api/game/room-sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomId, targetId: target.id }),
-          });
-          const data = await res.json();
-          const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
-          const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
-          if (unanswered.length === 0) {
-            addSystemChatMessage(`Semua soal '${target.username}' di stage ${targetStage} sudah terjawab.`);
-            return;
+          let totalMarked = 0;
+          for (const t of targets) {
+            const stageQs = getStageQuestions(levelQuestionsRef.current, t.stage, totalStagesRef.current);
+            if (stageQs.length === 0) continue;
+            const res = await fetch('/api/game/room-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id }),
+            });
+            const data = await res.json();
+            const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
+            const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
+            if (unanswered.length === 0) continue;
+            const qids = unanswered.map((q) => q.id);
+            await fetch('/api/game/skip-stage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id, stage: t.stage, questionIds: qids }),
+            });
+            ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: t.stage });
+            totalMarked += qids.length;
           }
-          const qids = unanswered.map((q) => q.id);
-          await fetch('/api/game/skip-stage', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomId, targetId: target.id, stage: targetStage, questionIds: qids }),
-          });
-          ably.publishCommand({ op: 'skip_stage', targetId: target.id, qids, stage: targetStage });
-          addSystemChatMessage(`⏭️ Skip stage untuk '${target.username}': ${unanswered.length} soal ditandai selesai (tanpa poin). Gerbang terbuka, lanjut ke stage berikutnya!`);
+          addSystemChatMessage(`⏭️ Skip stage rope (${targets.length} player diikat): ${totalMarked} soal ditandai selesai (tanpa poin).`);
           soundEngine.playPowerUp();
         } catch {
-          addSystemChatMessage('Gagal skip stage, coba lagi.');
+          addSystemChatMessage('Gagal skip stage rope, coba lagi.');
         }
         return;
       }
 
-      if (cmd === 'reset' && arg1 === 'item') {
-        if (!isAdmin) {
-          addSystemChatMessage('Perintah reset item hanya dapat dijalankan oleh Administrator.');
+      // /skip stage here: bypass SEMUA player yang ada di stage yang sama dengan admin
+      if (targetQuery === 'here') {
+        const adminStage = currentStageRef.current;
+        const stageQs = getStageQuestions(levelQuestionsRef.current, adminStage, totalStagesRef.current);
+        if (stageQs.length === 0) {
+          addSystemChatMessage(`Tidak ada soal di stage ${adminStage}.`);
           return;
         }
-
-        // Format wajib: /reset item <all|body|tag|color> <all|username>
-        if (!arg2) {
-          addSystemChatMessage('⚠️ Command belum lengkap (Incompleted Command)!');
-          addSystemChatMessage('Gunakan format lengkap dengan target:');
-          addSystemChatMessage('• /reset item all all : Reset SEMUA item seluruh pemain');
-          addSystemChatMessage('• /reset item all <username> : Reset SEMUA item pemain tertentu');
-          addSystemChatMessage('• /reset item <body|tag|color> all : Reset jenis item tertentu untuk semua pemain');
-          addSystemChatMessage('• /reset item <body|tag|color> <username> : Reset jenis item pemain tertentu');
+        const targets: { id: string; username: string }[] = [];
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          if ((p.stage ?? 1) !== adminStage) continue;
+          targets.push({ id: p.id, username: p.username });
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage(`Tidak ada player lain di Stage ${adminStage}.`);
           return;
         }
-
-        const itemType = arg2.toLowerCase();
-        if (!['body', 'tag', 'color', 'all'].includes(itemType)) {
-          addSystemChatMessage('⚠️ Jenis item tidak valid! Pilihan: body, tag, color, all.');
-          addSystemChatMessage('Contoh: /reset item all all  atau  /reset item body all');
-          return;
+        try {
+          let totalMarked = 0;
+          for (const t of targets) {
+            const res = await fetch('/api/game/room-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id }),
+            });
+            const data = await res.json();
+            const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
+            const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
+            if (unanswered.length === 0) continue;
+            const qids = unanswered.map((q) => q.id);
+            await fetch('/api/game/skip-stage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id, stage: adminStage, questionIds: qids }),
+            });
+            ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: adminStage });
+            totalMarked += qids.length;
+          }
+          addSystemChatMessage(`⏭️ Skip stage here (${targets.length} player di Stage ${adminStage}): ${totalMarked} soal ditandai selesai (tanpa poin).`);
+          soundEngine.playPowerUp();
+        } catch {
+          addSystemChatMessage('Gagal skip stage here, coba lagi.');
         }
-
-        const targetQuery = parts[3]?.toLowerCase();
-        if (!targetQuery) {
-          addSystemChatMessage(`⚠️ Command belum lengkap! Target wajib diisi ('all' atau username).`);
-          addSystemChatMessage(`Contoh:`);
-          addSystemChatMessage(`• /reset item ${itemType} all  (Reset untuk seluruh pemain)`);
-          addSystemChatMessage(`• /reset item ${itemType} <username>  (Reset untuk pemain tertentu)`);
-          return;
-        }
-
-        fetch('/api/game/shop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'reset_items',
-            itemType,
-            target: targetQuery,
-            roomId,
-          }),
-        })
-          .then((r) => r.json())
-          .then((d) => {
-            if (d.ok) {
-              addSystemChatMessage(`🔄 ${d.message}`);
-              soundEngine.playPowerUp();
-            } else {
-              addSystemChatMessage(`❌ Gagal reset item: ${d.error || 'Terjadi kesalahan'}`);
-            }
-          })
-          .catch(() => addSystemChatMessage('❌ Gagal menghubungi server shop.'));
         return;
       }
 
-      if (cmd === 'reset') {
-        const targetQuery = arg1;
-        if (!targetQuery) {
-          addSystemChatMessage('⚠️ Command belum lengkap (Incompleted Command)!');
-          addSystemChatMessage('Gunakan format lengkap berikut:');
-          addSystemChatMessage('• /reset all : Reset progress kuis seluruh siswa di room ke Stage 1 (Admin Only)');
-          addSystemChatMessage('• /reset <username|me> : Reset progress kuis siswa tertentu (contoh: /reset bims)');
-          addSystemChatMessage('• /reset item all all : Reset seluruh item kosmetik toko seluruh pemain (Admin Only)');
+      // /skip stage all: bypass SEMUA player di seluruh game
+      if (targetQuery === 'all') {
+        const targets: { id: string; username: string; stage: number }[] = [];
+        for (const p of playersRef.current.values()) {
+          if (p.id === myIdRef.current) continue;
+          targets.push({ id: p.id, username: p.username, stage: p.stage ?? 1 });
+        }
+        if (targets.length === 0) {
+          addSystemChatMessage('Tidak ada player lain di game.');
           return;
         }
-        if (targetQuery === 'all') {
-          if (!isAdmin) {
-            addSystemChatMessage('Perintah /reset all hanya dapat digunakan oleh Administrator.');
-            return;
+        try {
+          let totalMarked = 0;
+          for (const t of targets) {
+            const stageQs = getStageQuestions(levelQuestionsRef.current, t.stage, totalStagesRef.current);
+            if (stageQs.length === 0) continue;
+            const res = await fetch('/api/game/room-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id }),
+            });
+            const data = await res.json();
+            const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
+            const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
+            if (unanswered.length === 0) continue;
+            const qids = unanswered.map((q) => q.id);
+            await fetch('/api/game/skip-stage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId, targetId: t.id, stage: t.stage, questionIds: qids }),
+            });
+            ably.publishCommand({ op: 'skip_stage', targetId: t.id, qids, stage: t.stage });
+            totalMarked += qids.length;
           }
-          fetch('/api/game/reset-progress', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomId, targetId: 'all' }),
-          }).catch(() => { });
-          ably.publishCommand({ op: 'reset', targetId: 'all' });
-          if (mirrorTargetRef.current) {
-            answerResultsRef.current.clear();
-            const curStg = currentStageRef.current;
-            const stageQs = getStageQuestions(levelQuestionsRef.current, curStg, totalStagesRef.current);
-            questionBlocksRef.current = generateQuestionBlocks(
-              stageQs.map((q) => q.id),
-              `all:${roomId}:s${curStg}`,
-              curStg,
-            );
-          }
-          addSystemChatMessage('Berhasil me-reset jawaban seluruh siswa ke Stage 1.');
-          soundEngine.playDeath();
-          return;
+          addSystemChatMessage(`⏭️ Skip stage all (${targets.length} player di seluruh game): ${totalMarked} soal ditandai selesai (tanpa poin).`);
+          soundEngine.playPowerUp();
+        } catch {
+          addSystemChatMessage('Gagal skip stage all, coba lagi.');
         }
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        fetch('/api/game/reset-progress', {
+        return;
+      }
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      if (target.id === myIdRef.current) {
+        addSystemChatMessage('Tidak bisa skip stage diri sendiri.');
+        return;
+      }
+      const targetStage = playersRef.current.get(target.id)?.stage ?? currentStageRef.current;
+      const stageQs = getStageQuestions(levelQuestionsRef.current, targetStage, totalStagesRef.current);
+      if (stageQs.length === 0) {
+        addSystemChatMessage(`Tidak ada soal di stage ${targetStage}.`);
+        return;
+      }
+      try {
+        const res = await fetch('/api/game/room-sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ roomId, targetId: target.id }),
+        });
+        const data = await res.json();
+        const serverSet = new Set<string>(Array.isArray(data?.answeredQuestionIds) ? data.answeredQuestionIds : []);
+        const unanswered = stageQs.filter((q) => !serverSet.has(q.id));
+        if (unanswered.length === 0) {
+          addSystemChatMessage(`Semua soal '${target.username}' di stage ${targetStage} sudah terjawab.`);
+          return;
+        }
+        const qids = unanswered.map((q) => q.id);
+        await fetch('/api/game/skip-stage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, targetId: target.id, stage: targetStage, questionIds: qids }),
+        });
+        ably.publishCommand({ op: 'skip_stage', targetId: target.id, qids, stage: targetStage });
+        addSystemChatMessage(`⏭️ Skip stage untuk '${target.username}': ${unanswered.length} soal ditandai selesai (tanpa poin). Gerbang terbuka, lanjut ke stage berikutnya!`);
+        soundEngine.playPowerUp();
+      } catch {
+        addSystemChatMessage('Gagal skip stage, coba lagi.');
+      }
+      return;
+    }
+
+    if (cmd === 'reset' && arg1 === 'item') {
+      if (!isAdmin) {
+        addSystemChatMessage('Perintah reset item hanya dapat dijalankan oleh Administrator.');
+        return;
+      }
+
+      // Format wajib: /reset item <all|body|tag|color> <all|username>
+      if (!arg2) {
+        addSystemChatMessage('⚠️ Command belum lengkap (Incompleted Command)!');
+        addSystemChatMessage('Gunakan format lengkap dengan target:');
+        addSystemChatMessage('• /reset item all all : Reset SEMUA item seluruh pemain');
+        addSystemChatMessage('• /reset item all <username> : Reset SEMUA item pemain tertentu');
+        addSystemChatMessage('• /reset item <body|tag|color> all : Reset jenis item tertentu untuk semua pemain');
+        addSystemChatMessage('• /reset item <body|tag|color> <username> : Reset jenis item pemain tertentu');
+        return;
+      }
+
+      const itemType = arg2.toLowerCase();
+      if (!['body', 'tag', 'color', 'all'].includes(itemType)) {
+        addSystemChatMessage('⚠️ Jenis item tidak valid! Pilihan: body, tag, color, all.');
+        addSystemChatMessage('Contoh: /reset item all all  atau  /reset item body all');
+        return;
+      }
+
+      const targetQuery = parts[3]?.toLowerCase();
+      if (!targetQuery) {
+        addSystemChatMessage(`⚠️ Command belum lengkap! Target wajib diisi ('all' atau username).`);
+        addSystemChatMessage(`Contoh:`);
+        addSystemChatMessage(`• /reset item ${itemType} all  (Reset untuk seluruh pemain)`);
+        addSystemChatMessage(`• /reset item ${itemType} <username>  (Reset untuk pemain tertentu)`);
+        return;
+      }
+
+      fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reset_items',
+          itemType,
+          target: targetQuery,
+          roomId,
+        }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.ok) {
+            addSystemChatMessage(`🔄 ${d.message}`);
+            soundEngine.playPowerUp();
+          } else {
+            addSystemChatMessage(`❌ Gagal reset item: ${d.error || 'Terjadi kesalahan'}`);
+          }
+        })
+        .catch(() => addSystemChatMessage('❌ Gagal menghubungi server shop.'));
+      return;
+    }
+
+    if (cmd === 'reset') {
+      const targetQuery = arg1;
+      if (!targetQuery) {
+        addSystemChatMessage('⚠️ Command belum lengkap (Incompleted Command)!');
+        addSystemChatMessage('Gunakan format lengkap berikut:');
+        addSystemChatMessage('• /reset all : Reset progress kuis seluruh siswa di room ke Stage 1 (Admin Only)');
+        addSystemChatMessage('• /reset <username|me> : Reset progress kuis siswa tertentu (contoh: /reset bims)');
+        addSystemChatMessage('• /reset item all all : Reset seluruh item kosmetik toko seluruh pemain (Admin Only)');
+        return;
+      }
+      if (targetQuery === 'all') {
+        if (!isAdmin) {
+          addSystemChatMessage('Perintah /reset all hanya dapat digunakan oleh Administrator.');
+          return;
+        }
+        fetch('/api/game/reset-progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, targetId: 'all' }),
         }).catch(() => { });
-        ably.publishCommand({ op: 'reset', targetId: target.id });
-        const curMirror = mirrorTargetRef.current;
-        if (curMirror && (curMirror === 'all' || curMirror.userId === target.id)) {
+        ably.publishCommand({ op: 'reset', targetId: 'all' });
+        if (mirrorTargetRef.current) {
           answerResultsRef.current.clear();
           const curStg = currentStageRef.current;
           const stageQs = getStageQuestions(levelQuestionsRef.current, curStg, totalStagesRef.current);
           questionBlocksRef.current = generateQuestionBlocks(
             stageQs.map((q) => q.id),
-            `${target.id}:${roomId}:s${curStg}`,
-            curStg,
-          );
-        }
-        addSystemChatMessage(`Berhasil me-reset jawaban '${target.username}' ke Stage 1.`);
-        soundEngine.playDeath();
-        return;
-      }
-
-      if (cmd === 'mirror') {
-        const targetQuery = arg1;
-        if (!targetQuery) {
-          addSystemChatMessage('Format: /mirror <username> atau /mirror all');
-          return;
-        }
-        if (targetQuery === 'all') {
-          mirrorTargetRef.current = 'all';
-          mirrorFetchTargetRef.current = null;
-          answerResultsRef.current.clear();
-          setMirrorTarget('Seluruh Kelas (Bonus)');
-          const curStg = currentStageRef.current;
-          const curStageQs = getStageQuestions(levelQuestionsRef.current, curStg, totalStagesRef.current);
-          questionBlocksRef.current = generateQuestionBlocks(
-            curStageQs.map((q) => q.id),
             `all:${roomId}:s${curStg}`,
             curStg,
           );
-          addSystemChatMessage('🔍 Mode Mirror ALL aktif! Kotak soal bonus sekelas dimunculkan di map.');
-          soundEngine.playPowerUp();
-          return;
         }
+        addSystemChatMessage('Berhasil me-reset jawaban seluruh siswa ke Stage 1.');
+        soundEngine.playDeath();
+        return;
+      }
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      fetch('/api/game/reset-progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, targetId: target.id }),
+      }).catch(() => { });
+      ably.publishCommand({ op: 'reset', targetId: target.id });
+      const curMirror = mirrorTargetRef.current;
+      if (curMirror && (curMirror === 'all' || curMirror.userId === target.id)) {
+        answerResultsRef.current.clear();
+        const curStg = currentStageRef.current;
+        const stageQs = getStageQuestions(levelQuestionsRef.current, curStg, totalStagesRef.current);
+        questionBlocksRef.current = generateQuestionBlocks(
+          stageQs.map((q) => q.id),
+          `${target.id}:${roomId}:s${curStg}`,
+          curStg,
+        );
+      }
+      addSystemChatMessage(`Berhasil me-reset jawaban '${target.username}' ke Stage 1.`);
+      soundEngine.playDeath();
+      return;
+    }
 
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-
-        mirrorTargetRef.current = { userId: target.id, username: target.username };
-        mirrorFetchTargetRef.current = target.id;
-        setMirrorTarget(target.username);
+    if (cmd === 'mirror') {
+      const targetQuery = arg1;
+      if (!targetQuery) {
+        addSystemChatMessage('Format: /mirror <username> atau /mirror all');
+        return;
+      }
+      if (targetQuery === 'all') {
+        mirrorTargetRef.current = 'all';
+        mirrorFetchTargetRef.current = null;
+        answerResultsRef.current.clear();
+        setMirrorTarget('Seluruh Kelas (Bonus)');
         const curStg = currentStageRef.current;
         const curStageQs = getStageQuestions(levelQuestionsRef.current, curStg, totalStagesRef.current);
         questionBlocksRef.current = generateQuestionBlocks(
           curStageQs.map((q) => q.id),
-          `${target.id}:${roomId}:s${curStg}`,
+          `all:${roomId}:s${curStg}`,
           curStg,
         );
-        // Ambil status jawaban asli siswa ini: hijau = benar, merah = salah, biru = dibantuin, kuning = belum
-        answerResultsRef.current.clear();
-        fetch('/api/game/room-sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId, targetId: target.id }),
+        addSystemChatMessage('🔍 Mode Mirror ALL aktif! Kotak soal bonus sekelas dimunculkan di map.');
+        soundEngine.playPowerUp();
+        return;
+      }
+
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+
+      mirrorTargetRef.current = { userId: target.id, username: target.username };
+      mirrorFetchTargetRef.current = target.id;
+      setMirrorTarget(target.username);
+      const curStg = currentStageRef.current;
+      const curStageQs = getStageQuestions(levelQuestionsRef.current, curStg, totalStagesRef.current);
+      questionBlocksRef.current = generateQuestionBlocks(
+        curStageQs.map((q) => q.id),
+        `${target.id}:${roomId}:s${curStg}`,
+        curStg,
+      );
+      // Ambil status jawaban asli siswa ini: hijau = benar, merah = salah, biru = dibantuin, kuning = belum
+      answerResultsRef.current.clear();
+      fetch('/api/game/room-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, targetId: target.id }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) return;
+          const results = (d.answerResults ?? {}) as Record<string, boolean | 'assisted'>;
+          for (const [qid, okAns] of Object.entries(results)) {
+            answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
+          }
+          if (d.chosenAnswers) {
+            for (const [qid, ans] of Object.entries(d.chosenAnswers)) {
+              studentChosenAnswersRef.current.set(qid, String(ans));
+            }
+            setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
+          }
         })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => {
-            if (!d) return;
-            const results = (d.answerResults ?? {}) as Record<string, boolean | 'assisted'>;
-            for (const [qid, okAns] of Object.entries(results)) {
-              answerResultsRef.current.set(qid, okAns === 'assisted' ? 'assisted' : Boolean(okAns));
-            }
-            if (d.chosenAnswers) {
-              for (const [qid, ans] of Object.entries(d.chosenAnswers)) {
-                studentChosenAnswersRef.current.set(qid, String(ans));
-              }
-              setStudentChosenAnswers(new Map(studentChosenAnswersRef.current));
-            }
-          })
-          .catch(() => { });
-        addSystemChatMessage(`🔍 Mode Mirroring '${target.username}' aktif! Kotak soal siswa dimunculkan di map.`);
-        soundEngine.playPowerUp();
+        .catch(() => { });
+      addSystemChatMessage(`🔍 Mode Mirroring '${target.username}' aktif! Kotak soal siswa dimunculkan di map.`);
+      soundEngine.playPowerUp();
+      return;
+    }
+
+    if (cmd === 'unset' && arg1 === 'mirror') {
+      mirrorTargetRef.current = null;
+      mirrorFetchTargetRef.current = null;
+      setMirrorTarget(null);
+      questionBlocksRef.current = [];
+      addSystemChatMessage('Mode Mirror dimatikan. Kotak soal disembunyikan kembali dari pandangan.');
+      soundEngine.playBounce();
+      return;
+    }
+
+    if (cmd === 'set' && arg1 === 'nick') {
+      // Format: /set nick <user|me> <nama baru>
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
         return;
       }
-
-      if (cmd === 'unset' && arg1 === 'mirror') {
-        mirrorTargetRef.current = null;
-        mirrorFetchTargetRef.current = null;
-        setMirrorTarget(null);
-        questionBlocksRef.current = [];
-        addSystemChatMessage('Mode Mirror dimatikan. Kotak soal disembunyikan kembali dari pandangan.');
-        soundEngine.playBounce();
+      const targetQuery = arg2 || 'me';
+      const newName = parts.slice(3).join(' ').trim();
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      if (!newName) {
+        addSystemChatMessage('Format: /set nick <user|me> <nama baru>');
         return;
       }
+      const nickValue = newName.slice(0, 24);
+      // Persist ke DB ke kolom custom_nick
+      fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-nick', targetId: target.id, nick: nickValue }),
+      }).catch(() => { });
+      ably.publishCommand({ op: 'change_nick', targetId: target.id, value: nickValue });
+      const pTarget = playersRef.current.get(target.id);
+      if (pTarget) {
+        if (!pTarget.originalFullName) pTarget.originalFullName = pTarget.fullName || pTarget.username;
+        pTarget.customNick = nickValue;
+        pTarget.fullName = nickValue;
+      }
+      if (target.id === myIdRef.current) {
+        myUsernameRef.current = nickValue;
+        myFullNameRef.current = nickValue;
+        try { window.localStorage.setItem('llys_custom_nick', nickValue); } catch { }
+      }
+      addSystemChatMessage(`🏷️ Nickname '${target.username}' diganti jadi "${nickValue}" (tersimpan permanen).`);
+      soundEngine.playPowerUp();
+      return;
+    }
 
-      if (cmd === 'set' && arg1 === 'nick') {
-        // Format: /set nick <user|me> <nama baru>
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
-          return;
-        }
-        const targetQuery = arg2 || 'me';
-        const newName = parts.slice(3).join(' ').trim();
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        if (!newName) {
-          addSystemChatMessage('Format: /set nick <user|me> <nama baru>');
-          return;
-        }
-        const nickValue = newName.slice(0, 24);
-        // Persist ke DB ke kolom custom_nick
-        fetch('/api/profile', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set-nick', targetId: target.id, nick: nickValue }),
-        }).catch(() => { });
-        ably.publishCommand({ op: 'change_nick', targetId: target.id, value: nickValue });
-        const pTarget = playersRef.current.get(target.id);
-        if (pTarget) {
-          if (!pTarget.originalFullName) pTarget.originalFullName = pTarget.fullName || pTarget.username;
-          pTarget.customNick = nickValue;
-          pTarget.fullName = nickValue;
-        }
-        if (target.id === myIdRef.current) {
-          myUsernameRef.current = nickValue;
-          myFullNameRef.current = nickValue;
-          try { window.localStorage.setItem('llys_custom_nick', nickValue); } catch { }
-        }
-        addSystemChatMessage(`🏷️ Nickname '${target.username}' diganti jadi "${nickValue}" (tersimpan permanen).`);
-        soundEngine.playPowerUp();
+    if (cmd === 'unset' && arg1 === 'nick') {
+      // Format: /unset nick <user|me>
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
         return;
       }
+      const targetQuery = arg2 || 'me';
+      const target = resolveTarget(targetQuery) as { id: string; username: string; fullName?: string | null } | null;
+      if (!target) return;
+      const targetP = playersRef.current.get(target.id);
+      const originalName = (targetP?.originalFullName || target.fullName || target.username).trim().slice(0, 24);
+      fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-nick', targetId: target.id, nick: null }),
+      }).catch(() => { });
+      ably.publishCommand({ op: 'change_nick', targetId: target.id, value: '' });
+      if (targetP) {
+        targetP.customNick = undefined;
+        targetP.fullName = originalName;
+      }
+      if (target.id === myIdRef.current) {
+        myUsernameRef.current = originalName;
+        myFullNameRef.current = originalName;
+        try { window.localStorage.removeItem('llys_custom_nick'); } catch { }
+      }
+      addSystemChatMessage(`🏷️ Nickname '${target.username}' dikembalikan ke nama asli "${originalName}".`);
+      soundEngine.playBounce();
+      return;
+    }
 
-      if (cmd === 'unset' && arg1 === 'nick') {
-        // Format: /unset nick <user|me>
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
-          return;
-        }
-        const targetQuery = arg2 || 'me';
-        const target = resolveTarget(targetQuery) as { id: string; username: string; fullName?: string | null } | null;
-        if (!target) return;
-        const targetP = playersRef.current.get(target.id);
-        const originalName = (targetP?.originalFullName || target.fullName || target.username).trim().slice(0, 24);
-        fetch('/api/profile', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set-nick', targetId: target.id, nick: null }),
-        }).catch(() => { });
-        ably.publishCommand({ op: 'change_nick', targetId: target.id, value: '' });
-        if (targetP) {
-          targetP.customNick = undefined;
-          targetP.fullName = originalName;
-        }
-        if (target.id === myIdRef.current) {
-          myUsernameRef.current = originalName;
-          myFullNameRef.current = originalName;
-          try { window.localStorage.removeItem('llys_custom_nick'); } catch { }
-        }
-        addSystemChatMessage(`🏷️ Nickname '${target.username}' dikembalikan ke nama asli "${originalName}".`);
-        soundEngine.playBounce();
+    if (cmd === 'set' && arg1 === 'shop') {
+      if (!isStaff) {
+        addSystemChatMessage('Perintah /set shop hanya dapat dijalankan oleh Guru atau Admin.');
         return;
       }
-
-      if (cmd === 'set' && arg1 === 'shop') {
-        if (!isStaff) {
-          addSystemChatMessage('Perintah /set shop hanya dapat dijalankan oleh Guru atau Admin.');
-          return;
-        }
-        if (arg2 === 'tag') {
-          const price = parseInt(parts[3]);
-          if (!Number.isFinite(price) || price < 0) {
-            addSystemChatMessage('Format: /set shop tag <harga_poin> (contoh: /set shop tag 5000)');
-            return;
-          }
-          fetch('/api/game/shop', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'set_price', category: 'tag', price, roomId }),
-          })
-            .then((r) => r.json())
-            .then((d) => {
-              if (d.ok) {
-                setShopPrices(d.prices);
-                shopPricesRef.current = d.prices;
-                addSystemChatMessage(`🏷️ Harga ganti Tag 1 berhasil diatur menjadi 💰 ${price.toLocaleString()} Poin!`);
-                soundEngine.playPowerUp();
-              }
-            });
-          return;
-        }
-        if (arg2 === 'body') {
-          const item = parts[3];
-          const price = parseInt(parts[4]);
-          if (!item || !Number.isFinite(price) || price < 0) {
-            addSystemChatMessage('Format: /set shop body <item1..item8|ulat|burung|ayam|sapi|domba|virus|naga|hacker> <harga_poin>');
-            addSystemChatMessage('Contoh: /set shop body item8 10000  atau  /set shop body hacker 10000');
-            return;
-          }
-          fetch('/api/game/shop', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'set_price', category: 'body', item, price, roomId }),
-          })
-            .then((r) => r.json())
-            .then((d) => {
-              if (d.ok) {
-                setShopPrices(d.prices);
-                shopPricesRef.current = d.prices;
-                addSystemChatMessage(`🎭 Harga karakter [${item.toUpperCase()}] berhasil diatur menjadi 💰 ${price.toLocaleString()} Poin!`);
-                soundEngine.playPowerUp();
-              }
-            });
-          return;
-        }
-        if (arg2 === 'color') {
-          const item = (parts[3] || '').toLowerCase();
-          const mode = (parts[4] || '').toLowerCase();
-          const price = parseInt(parts[5]);
-          if (!['body', 'tag1', 'nick'].includes(item) || !['static', 'rgb'].includes(mode) || !Number.isFinite(price) || price < 0) {
-            addSystemChatMessage('Format: /set shop color <body|tag1|nick> <static|rgb> <harga_poin>');
-            addSystemChatMessage('Contoh: /set shop color body rgb 5000  atau  /set shop color nick static 2000');
-            return;
-          }
-          fetch('/api/game/shop', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'set_price', category: 'color', item, mode, price, roomId }),
-          })
-            .then((r) => r.json())
-            .then((d) => {
-              if (d.ok) {
-                setShopPrices(d.prices);
-                shopPricesRef.current = d.prices;
-                addSystemChatMessage(`🎨 Harga warna [${item.toUpperCase()} ${mode.toUpperCase()}] berhasil diatur menjadi 💰 ${price.toLocaleString()} Poin!`);
-                soundEngine.playPowerUp();
-              }
-            });
-          return;
-        }
-        if (arg2 === 'list' || !arg2) {
-          addSystemChatMessage(`🛍️ DAFTAR HARGA TOKO: Tag 1: 💰 ${shopPrices.tag.toLocaleString()} Pts | Karakter: 💰 5,000 Pts | Warna RGB: 💰 5,000 Pts | Warna Statis: 💰 1,000 Pts`);
-          return;
-        }
-      }
-
-      if (cmd === 'shop') {
-        if (arg1 === 'prices' || arg1 === 'list') {
-          addSystemChatMessage(`🛍️ DAFTAR HARGA TOKO: Tag 1: 💰 ${shopPrices.tag.toLocaleString()} Pts | Karakter: 💰 5,000 Pts | Warna RGB: 💰 5,000 Pts | Warna Statis: 💰 1,000 Pts`);
-        } else {
-          setShowShopModal(true);
-        }
-        return;
-      }
-
-      if (cmd === 'set' && arg1 === 'tag') {
-        // Format: /set tag <1|2|3> <user|me> <title>
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
-          return;
-        }
-        const posStr = parts[2];
-        if (!posStr || !['1', '2', '3'].includes(posStr)) {
-          addSystemChatMessage('Format: /set tag <1|2|3> <user|me> <title>');
-          addSystemChatMessage('Posisi tag: 1 = Bawah (tepat diatas nick), 2 = Tengah, 3 = Atas');
-          return;
-        }
-        const targetQuery = parts[3] || 'me';
-        const title = parts.slice(4).join(' ').trim();
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        if (!title) {
-          addSystemChatMessage(`Format: /set tag ${posStr} <user|me> <title>`);
-          return;
-        }
-        const tagValue = title.slice(0, 24);
-        const p = playersRef.current.get(target.id);
-        if (p) {
-          if (posStr === '1') { p.tag1 = tagValue; p.tag = tagValue; }
-          else if (posStr === '2') { p.tag2 = tagValue; }
-          else if (posStr === '3') { p.tag3 = tagValue; }
-        }
-        if (target.id === myIdRef.current) {
-          try {
-            if (posStr === '1') window.localStorage.setItem('llys_custom_tag1', tagValue);
-            else if (posStr === '2') window.localStorage.setItem('llys_custom_tag2', tagValue);
-            else if (posStr === '3') window.localStorage.setItem('llys_custom_tag3', tagValue);
-          } catch { }
-        }
-        // Persist ke DB
-        fetch('/api/profile', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set-tag', targetId: target.id, position: posStr, tag: tagValue }),
-        }).catch(() => { });
-        ably.publishCommand({
-          op: 'cosmetics',
-          targetId: target.id,
-          tag1: p?.tag1,
-          tag2: p?.tag2,
-          tag3: p?.tag3,
-        });
-        addSystemChatMessage(`🏷️ Tag level ${posStr} '${target.username}' diatur jadi "${tagValue}" (tersimpan permanen).`);
-        soundEngine.playPowerUp();
-        return;
-      }
-
-      if (cmd === 'unset' && arg1 === 'tag') {
-        // Format: /unset tag <1|2|3|all> <user|me>
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
-          return;
-        }
-        const posStr = parts[2]?.toLowerCase();
-        if (!posStr || !['1', '2', '3', 'all'].includes(posStr)) {
-          addSystemChatMessage('Format: /unset tag <1|2|3|all> <user|me>');
-          return;
-        }
-        const targetQuery = parts[3] || 'me';
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        const p = playersRef.current.get(target.id);
-        if (p) {
-          if (posStr === 'all') {
-            p.tag = undefined;
-            p.tag1 = undefined;
-            p.tag2 = undefined;
-            p.tag3 = undefined;
-          } else if (posStr === '1') {
-            p.tag1 = undefined;
-            p.tag = undefined;
-          } else if (posStr === '2') {
-            p.tag2 = undefined;
-          } else if (posStr === '3') {
-            p.tag3 = undefined;
-          }
-        }
-        if (target.id === myIdRef.current) {
-          try {
-            if (posStr === 'all') {
-              window.localStorage.removeItem('llys_custom_tag1');
-              window.localStorage.removeItem('llys_custom_tag2');
-              window.localStorage.removeItem('llys_custom_tag3');
-            } else {
-              window.localStorage.removeItem(`llys_custom_tag${posStr}`);
-            }
-          } catch { }
-        }
-        fetch('/api/profile', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set-tag', targetId: target.id, position: posStr, tag: null }),
-        }).catch(() => { });
-        ably.publishCommand({
-          op: 'cosmetics',
-          targetId: target.id,
-          tag1: p?.tag1,
-          tag2: p?.tag2,
-          tag3: p?.tag3,
-        });
-        addSystemChatMessage(posStr === 'all' ? `🏷️ Semua tag '${target.username}' dihapus.` : `🏷️ Tag ${posStr} '${target.username}' dihapus.`);
-        soundEngine.playBounce();
-        return;
-      }
-
-      if (cmd === 'spawn' && arg1 === 'gun') {
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
-          return;
-        }
-        const weaponArg = parts[2]?.toLowerCase();
-        const weaponType = parseWeaponType(parts[2]);
-        const targetQuery = parts[3]?.toLowerCase() || 'me';
-        const isUnset = !weaponType && weaponArg && ['none', 'off', 'unset'].includes(weaponArg);
-
-        if (!weaponType && !isUnset) {
-          addSystemChatMessage('Format: /spawn gun <minigun|laser|megalaser|ice|stunt|none> [user|me|here|all]');
-          return;
-        }
-
-        if (targetQuery === 'all') {
-          if (!isAdmin) {
-            addSystemChatMessage("Target 'all' hanya dapat digunakan oleh Administrator.");
-            return;
-          }
-          if (isUnset) {
-            setAmmoCount(0);
-            for (const p of playersRef.current.values()) {
-              p.gun = null;
-              p.blasterAmmo = 0;
-              p.hasAdminGun = false;
-              p.blasterUntil = undefined;
-            }
-            ably.publishCommand({ op: 'gun', targetId: 'all', value: false });
-            addSystemChatMessage('🔫 Senjata SEMUA player di game dicabut.');
-            soundEngine.playBounce();
-            return;
-          }
-          if (weaponType) {
-            const spec = WEAPONS[weaponType];
-            setAmmoCount(Infinity);
-            for (const p of playersRef.current.values()) {
-              p.gun = weaponType;
-              p.blasterAmmo = Infinity;
-              p.hasAdminGun = true;
-              p.blasterUntil = undefined;
-            }
-            ably.publishCommand({ op: 'gun', targetId: 'all', value: true, weapon: weaponType });
-            addSystemChatMessage(`🔫 ${spec.label} diberikan ke SEMUA player di game (peluru unlimited).`);
-            soundEngine.playPowerUp();
-            return;
-          }
-        }
-
-        if (targetQuery === 'here') {
-          if (!isAdmin) {
-            addSystemChatMessage("Target 'here' hanya dapat digunakan oleh Administrator.");
-            return;
-          }
-          const adminStage = currentStageRef.current;
-          const targets: { id: string; username: string }[] = [];
-          for (const p of playersRef.current.values()) {
-            if ((p.stage ?? 1) === adminStage) {
-              targets.push({ id: p.id, username: p.username });
-            }
-          }
-          if (isUnset) {
-            for (const t of targets) {
-              const p = playersRef.current.get(t.id);
-              if (p) {
-                p.gun = null;
-                p.blasterAmmo = 0;
-                p.hasAdminGun = false;
-                p.blasterUntil = undefined;
-              }
-              if (t.id === myIdRef.current) setAmmoCount(0);
-              else ably.publishCommand({ op: 'gun', targetId: t.id, value: false });
-            }
-            addSystemChatMessage(`🔫 Senjata SEMUA player di Stage ${adminStage} dicabut (${targets.length} player).`);
-            soundEngine.playBounce();
-            return;
-          }
-          if (weaponType) {
-            const spec = WEAPONS[weaponType];
-            for (const t of targets) {
-              const p = playersRef.current.get(t.id);
-              if (p) {
-                p.gun = weaponType;
-                p.blasterAmmo = Infinity;
-                p.hasAdminGun = true;
-                p.blasterUntil = undefined;
-              }
-              if (t.id === myIdRef.current) setAmmoCount(Infinity);
-              else ably.publishCommand({ op: 'gun', targetId: t.id, value: true, weapon: weaponType });
-            }
-            addSystemChatMessage(`🔫 ${spec.label} diberikan ke SEMUA player di Stage ${adminStage} (${targets.length} player, peluru unlimited).`);
-            soundEngine.playPowerUp();
-            return;
-          }
-        }
-
-        // Single target
-        if (isUnset) {
-          const target = resolveTarget(targetQuery);
-          if (!target) return;
-          const p = playersRef.current.get(target.id);
-          if (p) {
-            p.gun = null;
-            p.blasterAmmo = 0;
-            p.hasAdminGun = false;
-            p.blasterUntil = undefined;
-          }
-          if (target.id === myIdRef.current) setAmmoCount(0);
-          ably.publishCommand({ op: 'gun', targetId: target.id, value: false });
-          addSystemChatMessage(`🔫 Senjata '${target.username}' dicabut.`);
-          soundEngine.playBounce();
-          return;
-        }
-
-        if (weaponType) {
-          const spec = WEAPONS[weaponType];
-          const target = resolveTarget(targetQuery);
-          if (!target) return;
-          const p = playersRef.current.get(target.id);
-          if (p) {
-            p.gun = weaponType;
-            p.blasterAmmo = Infinity;
-            p.hasAdminGun = true;
-            p.blasterUntil = undefined;
-          }
-          if (target.id === myIdRef.current) setAmmoCount(Infinity);
-          ably.publishCommand({ op: 'gun', targetId: target.id, value: true, weapon: weaponType });
-          addSystemChatMessage(`🔫 ${spec.label} diberikan ke '${target.username}' (peluru unlimited).`);
-          soundEngine.playPowerUp();
-          return;
-        }
-      }
-
-      if (cmd === 'jail') {
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
-          return;
-        }
-        const turnOn = arg1 !== 'off';
-        if (arg1 !== 'on' && arg1 !== 'off') {
-          addSystemChatMessage('Format: /jail on [user|me] atau /jail off [user|me]');
-          return;
-        }
-        const targetQuery = parts[3]?.toLowerCase() || parts[2]?.toLowerCase() || 'me';
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        const p = playersRef.current.get(target.id);
-        if (p) p.jailedUntil = turnOn ? Date.now() + JAIL_FREEZE_MS : undefined;
-        ably.publishCommand({ op: 'jail', targetId: target.id, value: turnOn });
-        addSystemChatMessage(turnOn ? `⛓️ '${target.username}' dibekukan selama 15 detik.` : `⛓️ Bekukan '${target.username}' dilepas.`);
-        soundEngine.playPowerUp();
-        return;
-      }
-
-      if (cmd === 'change' && (arg1 === 'map' || arg1 === 'stage')) {
-        if (!isAdmin && !isStaff) {
-          addSystemChatMessage('Perintah /change map hanya dapat digunakan oleh Administrator atau Guru.');
-          return;
-        }
-
-        const parseMapId = (str?: string): number | null => {
-          if (!str) return null;
-          const clean = str.trim().toLowerCase().replace(/^s(tage)?/i, '');
-          const n = parseInt(clean, 10);
-          return !isNaN(n) && n >= 1 && n <= 20 ? n : null;
-        };
-
-        const currentMapList = selectedStagesRef.current.length > 0
-          ? [...selectedStagesRef.current]
-          : [1, 2, 3, 4];
-
-        // Format yang didukung:
-        // 1. /change map S20              -> ubah stage saat ini ke map S20
-        // 2. /change map 2 S20            -> ubah stage urutan ke-2 ke map S20
-        // 3. /change map all S1           -> ubah SEMUA stage ke map S1
-        let targetStageOrder: number | 'all' = currentStageRef.current;
-        let targetMapTheme: number | null = null;
-
-        if (!parts[2]) {
-          addSystemChatMessage('Format perintah /change map:');
-          addSystemChatMessage('• /change map <S1..S20> : Ganti map stage aktif saat ini (contoh: /change map S20)');
-          addSystemChatMessage('• /change map <urutan_stage> <S1..S20> : Ganti map stage tertentu (contoh: /change map 2 S20)');
-          addSystemChatMessage('• /change map all <S1..S20> : Ganti map semua stage (contoh: /change map all S1)');
-          return;
-        }
-
-        if (parts[2].toLowerCase() === 'all') {
-          targetStageOrder = 'all';
-          targetMapTheme = parseMapId(parts[3]);
-        } else if (parts[3]) {
-          const parsedOrder = parseInt(parts[2].toLowerCase().replace(/^s(tage)?/i, ''), 10);
-          if (isNaN(parsedOrder) || parsedOrder < 1 || parsedOrder > totalStagesRef.current) {
-            addSystemChatMessage(`Nomor stage tidak valid. Pilih urutan stage 1 sampai ${totalStagesRef.current} (atau 'all').`);
-            return;
-          }
-          targetStageOrder = parsedOrder;
-          targetMapTheme = parseMapId(parts[3]);
-        } else {
-          targetStageOrder = currentStageRef.current;
-          targetMapTheme = parseMapId(parts[2]);
-        }
-
-        if (!targetMapTheme) {
-          addSystemChatMessage(`Map '${parts[3] || parts[2]}' tidak valid. Pilih map S1 sampai S20.`);
-          return;
-        }
-
-        const nextStages = [...currentMapList];
-        while (nextStages.length < totalStagesRef.current) {
-          nextStages.push(nextStages.length + 1);
-        }
-
-        if (targetStageOrder === 'all') {
-          for (let i = 0; i < nextStages.length; i++) {
-            nextStages[i] = targetMapTheme;
-          }
-        } else {
-          nextStages[targetStageOrder - 1] = targetMapTheme;
-        }
-
-        selectedStagesRef.current = nextStages;
-        setSelectedStages(nextStages);
-
-        if (targetStageOrder === 'all' || targetStageOrder === currentStageRef.current) {
-          applyStage(currentStageRef.current, { force: true, showToast: true, respawnPlayer: true });
-          soundEngine.playPowerUp();
-        }
-
-        ably.publishCommand({
-          op: 'change_map',
-          stageOrder: targetStageOrder,
-          newMapTheme: targetMapTheme,
-          selectedStages: nextStages,
-          byName: myUsernameRef.current || (isAdmin ? 'Admin' : 'Guru'),
-        });
-
-        fetch(`/api/rooms/${roomId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'change-map', selectedStages: nextStages }),
-        }).catch(() => {});
-
-        const mapName = getStageShortName(targetMapTheme);
-        const stageDesc = targetStageOrder === 'all' ? 'SEMUA stage' : `Stage ${targetStageOrder}`;
-        showBanner(`🗺️ Berhasil ganti map ${stageDesc} jadi S${targetMapTheme} (${mapName})!`, 5000);
-        addSystemChatMessage(`🗺️ Map ${stageDesc} berhasil diganti menjadi S${targetMapTheme} (${mapName}). Seluruh pemain telah disinkronkan secara realtime.`);
-        return;
-      }
-
-      if (cmd === 'hide' || cmd === 'unhide') {
-        if (!isAdmin) {
-          addSystemChatMessage('Perintah /hide & /unhide hanya dapat digunakan oleh Administrator.');
-          return;
-        }
-        const targetBody = normalizeBodyName(arg2 || arg1 || '');
-        if (!targetBody || targetBody === 'cat') {
-          addSystemChatMessage('Format: /hide body <nama_karakter>  atau  /unhide body <nama_karakter>');
-          addSystemChatMessage('Contoh: /hide body naga  atau  /unhide body hacker');
+      if (arg2 === 'tag') {
+        const price = parseInt(parts[3]);
+        if (!Number.isFinite(price) || price < 0) {
+          addSystemChatMessage('Format: /set shop tag <harga_poin> (contoh: /set shop tag 5000)');
           return;
         }
         fetch('/api/game/shop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'toggle_hide', itemId: targetBody, roomId }),
+          body: JSON.stringify({ action: 'set_price', category: 'tag', price, roomId }),
         })
           .then((r) => r.json())
           .then((d) => {
             if (d.ok) {
               setShopPrices(d.prices);
               shopPricesRef.current = d.prices;
-              showBanner(d.message, 4500);
-              addSystemChatMessage(`🛡️ [ADMIN] ${d.message}`);
+              addSystemChatMessage(`🏷️ Harga ganti Tag 1 berhasil diatur menjadi 💰 ${price.toLocaleString()} Poin!`);
               soundEngine.playPowerUp();
-            } else {
-              addSystemChatMessage(`Gagal: ${d.error}`);
             }
-          })
-          .catch(() => addSystemChatMessage('Koneksi bermasalah.'));
+          });
         return;
       }
-
-      if (cmd === 'change' && (arg1 === 'body' || arg1 === 'avatar' || arg1 === 'skin')) {
-        // Format: /change body [user|me] <model>  ATAU  /change body <model>
-        const ALL_AVATARS = ['kangguru', 'kangaroo', 'pinguin', 'penguin', 'capybara', 'kapibara', 'masbro', 'bebek', 'duck', 'virus', 'cacing', 'ulat', 'burung', 'ayam', 'sapi', 'domba', 'naga', 'dragon', 'hacker', 'anon', 'cyber', 'cat-blue', 'cat-pink', 'cat-green', 'cat-orange', 'cat-purple', 'cat', 'kucing'];
-        let targetQuery = 'me';
-        let avatarChoice = '';
-        if (parts[2] && ALL_AVATARS.includes(parts[2].toLowerCase())) {
-          avatarChoice = parts[2].toLowerCase();
-        } else if (parts[2] && parts[3]) {
-          targetQuery = parts[2].toLowerCase();
-          avatarChoice = parts[3].toLowerCase();
-        } else if (parts[2]) {
-          avatarChoice = parts[2].toLowerCase();
-        }
-
-        if (avatarChoice === 'cat' || avatarChoice === 'kucing') avatarChoice = 'cat-blue';
-        if (avatarChoice === 'ulat') avatarChoice = 'cacing';
-        if (avatarChoice === 'dragon') avatarChoice = 'naga';
-        if (avatarChoice === 'anon' || avatarChoice === 'cyber') avatarChoice = 'hacker';
-
-        if (!ALL_AVATARS.includes(avatarChoice)) {
-          addSystemChatMessage('Format: /change body [user|me] <naga|hacker|virus|cacing|burung|ayam|sapi|domba|cat-blue|cat-pink|cat-green>');
-          addSystemChatMessage('Pilihan karakter animasi: naga (sayap mecha, jet plasma & orb kosmik [LIMITED ⭐]), hacker (topeng LED matrix & terminal hologram [CYBER 💻]), virus, cacing/ulat, burung, ayam, sapi, domba, cat');
+      if (arg2 === 'body') {
+        const item = parts[3];
+        const price = parseInt(parts[4]);
+        if (!item || !Number.isFinite(price) || price < 0) {
+          addSystemChatMessage('Format: /set shop body <item1..item8|ulat|burung|ayam|sapi|domba|virus|naga|hacker> <harga_poin>');
+          addSystemChatMessage('Contoh: /set shop body item8 10000  atau  /set shop body hacker 10000');
           return;
         }
-
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current) && target.id !== myIdRef.current) {
-          addSystemChatMessage('Hanya Administrator atau Guru yang bisa mengganti karakter user lain.');
-          return;
-        }
-
-        const pTarget = playersRef.current.get(target.id);
-        const targetBody = avatarChoice.startsWith('cat') ? 'cat' : avatarChoice;
-        if (shopPrices.hiddenBodies?.includes(targetBody) && !isAdmin) {
-          addSystemChatMessage(`⛔ Karakter '${targetBody}' sedang disembunyikan oleh Administrator (Khusus Admin).`);
-          return;
-        }
-        if (pTarget) {
-          pTarget.avatar = avatarChoice;
-          pTarget.bodyModel = targetBody;
-        }
-        if (target.id === myIdRef.current) {
-          equippedBodyRef.current = targetBody;
-          setEquippedBody(targetBody);
-          try {
-            window.localStorage.setItem('llys_avatar', avatarChoice);
-            window.localStorage.setItem('llys_body', targetBody);
-          } catch { }
-        }
-
-        fetch('/api/profile', {
-          method: 'PATCH',
+        fetch('/api/game/shop', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'avatar', avatar: avatarChoice, targetId: target.id }),
-        }).catch(() => { });
-
-        ably.publishCommand({ op: 'cosmetics', targetId: target.id, avatar: avatarChoice, bodyModel: targetBody });
-        addSystemChatMessage(`🎭 Karakter '${target.username}' diubah jadi [${avatarChoice.toUpperCase()}]!`);
-        soundEngine.playPowerUp();
-        return;
-      }
-
-      if (cmd === 'change' && arg1 === 'tag') {
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
-          return;
-        }
-        const targetQuery = arg2 || 'me';
-        const title = parts.slice(3).join(' ').trim();
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        const tagValue = title ? title.slice(0, 24) : undefined;
-        const p = playersRef.current.get(target.id);
-        if (p) {
-          p.tag1 = tagValue;
-          p.tag = tagValue;
-        }
-        if (target.id === myIdRef.current) {
-          try {
-            if (tagValue) window.localStorage.setItem('llys_custom_tag1', tagValue);
-            else window.localStorage.removeItem('llys_custom_tag1');
-          } catch { }
-        }
-        fetch('/api/profile', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set-tag', targetId: target.id, position: '1', tag: tagValue || null }),
-        }).catch(() => { });
-        ably.publishCommand({ op: 'cosmetics', targetId: target.id, tag1: tagValue, tag: tagValue });
-        addSystemChatMessage(tagValue ? `🏷️ Tag 1 '${target.username}' diubah jadi "${tagValue}" (tersimpan permanen). Tips: gunakan /set tag <1|2|3> <user|me> <title> untuk 3 tingkat title.` : `🏷️ Tag 1 '${target.username}' direset.`);
-        soundEngine.playPowerUp();
-        return;
-      }
-
-      if (cmd === 'change' && arg1 === 'color') {
-        if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
-          addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
-          return;
-        }
-        const targetQuery = arg2 || 'me';
-        const channel = (parts[3]?.toLowerCase() || '') as 'body' | 'tag' | 'tag1' | 'tag2' | 'tag3' | 'nick';
-        const colorRaw = parts.slice(4).join(' ');
-        if (!['body', 'tag', 'tag1', 'tag2', 'tag3', 'nick'].includes(channel) || !colorRaw) {
-          addSystemChatMessage('Format: /change color <user|me> body|tag|tag1|tag2|tag3|nick <warna>');
-          addSystemChatMessage('Tips: gunakan tag1, tag2, atau tag3 untuk mewarnai title tertentu, atau tag untuk warna dasar semua title.');
-          addSystemChatMessage('Warna: hex (#ff0000), nama (red), atau mode animasi: rgb, swap, spiral, spin, pulse, wave, strobe, candy, fire, ice, glitch, blink. Ketik none/reset buat balikin normal.');
-          return;
-        }
-        const target = resolveTarget(targetQuery);
-        if (!target) return;
-        let colorSpec: string | undefined;
-        if (colorRaw.toLowerCase() !== 'none' && colorRaw.toLowerCase() !== 'reset') {
-          const parsed = parseColorArg(colorRaw);
-          if (!parsed) {
-            addSystemChatMessage(`Warna '${colorRaw}' tidak dikenal. Pakai hex, nama warna, atau mode animasi (rgb, swap, spiral, spin, pulse, wave, strobe, candy, fire, ice, glitch, blink).`);
-            return;
-          }
-          colorSpec = parsed.value;
-        }
-        const p = playersRef.current.get(target.id);
-        if (p) {
-          p.colors = { ...(p.colors ?? {}) };
-          if (channel === 'body') p.colors.body = colorSpec;
-          else if (channel === 'tag') {
-            p.colors.tag = colorSpec;
-            if (!colorSpec) {
-              delete p.colors.tag1;
-              delete p.colors.tag2;
-              delete p.colors.tag3;
+          body: JSON.stringify({ action: 'set_price', category: 'body', item, price, roomId }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.ok) {
+              setShopPrices(d.prices);
+              shopPricesRef.current = d.prices;
+              addSystemChatMessage(`🎭 Harga karakter [${item.toUpperCase()}] berhasil diatur menjadi 💰 ${price.toLocaleString()} Poin!`);
+              soundEngine.playPowerUp();
             }
-          }
-          else if (channel === 'tag1') p.colors.tag1 = colorSpec;
-          else if (channel === 'tag2') p.colors.tag2 = colorSpec;
-          else if (channel === 'tag3') p.colors.tag3 = colorSpec;
-          else p.colors.nick = colorSpec;
+          });
+        return;
+      }
+      if (arg2 === 'color') {
+        const item = (parts[3] || '').toLowerCase();
+        const mode = (parts[4] || '').toLowerCase();
+        const price = parseInt(parts[5]);
+        if (!['body', 'tag1', 'nick'].includes(item) || !['static', 'rgb'].includes(mode) || !Number.isFinite(price) || price < 0) {
+          addSystemChatMessage('Format: /set shop color <body|tag1|nick> <static|rgb> <harga_poin>');
+          addSystemChatMessage('Contoh: /set shop color body rgb 5000  atau  /set shop color nick static 2000');
+          return;
         }
-        if (target.id === myIdRef.current) {
-          try {
-            const meP = playersRef.current.get(myIdRef.current);
-            window.localStorage.setItem('llys_custom_colors', JSON.stringify(meP?.colors ?? {}));
-          } catch { }
-        }
-        // Persist ke DB agar warna siswa/guru disimpan permanen!
-        fetch('/api/profile', {
-          method: 'PATCH',
+        fetch('/api/game/shop', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set-colors', targetId: target.id, channel, color: colorSpec || null }),
-        }).catch(() => { });
-        ably.publishCommand({
-          op: 'cosmetics',
-          targetId: target.id,
-          colors: { [channel]: colorSpec },
-        });
-        addSystemChatMessage(colorSpec ? `🎨 ${channel} '${target.username}' diubah jadi ${colorSpec} (tersimpan permanen).` : `🎨 ${channel} '${target.username}' direset ke default.`);
-        soundEngine.playPowerUp();
+          body: JSON.stringify({ action: 'set_price', category: 'color', item, mode, price, roomId }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.ok) {
+              setShopPrices(d.prices);
+              shopPricesRef.current = d.prices;
+              addSystemChatMessage(`🎨 Harga warna [${item.toUpperCase()} ${mode.toUpperCase()}] berhasil diatur menjadi 💰 ${price.toLocaleString()} Poin!`);
+              soundEngine.playPowerUp();
+            }
+          });
         return;
       }
-
-      // Jika user mengetik incomplete command (misal /take, /untake, /spawn, /set):
-      const matchingIncomplete = ALL_COMMANDS.filter((c) => {
-        if (c.adminOnly && !isAdmin) return false;
-        if (c.staffStrict && !isStaff) return false;
-        if (c.staffOnly && !isStaff && !isStudentCmdAllowed(myIdRef.current)) return false;
-        return c.prefix === cmd || c.prefix.startsWith(cmd);
-      });
-      if (matchingIncomplete.length > 0) {
-        addSystemChatMessage(`Perintah /${cmd} tidak lengkap. Format:`);
-        for (const m of matchingIncomplete) {
-          addSystemChatMessage(m.usage);
-        }
+      if (arg2 === 'list' || !arg2) {
+        addSystemChatMessage(`🛍️ DAFTAR HARGA TOKO: Tag 1: 💰 ${shopPrices.tag.toLocaleString()} Pts | Karakter: 💰 5,000 Pts | Warna RGB: 💰 5,000 Pts | Warna Statis: 💰 1,000 Pts`);
         return;
-      }
-
-      addSystemChatMessage(`Perintah '/${cmd}' tidak dikenali. Ketik /help untuk melihat daftar perintah.`);
-    }
-
-    async function sendChat(e: React.FormEvent) {
-      e.preventDefault();
-      if (exitNoticeRef.current || (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))) return;
-      const text = chatInput.trim();
-      if (!text) return;
-      setChatInput('');
-
-      if (text.toLowerCase() === '/cls' || text.toLowerCase() === '/clear') {
-        setChat([]);
-        seenMsgIdsRef.current.clear();
-        setUnreadCount(0);
-        return;
-      }
-
-      if (text.startsWith('/')) {
-        handleChatCommand(text);
-        return;
-      }
-
-      if (myIdRef.current) {
-        bubblesRef.current.set(myIdRef.current, { text, at: Date.now() });
-      }
-      const res = await fetch('/api/game/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, text }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.message) {
-          if (typeof data.message.seq === 'number' && data.message.seq > chatCursorRef.current) {
-            chatCursorRef.current = data.message.seq;
-          }
-          ingestMessages([data.message]);
-        }
       }
     }
 
-    const displayChat = chat;
-    const players = room?.players ?? [];
-    const totalSteps = Math.max(levelQuestions.length, 1);
-    // Hitung semua soal yang sudah dijawab oleh player (baik benar maupun salah) ke dalam progres misi
-    const doneSteps = Math.min(Math.max(answeredQuestionIds.length, correctCount), totalSteps);
-    const sortedPlayers = [...players].sort((a, b) => (scores[b.userId] ?? 0) - (scores[a.userId] ?? 0) || a.username.localeCompare(b.username));
-    const hasVisibleQuestion = Boolean(question && (!isStaff ? !answeredQuestionIds.includes(question.id) : Boolean(mirrorTargetRef.current)));
-    const questionActive = hasVisibleQuestion;
-    const allBottomMinimized = panelsHidden || !hasVisibleQuestion;
-    const controlsPosClass = allBottomMinimized ? '' : ' mp-elevated';
+    if (cmd === 'shop') {
+      if (arg1 === 'prices' || arg1 === 'list') {
+        addSystemChatMessage(`🛍️ DAFTAR HARGA TOKO: Tag 1: 💰 ${shopPrices.tag.toLocaleString()} Pts | Karakter: 💰 5,000 Pts | Warna RGB: 💰 5,000 Pts | Warna Statis: 💰 1,000 Pts`);
+      } else {
+        setShowShopModal(true);
+      }
+      return;
+    }
 
-    async function togglePauseGame() {
-      if (!room) return;
-      const nextStatus = room.status === 'paused' ? 'in_progress' : 'paused';
-      applyLiveRoomStatus(nextStatus);
-      await fetch('/api/rooms/' + roomId, {
+    if (cmd === 'set' && arg1 === 'tag') {
+      // Format: /set tag <1|2|3> <user|me> <title>
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
+        return;
+      }
+      const posStr = parts[2];
+      if (!posStr || !['1', '2', '3'].includes(posStr)) {
+        addSystemChatMessage('Format: /set tag <1|2|3> <user|me> <title>');
+        addSystemChatMessage('Posisi tag: 1 = Bawah (tepat diatas nick), 2 = Tengah, 3 = Atas');
+        return;
+      }
+      const targetQuery = parts[3] || 'me';
+      const title = parts.slice(4).join(' ').trim();
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      if (!title) {
+        addSystemChatMessage(`Format: /set tag ${posStr} <user|me> <title>`);
+        return;
+      }
+      const tagValue = title.slice(0, 24);
+      const p = playersRef.current.get(target.id);
+      if (p) {
+        if (posStr === '1') { p.tag1 = tagValue; p.tag = tagValue; }
+        else if (posStr === '2') { p.tag2 = tagValue; }
+        else if (posStr === '3') { p.tag3 = tagValue; }
+      }
+      if (target.id === myIdRef.current) {
+        try {
+          if (posStr === '1') window.localStorage.setItem('llys_custom_tag1', tagValue);
+          else if (posStr === '2') window.localStorage.setItem('llys_custom_tag2', tagValue);
+          else if (posStr === '3') window.localStorage.setItem('llys_custom_tag3', tagValue);
+        } catch { }
+      }
+      // Persist ke DB
+      fetch('/api/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ action: 'set-tag', targetId: target.id, position: posStr, tag: tagValue }),
+      }).catch(() => { });
+      ably.publishCommand({
+        op: 'cosmetics',
+        targetId: target.id,
+        tag1: p?.tag1,
+        tag2: p?.tag2,
+        tag3: p?.tag3,
       });
+      addSystemChatMessage(`🏷️ Tag level ${posStr} '${target.username}' diatur jadi "${tagValue}" (tersimpan permanen).`);
+      soundEngine.playPowerUp();
+      return;
     }
 
-    async function endGame() {
-      hasLeftRef.current = true;
-      const res = await fetch('/api/rooms/' + roomId, {
+    if (cmd === 'unset' && arg1 === 'tag') {
+      // Format: /unset tag <1|2|3|all> <user|me>
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang diizinkan.');
+        return;
+      }
+      const posStr = parts[2]?.toLowerCase();
+      if (!posStr || !['1', '2', '3', 'all'].includes(posStr)) {
+        addSystemChatMessage('Format: /unset tag <1|2|3|all> <user|me>');
+        return;
+      }
+      const targetQuery = parts[3] || 'me';
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      const p = playersRef.current.get(target.id);
+      if (p) {
+        if (posStr === 'all') {
+          p.tag = undefined;
+          p.tag1 = undefined;
+          p.tag2 = undefined;
+          p.tag3 = undefined;
+        } else if (posStr === '1') {
+          p.tag1 = undefined;
+          p.tag = undefined;
+        } else if (posStr === '2') {
+          p.tag2 = undefined;
+        } else if (posStr === '3') {
+          p.tag3 = undefined;
+        }
+      }
+      if (target.id === myIdRef.current) {
+        try {
+          if (posStr === 'all') {
+            window.localStorage.removeItem('llys_custom_tag1');
+            window.localStorage.removeItem('llys_custom_tag2');
+            window.localStorage.removeItem('llys_custom_tag3');
+          } else {
+            window.localStorage.removeItem(`llys_custom_tag${posStr}`);
+          }
+        } catch { }
+      }
+      fetch('/api/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'completed' }),
+        body: JSON.stringify({ action: 'set-tag', targetId: target.id, position: posStr, tag: null }),
+      }).catch(() => { });
+      ably.publishCommand({
+        op: 'cosmetics',
+        targetId: target.id,
+        tag1: p?.tag1,
+        tag2: p?.tag2,
+        tag3: p?.tag3,
       });
-      if (res.ok) {
-        router.replace('/dashboard/teacher/rooms');
-      }
+      addSystemChatMessage(posStr === 'all' ? `🏷️ Semua tag '${target.username}' dihapus.` : `🏷️ Tag ${posStr} '${target.username}' dihapus.`);
+      soundEngine.playBounce();
+      return;
     }
 
-    async function kickPlayer(playerId: string) {
-      const res = await fetch('/api/game/kick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, playerId }),
-      });
-      if (res.ok) {
-        playersRef.current.delete(playerId);
-        setRoom((prev) => (prev ? { ...prev, players: prev.players.filter((pl) => pl.userId !== playerId) } : prev));
+    if (cmd === 'spawn' && arg1 === 'gun') {
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
+        return;
       }
-    }
+      const weaponArg = parts[2]?.toLowerCase();
+      const weaponType = parseWeaponType(parts[2]);
+      const targetQuery = parts[3]?.toLowerCase() || 'me';
+      const isUnset = !weaponType && weaponArg && ['none', 'off', 'unset'].includes(weaponArg);
 
-    async function kickAllPlayers() {
-      if (!confirm('Keluarkan semua siswa dari ruang permainan ini?')) return;
-      const res = await fetch('/api/game/kick-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const kickedSet = new Set<string>(Array.isArray(data.kickedIds) ? data.kickedIds : []);
-        for (const pid of kickedSet) {
-          playersRef.current.delete(pid);
+      if (!weaponType && !isUnset) {
+        addSystemChatMessage('Format: /spawn gun <minigun|laser|megalaser|ice|stunt|none> [user|me|here|all]');
+        return;
+      }
+
+      if (targetQuery === 'all') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'all' hanya dapat digunakan oleh Administrator.");
+          return;
         }
-        setRoom((prev) =>
-          prev ? { ...prev, players: prev.players.filter((pl) => !kickedSet.has(pl.userId)) } : prev,
-        );
-      }
-    }
-
-    async function approveRejoin(playerId: string) {
-      setRejoinRequests((prev) => prev.filter((r) => r.userId !== playerId));
-      const res = await fetch('/api/game/approve-rejoin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, playerId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setScores((prev) => ({ ...prev, [playerId]: 0 }));
-        if (Array.isArray(data.rejoinRequests)) {
-          setRejoinRequests(data.rejoinRequests);
+        if (isUnset) {
+          setAmmoCount(0);
+          for (const p of playersRef.current.values()) {
+            p.gun = null;
+            p.blasterAmmo = 0;
+            p.hasAdminGun = false;
+            p.blasterUntil = undefined;
+          }
+          ably.publishCommand({ op: 'gun', targetId: 'all', value: false });
+          addSystemChatMessage('🔫 Senjata SEMUA player di game dicabut.');
+          soundEngine.playBounce();
+          return;
         }
-      }
-    }
-
-    async function rejectRejoin(playerId: string) {
-      setRejoinRequests((prev) => prev.filter((r) => r.userId !== playerId));
-      const res = await fetch('/api/game/reject-rejoin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, playerId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.rejoinRequests)) {
-          setRejoinRequests(data.rejoinRequests);
+        if (weaponType) {
+          const spec = WEAPONS[weaponType];
+          setAmmoCount(Infinity);
+          for (const p of playersRef.current.values()) {
+            p.gun = weaponType;
+            p.blasterAmmo = Infinity;
+            p.hasAdminGun = true;
+            p.blasterUntil = undefined;
+          }
+          ably.publishCommand({ op: 'gun', targetId: 'all', value: true, weapon: weaponType });
+          addSystemChatMessage(`🔫 ${spec.label} diberikan ke SEMUA player di game (peluru unlimited).`);
+          soundEngine.playPowerUp();
+          return;
         }
       }
+
+      if (targetQuery === 'here') {
+        if (!isAdmin) {
+          addSystemChatMessage("Target 'here' hanya dapat digunakan oleh Administrator.");
+          return;
+        }
+        const adminStage = currentStageRef.current;
+        const targets: { id: string; username: string }[] = [];
+        for (const p of playersRef.current.values()) {
+          if ((p.stage ?? 1) === adminStage) {
+            targets.push({ id: p.id, username: p.username });
+          }
+        }
+        if (isUnset) {
+          for (const t of targets) {
+            const p = playersRef.current.get(t.id);
+            if (p) {
+              p.gun = null;
+              p.blasterAmmo = 0;
+              p.hasAdminGun = false;
+              p.blasterUntil = undefined;
+            }
+            if (t.id === myIdRef.current) setAmmoCount(0);
+            else ably.publishCommand({ op: 'gun', targetId: t.id, value: false });
+          }
+          addSystemChatMessage(`🔫 Senjata SEMUA player di Stage ${adminStage} dicabut (${targets.length} player).`);
+          soundEngine.playBounce();
+          return;
+        }
+        if (weaponType) {
+          const spec = WEAPONS[weaponType];
+          for (const t of targets) {
+            const p = playersRef.current.get(t.id);
+            if (p) {
+              p.gun = weaponType;
+              p.blasterAmmo = Infinity;
+              p.hasAdminGun = true;
+              p.blasterUntil = undefined;
+            }
+            if (t.id === myIdRef.current) setAmmoCount(Infinity);
+            else ably.publishCommand({ op: 'gun', targetId: t.id, value: true, weapon: weaponType });
+          }
+          addSystemChatMessage(`🔫 ${spec.label} diberikan ke SEMUA player di Stage ${adminStage} (${targets.length} player, peluru unlimited).`);
+          soundEngine.playPowerUp();
+          return;
+        }
+      }
+
+      // Single target
+      if (isUnset) {
+        const target = resolveTarget(targetQuery);
+        if (!target) return;
+        const p = playersRef.current.get(target.id);
+        if (p) {
+          p.gun = null;
+          p.blasterAmmo = 0;
+          p.hasAdminGun = false;
+          p.blasterUntil = undefined;
+        }
+        if (target.id === myIdRef.current) setAmmoCount(0);
+        ably.publishCommand({ op: 'gun', targetId: target.id, value: false });
+        addSystemChatMessage(`🔫 Senjata '${target.username}' dicabut.`);
+        soundEngine.playBounce();
+        return;
+      }
+
+      if (weaponType) {
+        const spec = WEAPONS[weaponType];
+        const target = resolveTarget(targetQuery);
+        if (!target) return;
+        const p = playersRef.current.get(target.id);
+        if (p) {
+          p.gun = weaponType;
+          p.blasterAmmo = Infinity;
+          p.hasAdminGun = true;
+          p.blasterUntil = undefined;
+        }
+        if (target.id === myIdRef.current) setAmmoCount(Infinity);
+        ably.publishCommand({ op: 'gun', targetId: target.id, value: true, weapon: weaponType });
+        addSystemChatMessage(`🔫 ${spec.label} diberikan ke '${target.username}' (peluru unlimited).`);
+        soundEngine.playPowerUp();
+        return;
+      }
     }
-    async function submitAnswer(e: React.FormEvent) {
-      e.preventDefault();
-      if (exitNoticeRef.current || (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))) return;
-      if (!question || !selected || submitting) return;
 
-      if (isStaffRole(myRoleRef.current) && mirrorTargetRef.current) {
-        const answeredId = question.id;
-        const targetId = mirrorTargetRef.current === 'all' ? 'all' : mirrorTargetRef.current.userId;
-        const targetName = mirrorTargetRef.current === 'all' ? 'Seluruh Siswa' : mirrorTargetRef.current.username;
+    if (cmd === 'jail') {
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
+        return;
+      }
+      const turnOn = arg1 !== 'off';
+      if (arg1 !== 'on' && arg1 !== 'off') {
+        addSystemChatMessage('Format: /jail on [user|me] atau /jail off [user|me]');
+        return;
+      }
+      const targetQuery = parts[3]?.toLowerCase() || parts[2]?.toLowerCase() || 'me';
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      const p = playersRef.current.get(target.id);
+      if (p) p.jailedUntil = turnOn ? Date.now() + JAIL_FREEZE_MS : undefined;
+      ably.publishCommand({ op: 'jail', targetId: target.id, value: turnOn });
+      addSystemChatMessage(turnOn ? `⛓️ '${target.username}' dibekukan selama 15 detik.` : `⛓️ Bekukan '${target.username}' dilepas.`);
+      soundEngine.playPowerUp();
+      return;
+    }
 
-        answerResultsRef.current.set(answeredId, 'assisted');
+    if (cmd === 'change' && (arg1 === 'map' || arg1 === 'stage')) {
+      if (!isAdmin && !isStaff) {
+        addSystemChatMessage('Perintah /change map hanya dapat digunakan oleh Administrator atau Guru.');
+        return;
+      }
+
+      const parseMapId = (str?: string): number | null => {
+        if (!str) return null;
+        const clean = str.trim().toLowerCase().replace(/^s(tage)?/i, '');
+        const n = parseInt(clean, 10);
+        return !isNaN(n) && n >= 1 && n <= 20 ? n : null;
+      };
+
+      const currentMapList = selectedStagesRef.current.length > 0
+        ? [...selectedStagesRef.current]
+        : [1, 2, 3, 4];
+
+      // Format yang didukung:
+      // 1. /change map S20              -> ubah stage saat ini ke map S20
+      // 2. /change map 2 S20            -> ubah stage urutan ke-2 ke map S20
+      // 3. /change map all S1           -> ubah SEMUA stage ke map S1
+      let targetStageOrder: number | 'all' = currentStageRef.current;
+      let targetMapTheme: number | null = null;
+
+      if (!parts[2]) {
+        addSystemChatMessage('Format perintah /change map:');
+        addSystemChatMessage('• /change map <S1..S20> : Ganti map stage aktif saat ini (contoh: /change map S20)');
+        addSystemChatMessage('• /change map <urutan_stage> <S1..S20> : Ganti map stage tertentu (contoh: /change map 2 S20)');
+        addSystemChatMessage('• /change map all <S1..S20> : Ganti map semua stage (contoh: /change map all S1)');
+        return;
+      }
+
+      if (parts[2].toLowerCase() === 'all') {
+        targetStageOrder = 'all';
+        targetMapTheme = parseMapId(parts[3]);
+      } else if (parts[3]) {
+        const parsedOrder = parseInt(parts[2].toLowerCase().replace(/^s(tage)?/i, ''), 10);
+        if (isNaN(parsedOrder) || parsedOrder < 1 || parsedOrder > totalStagesRef.current) {
+          addSystemChatMessage(`Nomor stage tidak valid. Pilih urutan stage 1 sampai ${totalStagesRef.current} (atau 'all').`);
+          return;
+        }
+        targetStageOrder = parsedOrder;
+        targetMapTheme = parseMapId(parts[3]);
+      } else {
+        targetStageOrder = currentStageRef.current;
+        targetMapTheme = parseMapId(parts[2]);
+      }
+
+      if (!targetMapTheme) {
+        addSystemChatMessage(`Map '${parts[3] || parts[2]}' tidak valid. Pilih map S1 sampai S20.`);
+        return;
+      }
+
+      const nextStages = [...currentMapList];
+      while (nextStages.length < totalStagesRef.current) {
+        nextStages.push(nextStages.length + 1);
+      }
+
+      if (targetStageOrder === 'all') {
+        for (let i = 0; i < nextStages.length; i++) {
+          nextStages[i] = targetMapTheme;
+        }
+      } else {
+        nextStages[targetStageOrder - 1] = targetMapTheme;
+      }
+
+      selectedStagesRef.current = nextStages;
+      setSelectedStages(nextStages);
+
+      if (targetStageOrder === 'all' || targetStageOrder === currentStageRef.current) {
+        applyStage(currentStageRef.current, { force: true, showToast: true, respawnPlayer: true });
+        soundEngine.playPowerUp();
+      }
+
+      ably.publishCommand({
+        op: 'change_map',
+        stageOrder: targetStageOrder,
+        newMapTheme: targetMapTheme,
+        selectedStages: nextStages,
+        byName: myUsernameRef.current || (isAdmin ? 'Admin' : 'Guru'),
+      });
+
+      fetch(`/api/rooms/${roomId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'change-map', selectedStages: nextStages }),
+      }).catch(() => { });
+
+      const mapName = getStageShortName(targetMapTheme);
+      const stageDesc = targetStageOrder === 'all' ? 'SEMUA stage' : `Stage ${targetStageOrder}`;
+      showBanner(`🗺️ Berhasil ganti map ${stageDesc} jadi S${targetMapTheme} (${mapName})!`, 5000);
+      addSystemChatMessage(`🗺️ Map ${stageDesc} berhasil diganti menjadi S${targetMapTheme} (${mapName}). Seluruh pemain telah disinkronkan secara realtime.`);
+      return;
+    }
+
+    if (cmd === 'hide' || cmd === 'unhide') {
+      if (!isAdmin) {
+        addSystemChatMessage('Perintah /hide & /unhide hanya dapat digunakan oleh Administrator.');
+        return;
+      }
+      const targetBody = normalizeBodyName(arg2 || arg1 || '');
+      if (!targetBody || targetBody === 'cat') {
+        addSystemChatMessage('Format: /hide body <nama_karakter>  atau  /unhide body <nama_karakter>');
+        addSystemChatMessage('Contoh: /hide body naga  atau  /unhide body hacker');
+        return;
+      }
+      fetch('/api/game/shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_hide', itemId: targetBody, roomId }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.ok) {
+            setShopPrices(d.prices);
+            shopPricesRef.current = d.prices;
+            showBanner(d.message, 4500);
+            addSystemChatMessage(`🛡️ [ADMIN] ${d.message}`);
+            soundEngine.playPowerUp();
+          } else {
+            addSystemChatMessage(`Gagal: ${d.error}`);
+          }
+        })
+        .catch(() => addSystemChatMessage('Koneksi bermasalah.'));
+      return;
+    }
+
+    if (cmd === 'change' && (arg1 === 'body' || arg1 === 'avatar' || arg1 === 'skin')) {
+      // Format: /change body [user|me] <model>  ATAU  /change body <model>
+      const ALL_AVATARS = ['kangguru', 'kangaroo', 'pinguin', 'penguin', 'capybara', 'kapibara', 'masbro', 'bebek', 'duck', 'virus', 'cacing', 'ulat', 'burung', 'ayam', 'sapi', 'domba', 'naga', 'dragon', 'hacker', 'anon', 'cyber', 'cat-blue', 'cat-pink', 'cat-green', 'cat-orange', 'cat-purple', 'cat', 'kucing'];
+      let targetQuery = 'me';
+      let avatarChoice = '';
+      if (parts[2] && ALL_AVATARS.includes(parts[2].toLowerCase())) {
+        avatarChoice = parts[2].toLowerCase();
+      } else if (parts[2] && parts[3]) {
+        targetQuery = parts[2].toLowerCase();
+        avatarChoice = parts[3].toLowerCase();
+      } else if (parts[2]) {
+        avatarChoice = parts[2].toLowerCase();
+      }
+
+      if (avatarChoice === 'cat' || avatarChoice === 'kucing') avatarChoice = 'cat-blue';
+      if (avatarChoice === 'ulat') avatarChoice = 'cacing';
+      if (avatarChoice === 'dragon') avatarChoice = 'naga';
+      if (avatarChoice === 'anon' || avatarChoice === 'cyber') avatarChoice = 'hacker';
+
+      if (!ALL_AVATARS.includes(avatarChoice)) {
+        addSystemChatMessage('Format: /change body [user|me] <naga|hacker|virus|cacing|burung|ayam|sapi|domba|cat-blue|cat-pink|cat-green>');
+        addSystemChatMessage('Pilihan karakter animasi: naga (sayap mecha, jet plasma & orb kosmik [LIMITED ⭐]), hacker (topeng LED matrix & terminal hologram [CYBER 💻]), virus, cacing/ulat, burung, ayam, sapi, domba, cat');
+        return;
+      }
+
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current) && target.id !== myIdRef.current) {
+        addSystemChatMessage('Hanya Administrator atau Guru yang bisa mengganti karakter user lain.');
+        return;
+      }
+
+      const pTarget = playersRef.current.get(target.id);
+      const targetBody = avatarChoice.startsWith('cat') ? 'cat' : avatarChoice;
+      if (shopPrices.hiddenBodies?.includes(targetBody) && !isAdmin) {
+        addSystemChatMessage(`⛔ Karakter '${targetBody}' sedang disembunyikan oleh Administrator (Khusus Admin).`);
+        return;
+      }
+      if (pTarget) {
+        pTarget.avatar = avatarChoice;
+        pTarget.bodyModel = targetBody;
+      }
+      if (target.id === myIdRef.current) {
+        equippedBodyRef.current = targetBody;
+        setEquippedBody(targetBody);
+        try {
+          window.localStorage.setItem('llys_avatar', avatarChoice);
+          window.localStorage.setItem('llys_body', targetBody);
+        } catch { }
+      }
+
+      fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'avatar', avatar: avatarChoice, targetId: target.id }),
+      }).catch(() => { });
+
+      ably.publishCommand({ op: 'cosmetics', targetId: target.id, avatar: avatarChoice, bodyModel: targetBody });
+      addSystemChatMessage(`🎭 Karakter '${target.username}' diubah jadi [${avatarChoice.toUpperCase()}]!`);
+      soundEngine.playPowerUp();
+      return;
+    }
+
+    if (cmd === 'change' && arg1 === 'tag') {
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
+        return;
+      }
+      const targetQuery = arg2 || 'me';
+      const title = parts.slice(3).join(' ').trim();
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      const tagValue = title ? title.slice(0, 24) : undefined;
+      const p = playersRef.current.get(target.id);
+      if (p) {
+        p.tag1 = tagValue;
+        p.tag = tagValue;
+      }
+      if (target.id === myIdRef.current) {
+        try {
+          if (tagValue) window.localStorage.setItem('llys_custom_tag1', tagValue);
+          else window.localStorage.removeItem('llys_custom_tag1');
+        } catch { }
+      }
+      fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-tag', targetId: target.id, position: '1', tag: tagValue || null }),
+      }).catch(() => { });
+      ably.publishCommand({ op: 'cosmetics', targetId: target.id, tag1: tagValue, tag: tagValue });
+      addSystemChatMessage(tagValue ? `🏷️ Tag 1 '${target.username}' diubah jadi "${tagValue}" (tersimpan permanen). Tips: gunakan /set tag <1|2|3> <user|me> <title> untuk 3 tingkat title.` : `🏷️ Tag 1 '${target.username}' direset.`);
+      soundEngine.playPowerUp();
+      return;
+    }
+
+    if (cmd === 'change' && arg1 === 'color') {
+      if (!isStaff && !isStudentCmdAllowed(myIdRef.current)) {
+        addSystemChatMessage('Perintah ini hanya untuk Administrator, Guru, atau siswa yang di-enable Admin/Guru.');
+        return;
+      }
+      const targetQuery = arg2 || 'me';
+      const channel = (parts[3]?.toLowerCase() || '') as 'body' | 'tag' | 'tag1' | 'tag2' | 'tag3' | 'nick';
+      const colorRaw = parts.slice(4).join(' ');
+      if (!['body', 'tag', 'tag1', 'tag2', 'tag3', 'nick'].includes(channel) || !colorRaw) {
+        addSystemChatMessage('Format: /change color <user|me> body|tag|tag1|tag2|tag3|nick <warna>');
+        addSystemChatMessage('Tips: gunakan tag1, tag2, atau tag3 untuk mewarnai title tertentu, atau tag untuk warna dasar semua title.');
+        addSystemChatMessage('Warna: hex (#ff0000), nama (red), atau mode animasi: rgb, swap, spiral, spin, pulse, wave, strobe, candy, fire, ice, glitch, blink. Ketik none/reset buat balikin normal.');
+        return;
+      }
+      const target = resolveTarget(targetQuery);
+      if (!target) return;
+      let colorSpec: string | undefined;
+      if (colorRaw.toLowerCase() !== 'none' && colorRaw.toLowerCase() !== 'reset') {
+        const parsed = parseColorArg(colorRaw);
+        if (!parsed) {
+          addSystemChatMessage(`Warna '${colorRaw}' tidak dikenal. Pakai hex, nama warna, atau mode animasi (rgb, swap, spiral, spin, pulse, wave, strobe, candy, fire, ice, glitch, blink).`);
+          return;
+        }
+        colorSpec = parsed.value;
+      }
+      const p = playersRef.current.get(target.id);
+      if (p) {
+        p.colors = { ...(p.colors ?? {}) };
+        if (channel === 'body') p.colors.body = colorSpec;
+        else if (channel === 'tag') {
+          p.colors.tag = colorSpec;
+          if (!colorSpec) {
+            delete p.colors.tag1;
+            delete p.colors.tag2;
+            delete p.colors.tag3;
+          }
+        }
+        else if (channel === 'tag1') p.colors.tag1 = colorSpec;
+        else if (channel === 'tag2') p.colors.tag2 = colorSpec;
+        else if (channel === 'tag3') p.colors.tag3 = colorSpec;
+        else p.colors.nick = colorSpec;
+      }
+      if (target.id === myIdRef.current) {
+        try {
+          const meP = playersRef.current.get(myIdRef.current);
+          window.localStorage.setItem('llys_custom_colors', JSON.stringify(meP?.colors ?? {}));
+        } catch { }
+      }
+      // Persist ke DB agar warna siswa/guru disimpan permanen!
+      fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-colors', targetId: target.id, channel, color: colorSpec || null }),
+      }).catch(() => { });
+      ably.publishCommand({
+        op: 'cosmetics',
+        targetId: target.id,
+        colors: { [channel]: colorSpec },
+      });
+      addSystemChatMessage(colorSpec ? `🎨 ${channel} '${target.username}' diubah jadi ${colorSpec} (tersimpan permanen).` : `🎨 ${channel} '${target.username}' direset ke default.`);
+      soundEngine.playPowerUp();
+      return;
+    }
+
+    // Jika user mengetik incomplete command (misal /take, /untake, /spawn, /set):
+    const matchingIncomplete = ALL_COMMANDS.filter((c) => {
+      if (c.adminOnly && !isAdmin) return false;
+      if (c.staffStrict && !isStaff) return false;
+      if (c.staffOnly && !isStaff && !isStudentCmdAllowed(myIdRef.current)) return false;
+      return c.prefix === cmd || c.prefix.startsWith(cmd);
+    });
+    if (matchingIncomplete.length > 0) {
+      addSystemChatMessage(`Perintah /${cmd} tidak lengkap. Format:`);
+      for (const m of matchingIncomplete) {
+        addSystemChatMessage(m.usage);
+      }
+      return;
+    }
+
+    addSystemChatMessage(`Perintah '/${cmd}' tidak dikenali. Ketik /help untuk melihat daftar perintah.`);
+  }
+
+  async function sendChat(e: React.FormEvent) {
+    e.preventDefault();
+    if (exitNoticeRef.current || (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))) return;
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatInput('');
+
+    if (text.toLowerCase() === '/cls' || text.toLowerCase() === '/clear') {
+      setChat([]);
+      seenMsgIdsRef.current.clear();
+      setUnreadCount(0);
+      return;
+    }
+
+    if (text.startsWith('/')) {
+      handleChatCommand(text);
+      return;
+    }
+
+    if (myIdRef.current) {
+      bubblesRef.current.set(myIdRef.current, { text, at: Date.now() });
+    }
+    const res = await fetch('/api/game/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId, text }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.message) {
+        if (typeof data.message.seq === 'number' && data.message.seq > chatCursorRef.current) {
+          chatCursorRef.current = data.message.seq;
+        }
+        ingestMessages([data.message]);
+      }
+    }
+  }
+
+  const displayChat = chat;
+  const players = room?.players ?? [];
+  const totalSteps = Math.max(levelQuestions.length, 1);
+  // Hitung semua soal yang sudah dijawab oleh player (baik benar maupun salah) ke dalam progres misi
+  const doneSteps = Math.min(Math.max(answeredQuestionIds.length, correctCount), totalSteps);
+  const sortedPlayers = [...players].sort((a, b) => (scores[b.userId] ?? 0) - (scores[a.userId] ?? 0) || a.username.localeCompare(b.username));
+  const hasVisibleQuestion = Boolean(question && (!isStaff ? !answeredQuestionIds.includes(question.id) : Boolean(mirrorTargetRef.current)));
+  const questionActive = hasVisibleQuestion;
+  const allBottomMinimized = panelsHidden || !hasVisibleQuestion;
+  const controlsPosClass = allBottomMinimized ? '' : ' mp-elevated';
+
+  async function togglePauseGame() {
+    if (!room) return;
+    const nextStatus = room.status === 'paused' ? 'in_progress' : 'paused';
+    applyLiveRoomStatus(nextStatus);
+    await fetch('/api/rooms/' + roomId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+  }
+
+  async function endGame() {
+    hasLeftRef.current = true;
+    const res = await fetch('/api/rooms/' + roomId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+    if (res.ok) {
+      router.replace('/dashboard/teacher/rooms');
+    }
+  }
+
+  async function kickPlayer(playerId: string) {
+    const res = await fetch('/api/game/kick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId, playerId }),
+    });
+    if (res.ok) {
+      playersRef.current.delete(playerId);
+      setRoom((prev) => (prev ? { ...prev, players: prev.players.filter((pl) => pl.userId !== playerId) } : prev));
+    }
+  }
+
+  async function kickAllPlayers() {
+    if (!confirm('Keluarkan semua siswa dari ruang permainan ini?')) return;
+    const res = await fetch('/api/game/kick-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const kickedSet = new Set<string>(Array.isArray(data.kickedIds) ? data.kickedIds : []);
+      for (const pid of kickedSet) {
+        playersRef.current.delete(pid);
+      }
+      setRoom((prev) =>
+        prev ? { ...prev, players: prev.players.filter((pl) => !kickedSet.has(pl.userId)) } : prev,
+      );
+    }
+  }
+
+  async function approveRejoin(playerId: string) {
+    setRejoinRequests((prev) => prev.filter((r) => r.userId !== playerId));
+    const res = await fetch('/api/game/approve-rejoin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId, playerId }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setScores((prev) => ({ ...prev, [playerId]: 0 }));
+      if (Array.isArray(data.rejoinRequests)) {
+        setRejoinRequests(data.rejoinRequests);
+      }
+    }
+  }
+
+  async function rejectRejoin(playerId: string) {
+    setRejoinRequests((prev) => prev.filter((r) => r.userId !== playerId));
+    const res = await fetch('/api/game/reject-rejoin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId, playerId }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.rejoinRequests)) {
+        setRejoinRequests(data.rejoinRequests);
+      }
+    }
+  }
+  async function submitAnswer(e: React.FormEvent) {
+    e.preventDefault();
+    if (exitNoticeRef.current || (roomRef.current?.status === 'paused' && !isStaffRole(myRoleRef.current))) return;
+    if (!question || !selected || submitting) return;
+
+    if (isStaffRole(myRoleRef.current) && mirrorTargetRef.current) {
+      const answeredId = question.id;
+      const targetId = mirrorTargetRef.current === 'all' ? 'all' : mirrorTargetRef.current.userId;
+      const targetName = mirrorTargetRef.current === 'all' ? 'Seluruh Siswa' : mirrorTargetRef.current.username;
+
+      answerResultsRef.current.set(answeredId, 'assisted');
+      answeredIdsRef.current.add(answeredId);
+      setAnsweredQuestionIds(Array.from(answeredIdsRef.current));
+      setCorrectCount(answeredIdsRef.current.size);
+
+      ably.publishCommand({ op: 'assist_answer', targetId, qid: answeredId });
+      // Persist ke database supaya centang biru bertahan walau siswa rejoin
+      fetch('/api/game/assist-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, targetId, questionId: answeredId, answer: selected }),
+      }).catch(() => { });
+      soundEngine.playAnswerCorrect();
+      showBanner(`🟦 Berhasil membantu soal untuk ${targetName}! (+0 Poin, Misi Tercatat)`, 4000);
+      setQuestion(null);
+      questionRef.current = null;
+      setSelected('');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const answeredId = question.id;
+      const res = await fetch('/api/game/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current || undefined,
+          roomId,
+          levelId: roomRef.current?.level?.id,
+          questionId: answeredId,
+          answer: selected,
+          timeSpent: 0,
+        }),
+      });
+      const data = await res.json();
+      if (Array.isArray(data.rejoinRequests)) {
+        setRejoinRequests(data.rejoinRequests);
+      }
+
+      if (typeof data.sessionId === 'string' && data.sessionId) {
+        sessionIdRef.current = data.sessionId;
+      }
+      if (res.ok) {
+        const result = data.result ?? data;
+        answerResultsRef.current.set(answeredId, Boolean(result.isCorrect));
         answeredIdsRef.current.add(answeredId);
-        setAnsweredQuestionIds(Array.from(answeredIdsRef.current));
-        setCorrectCount(answeredIdsRef.current.size);
-
-        ably.publishCommand({ op: 'assist_answer', targetId, qid: answeredId });
-        // Persist ke database supaya centang biru bertahan walau siswa rejoin
-        fetch('/api/game/assist-answer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId, targetId, questionId: answeredId, answer: selected }),
-        }).catch(() => { });
-        soundEngine.playAnswerCorrect();
-        showBanner(`🟦 Berhasil membantu soal untuk ${targetName}! (+0 Poin, Misi Tercatat)`, 4000);
-        setQuestion(null);
-        questionRef.current = null;
+        const nextAnsweredList = Array.from(answeredIdsRef.current);
+        setAnsweredQuestionIds(nextAnsweredList);
+        // Tambahkan progres misi baik jawaban benar maupun salah
+        setCorrectCount(nextAnsweredList.length);
+        const curStg = currentStageRef.current;
+        const totStg = totalStagesRef.current;
+        const curStgQs = getStageQuestions(levelQuestionsRef.current, curStg, totStg);
+        if (curStgQs.length > 0 && curStgQs.every((q) => answeredIdsRef.current.has(q.id))) {
+          const bossAlive = stageBossesRef.current.some((b) => b.alive);
+          if (bossAlive) {
+            showBanner(`⚔ Semua soal di Stage ${curStg} telah terjawab! Kalahkan Boss Penjaga Pintu di ujung kanan untuk membuka gerbang!`, 5500);
+          } else {
+            const msg =
+              curStg < totStg
+                ? `🔓 GERBANG STAGE ${curStg} TERBUKA! Masuk ke Pintu Ujung Kanan untuk Lanjut ke Stage ${curStg + 1} ➜`
+                : `🏆 SEMUA SOAL SELESAI! Masuk ke Gerbang Finish di Ujung Kanan!`;
+            showBanner(msg, 5000);
+          }
+        }
         setSelected('');
-        return;
-      }
-
-      setSubmitting(true);
-      try {
-        const answeredId = question.id;
-        const res = await fetch('/api/game/answer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: sessionIdRef.current || undefined,
-            roomId,
-            levelId: roomRef.current?.level?.id,
-            questionId: answeredId,
-            answer: selected,
-            timeSpent: 0,
-          }),
-        });
-        const data = await res.json();
-        if (Array.isArray(data.rejoinRequests)) {
-          setRejoinRequests(data.rejoinRequests);
+        if (!isStaff) {
+          ably.publishCommand({
+            op: 'mirror_question_state',
+            userId: myIdRef.current,
+            qid: answeredId,
+            selected,
+            isSubmitted: true,
+            isCorrect: Boolean(result.isCorrect),
+          });
         }
-
-        if (typeof data.sessionId === 'string' && data.sessionId) {
-          sessionIdRef.current = data.sessionId;
+        if (result.isCorrect) {
+          soundEngine.playAnswerCorrect();
+          if (myIdRef.current) {
+            setScores((prev) => ({
+              ...prev,
+              [myIdRef.current]: (prev[myIdRef.current] ?? 0) + (result.pointsEarned ?? 0),
+            }));
+            const me = playersRef.current.get(myIdRef.current);
+            if (me && !isStaff) {
+              if (!me.hasAdminGun) {
+                me.blasterAmmo = Math.min((me.blasterAmmo ?? 0) + 5, 20);
+                me.blasterUntil = Date.now() + 60000;
+                setAmmoCount(me.blasterAmmo);
+              }
+            }
+          }
+        } else {
+          soundEngine.playAnswerWrong();
         }
-        if (res.ok) {
-          const result = data.result ?? data;
-          answerResultsRef.current.set(answeredId, Boolean(result.isCorrect));
+        setFeedback(result);
+      } else {
+        if (res.status === 409) {
           answeredIdsRef.current.add(answeredId);
           const nextAnsweredList = Array.from(answeredIdsRef.current);
           setAnsweredQuestionIds(nextAnsweredList);
-          // Tambahkan progres misi baik jawaban benar maupun salah
           setCorrectCount(nextAnsweredList.length);
-          const curStg = currentStageRef.current;
-          const totStg = totalStagesRef.current;
-          const curStgQs = getStageQuestions(levelQuestionsRef.current, curStg, totStg);
-          if (curStgQs.length > 0 && curStgQs.every((q) => answeredIdsRef.current.has(q.id))) {
-            const bossAlive = stageBossesRef.current.some((b) => b.alive);
-            if (bossAlive) {
-              showBanner(`⚔ Semua soal di Stage ${curStg} telah terjawab! Kalahkan Boss Penjaga Pintu di ujung kanan untuk membuka gerbang!`, 5500);
-            } else {
-              const msg =
-                curStg < totStg
-                  ? `🔓 GERBANG STAGE ${curStg} TERBUKA! Masuk ke Pintu Ujung Kanan untuk Lanjut ke Stage ${curStg + 1} ➜`
-                  : `🏆 SEMUA SOAL SELESAI! Masuk ke Gerbang Finish di Ujung Kanan!`;
-              showBanner(msg, 5000);
-            }
-          }
+          questionRef.current = null;
+          setQuestion(null);
           setSelected('');
-          if (!isStaff) {
-            ably.publishCommand({
-              op: 'mirror_question_state',
-              userId: myIdRef.current,
-              qid: answeredId,
-              selected,
-              isSubmitted: true,
-              isCorrect: Boolean(result.isCorrect),
-            });
-          }
-          if (result.isCorrect) {
-            soundEngine.playAnswerCorrect();
-            if (myIdRef.current) {
-              setScores((prev) => ({
-                ...prev,
-                [myIdRef.current]: (prev[myIdRef.current] ?? 0) + (result.pointsEarned ?? 0),
-              }));
-              const me = playersRef.current.get(myIdRef.current);
-              if (me && !isStaff) {
-                if (!me.hasAdminGun) {
-                  me.blasterAmmo = Math.min((me.blasterAmmo ?? 0) + 5, 20);
-                  me.blasterUntil = Date.now() + 60000;
-                  setAmmoCount(me.blasterAmmo);
-                }
-              }
-            }
-          } else {
-            soundEngine.playAnswerWrong();
-          }
-          setFeedback(result);
         } else {
-          if (res.status === 409) {
-            answeredIdsRef.current.add(answeredId);
-            const nextAnsweredList = Array.from(answeredIdsRef.current);
-            setAnsweredQuestionIds(nextAnsweredList);
-            setCorrectCount(nextAnsweredList.length);
-            questionRef.current = null;
-            setQuestion(null);
-            setSelected('');
-          } else {
-            setError(data.error ?? 'Gagal mengirim jawaban');
-          }
+          setError(data.error ?? 'Gagal mengirim jawaban');
         }
-      } finally {
-        setSubmitting(false);
       }
+    } finally {
+      setSubmitting(false);
     }
+  }
 
-    if (error && !room) {
-      return (
-        <main className="flex min-h-screen items-center justify-center bg-[var(--cream-bg)]">
-          <div className="parchment-card mp-error-card">
-            <div className="wood-header-sign">llysSmart</div>
-            <p className="font-display text-xl font-semibold">{error}</p>
-            <div className="mt-4 flex justify-center">
-              <button className="btn-orange-action" onClick={() => router.push('/dashboard/student')}>
-                Kembali ke Dashboard
-              </button>
-            </div>
-          </div>
-        </main>
-      );
-    }
-
+  if (error && !room) {
     return (
-      <main ref={mainRef} className="fixed top-0 left-0 right-0 h-screen w-full overflow-hidden bg-[#1e2d42] p-0 md:p-4 game-shell">
-        <div className={`game-viewport${questionActive ? ' question-focus' : ''}`}>
-          <canvas
-            ref={canvasRef}
-            className="h-full w-full touch-none"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onWheel={onWheel}
-          />
+      <main className="flex min-h-screen items-center justify-center bg-[var(--cream-bg)]">
+        <div className="parchment-card mp-error-card">
+          <div className="wood-header-sign">llysSmart</div>
+          <p className="font-display text-xl font-semibold">{error}</p>
+          <div className="mt-4 flex justify-center">
+            <button className="btn-orange-action" onClick={() => router.push('/dashboard/student')}>
+              Kembali ke Dashboard
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
-          <div className="mp-hud-layer">
-            <div className="mp-topbar">
-              <div className="mp-top-left">
-                <div className="mp-brand-pill">
-                  <svg width="34" height="34" viewBox="0 0 48 48" aria-hidden="true">
-                    <rect x="4" y="12" width="40" height="24" rx="12" fill="#e8eefc" stroke="#233866" strokeWidth="3.5" />
-                    <path d="M15 20v8M11 24h8" stroke="#3b66c4" strokeWidth="3.2" strokeLinecap="round" />
-                    <circle cx="32" cy="21" r="2.5" fill="#ef4b5b" />
-                    <circle cx="36" cy="26" r="2.5" fill="#ffb03b" />
+  return (
+    <main ref={mainRef} className="fixed top-0 left-0 right-0 h-screen w-full overflow-hidden bg-[#1e2d42] p-0 md:p-4 game-shell">
+      <div className={`game-viewport${questionActive ? ' question-focus' : ''}`}>
+        <canvas
+          ref={canvasRef}
+          className="h-full w-full touch-none"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onWheel={onWheel}
+        />
+
+        <div className="mp-hud-layer">
+          <div className="mp-topbar">
+            <div className="mp-top-left">
+              <div className="mp-brand-pill">
+                <svg width="34" height="34" viewBox="0 0 48 48" aria-hidden="true">
+                  <rect x="4" y="12" width="40" height="24" rx="12" fill="#e8eefc" stroke="#233866" strokeWidth="3.5" />
+                  <path d="M15 20v8M11 24h8" stroke="#3b66c4" strokeWidth="3.2" strokeLinecap="round" />
+                  <circle cx="32" cy="21" r="2.5" fill="#ef4b5b" />
+                  <circle cx="36" cy="26" r="2.5" fill="#ffb03b" />
+                </svg>
+                <div className="mp-brand-text">
+                  <span className="mp-brand-name">llysSmart</span>
+                  <span className="mp-brand-sub">Let&apos;s Learn Your Skills</span>
+                </div>
+              </div>
+
+              {!panelsHidden && (
+                <button
+                  type="button"
+                  className="pause-btn mp-chat-top-btn"
+                  aria-pressed={!chatMinimized}
+                  aria-label={chatMinimized ? 'Buka Chat Room' : 'Tutup Chat Room'}
+                  title={chatMinimized ? 'Buka Chat Room' : 'Tutup Chat Room'}
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setChatMinimized((prev) => !prev);
+                    setUnreadCount(0);
+                  }}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M4 5h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
+                      fill="#fff"
+                    />
+                    <circle cx="8.5" cy="11.5" r="1.3" fill="#6b3806" />
+                    <circle cx="12" cy="11.5" r="1.3" fill="#6b3806" />
+                    <circle cx="15.5" cy="11.5" r="1.3" fill="#6b3806" />
                   </svg>
-                  <div className="mp-brand-text">
-                    <span className="mp-brand-name">llysSmart</span>
-                    <span className="mp-brand-sub">Let&apos;s Learn Your Skills</span>
+                  {unreadCount > 0 && <span className="mp-chat-badge">{unreadCount}</span>}
+                </button>
+              )}
+            </div>
+
+            <div className="mp-center-stage-pill">
+              <div className="mp-stage-title">{getRoomSubjectTitle(room)}</div>
+              {totalStages > 1 && (
+                isStaff ? (
+                  <div className="mp-stage-switch-row" role="group" aria-label="Pilih Stage (Guru/Admin)">
+                    {Array.from({ length: totalStages }, (_, idx) => {
+                      const stgNum = idx + 1;
+                      const realStageId = selectedStagesRef.current[idx] ?? selectedStages[idx] ?? stgNum;
+                      const stgQs = getStageQuestions(levelQuestions, stgNum, totalStages);
+                      const stgAns = stgQs.filter((q) => answeredQuestionIds.includes(q.id)).length;
+                      const isCleared = stgQs.length > 0 && stgAns >= stgQs.length;
+                      return (
+                        <button
+                          key={stgNum}
+                          type="button"
+                          className={`mp-stage-chip-compact${currentStage === stgNum ? ' is-active' : ''}${isCleared ? ' is-cleared' : ''}`}
+                          title={`Stage ${realStageId} (#${stgNum}: ${getStageShortName(realStageId)}) • ${stgAns}/${stgQs.length} soal`}
+                          onClick={() => {
+                            soundEngine.playClick();
+                            applyStage(stgNum, { respawnPlayer: true, showToast: true });
+                          }}
+                        >
+                          {realStageId}
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-
-                {!panelsHidden && (
-                  <button
-                    type="button"
-                    className="pause-btn mp-chat-top-btn"
-                    aria-pressed={!chatMinimized}
-                    aria-label={chatMinimized ? 'Buka Chat Room' : 'Tutup Chat Room'}
-                    title={chatMinimized ? 'Buka Chat Room' : 'Tutup Chat Room'}
-                    onClick={() => {
-                      soundEngine.playClick();
-                      setChatMinimized((prev) => !prev);
-                      setUnreadCount(0);
-                    }}
-                    onContextMenu={(e) => e.preventDefault()}
-                  >
-                    <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M4 5h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
-                        fill="#fff"
-                      />
-                      <circle cx="8.5" cy="11.5" r="1.3" fill="#6b3806" />
-                      <circle cx="12" cy="11.5" r="1.3" fill="#6b3806" />
-                      <circle cx="15.5" cy="11.5" r="1.3" fill="#6b3806" />
-                    </svg>
-                    {unreadCount > 0 && <span className="mp-chat-badge">{unreadCount}</span>}
-                  </button>
-                )}
-              </div>
-
-              <div className="mp-center-stage-pill">
-                <div className="mp-stage-title">{getRoomSubjectTitle(room)}</div>
-                {totalStages > 1 && (
-                  isStaff ? (
-                    <div className="mp-stage-switch-row" role="group" aria-label="Pilih Stage (Guru/Admin)">
-                      {Array.from({ length: totalStages }, (_, idx) => {
-                        const stgNum = idx + 1;
-                        const realStageId = selectedStagesRef.current[idx] ?? selectedStages[idx] ?? stgNum;
-                        const stgQs = getStageQuestions(levelQuestions, stgNum, totalStages);
-                        const stgAns = stgQs.filter((q) => answeredQuestionIds.includes(q.id)).length;
-                        const isCleared = stgQs.length > 0 && stgAns >= stgQs.length;
-                        return (
-                          <button
-                            key={stgNum}
-                            type="button"
-                            className={`mp-stage-chip-compact${currentStage === stgNum ? ' is-active' : ''}${isCleared ? ' is-cleared' : ''}`}
-                            title={`Stage ${realStageId} (#${stgNum}: ${getStageShortName(realStageId)}) • ${stgAns}/${stgQs.length} soal`}
-                            onClick={() => {
-                              soundEngine.playClick();
-                              applyStage(stgNum, { respawnPlayer: true, showToast: true });
-                            }}
-                          >
-                            {realStageId}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="mp-stage-switch-row">
-                      <span className="mp-stage-badge-student">
-                        Stage {selectedStagesRef.current[currentStage - 1] ?? selectedStages[currentStage - 1] ?? currentStage} / {totalStages} ({getStageShortName(selectedStagesRef.current[currentStage - 1] ?? selectedStages[currentStage - 1] ?? currentStage)})
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
-
-              {spectateTargetId && (
-                <div className="mirror-indicator-pill mp-spectate-pill" role="status">
-                  <span>📹 Memantau: <strong>{playersRef.current.get(spectateTargetId)?.username || spectateTargetId}</strong></span>
-                  <button
-                    type="button"
-                    className="mirror-close-btn"
-                    title="Kembali ke Karakter Sendiri"
-                    onClick={returnCameraToSelf}
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-
-              {isCameraFreePanning && !spectateTargetId && (
-                <div className="mirror-indicator-pill mp-freepan-pill" role="status">
-                  <span>🔍 Kamera Bebas</span>
-                  <button
-                    type="button"
-                    className="mp-freepan-reset-btn"
-                    title="Kembalikan kamera ke karakter"
-                    onClick={returnCameraToSelf}
-                  >
-                    🎯 Pusatkan
-                  </button>
-                </div>
-              )}
-
-              {mirrorTarget && !spectateTargetId && isStaff && (
-                <div className="mirror-indicator-pill" role="status">
-                  <span>🔍 Mirroring: <strong>{mirrorTarget}</strong></span>
-                  <button
-                    type="button"
-                    className="mirror-close-btn"
-                    title="Tutup Mode Mirror (/unset mirror)"
-                    onClick={() => {
-                      mirrorTargetRef.current = null;
-                      mirrorFetchTargetRef.current = null;
-                      setMirrorTarget(null);
-                      questionBlocksRef.current = [];
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-
-              {ropedByUserId && (
-                <div className="follow-indicator-pill" role="status">
-                  <span>🪢 Mengikuti: <strong>{playersRef.current.get(ropedByUserId)?.username || 'Player'}</strong></span>
-                  <button
-                    type="button"
-                    className="follow-unfollow-btn"
-                    title="Lepas Tali / Berhenti Mengikuti (/unfollow)"
-                    onClick={() => handleChatCommand('/unfollow')}
-                  >
-                    ✕ Unfollow
-                  </button>
-                </div>
-              )}
-
-              <div className="mp-top-right">
-                <div className="mp-timer-row">
-                  <div
-                    className="mp-ping-pill"
-                    title={`Realtime Transport: ${ably.transportMode.toUpperCase()} (${ably.pingMs} ms)`}
-                    aria-label={`Ping ${ably.pingMs} ms`}
-                  >
-                    <span className={`mp-ping-dot ${ably.pingMs <= 20 ? 'fast' : ably.pingMs <= 80 ? 'ok' : 'slow'}`} />
-                    <span>{ably.pingMs} ms</span>
+                ) : (
+                  <div className="mp-stage-switch-row">
+                    <span className="mp-stage-badge-student">
+                      Stage {selectedStagesRef.current[currentStage - 1] ?? selectedStages[currentStage - 1] ?? currentStage} / {totalStages} ({getStageShortName(selectedStagesRef.current[currentStage - 1] ?? selectedStages[currentStage - 1] ?? currentStage)})
+                    </span>
                   </div>
-                  {isStaff && (
-                    <div className="mp-teacher-actions">
-                      <button
-                        type="button"
-                        className={`pause-btn mp-staff-btn ${room?.status === 'paused' ? 'mp-staff-green' : 'mp-staff-blue'}`}
-                        aria-label={room?.status === 'paused' ? 'Lanjutkan Game' : 'Jeda Game'}
-                        title={room?.status === 'paused' ? 'Lanjutkan Game' : 'Jeda Game'}
-                        onClick={togglePauseGame}
-                      >
-                        {room?.status === 'paused' ? (
-                          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M8 5.5v13l11-6.5-11-6.5z" fill="#fff" />
-                          </svg>
-                        ) : (
-                          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="#fff" />
-                            <rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="#fff" />
-                          </svg>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="pause-btn mp-staff-btn mp-staff-blue mp-chat-top-btn"
-                        aria-label="Kelola Pemain"
-                        title="Kelola Pemain"
-                        onClick={() => {
-                          setKickModalOpen(true);
-                          fetch('/api/game/room-sync', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ roomId, chatCursor: chatCursorRef.current }),
-                          })
-                            .then((r) => (r.ok ? r.json() : null))
-                            .then((d) => {
-                              if (d && Array.isArray(d.rejoinRequests)) {
-                                setRejoinRequests(d.rejoinRequests);
-                              }
-                            })
-                            .catch(() => { });
-                        }}
-                      >
-                        <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true">
-                          <circle cx="9" cy="8.5" r="3.2" fill="#fff" />
-                          <path
-                            d="M3.5 19c0-2.8 2.5-5 5.5-5s5.5 2.2 5.5 5"
-                            fill="none"
-                            stroke="#fff"
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                          />
-                          <circle cx="16.8" cy="9.2" r="2.3" fill="#fff" opacity="0.92" />
-                          <path
-                            d="M15.8 14.3c2.4.3 4.4 2 4.4 4.4"
-                            fill="none"
-                            stroke="#fff"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        {rejoinRequests.length > 0 && (
-                          <span className="mp-chat-badge">{rejoinRequests.length}</span>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="pause-btn mp-staff-btn mp-staff-danger"
-                        aria-label="Akhiri Sesi Game"
-                        title="Akhiri Sesi Game"
-                        onClick={endGame}
-                      >
+                )
+              )}
+            </div>
+
+            {spectateTargetId && (
+              <div className="mirror-indicator-pill mp-spectate-pill" role="status">
+                <span>📹 Memantau: <strong>{playersRef.current.get(spectateTargetId)?.username || spectateTargetId}</strong></span>
+                <button
+                  type="button"
+                  className="mirror-close-btn"
+                  title="Kembali ke Karakter Sendiri"
+                  onClick={returnCameraToSelf}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {isCameraFreePanning && !spectateTargetId && (
+              <div className="mirror-indicator-pill mp-freepan-pill" role="status">
+                <span>🔍 Kamera Bebas</span>
+                <button
+                  type="button"
+                  className="mp-freepan-reset-btn"
+                  title="Kembalikan kamera ke karakter"
+                  onClick={returnCameraToSelf}
+                >
+                  🎯 Pusatkan
+                </button>
+              </div>
+            )}
+
+            {mirrorTarget && !spectateTargetId && isStaff && (
+              <div className="mirror-indicator-pill" role="status">
+                <span>🔍 Mirroring: <strong>{mirrorTarget}</strong></span>
+                <button
+                  type="button"
+                  className="mirror-close-btn"
+                  title="Tutup Mode Mirror (/unset mirror)"
+                  onClick={() => {
+                    mirrorTargetRef.current = null;
+                    mirrorFetchTargetRef.current = null;
+                    setMirrorTarget(null);
+                    questionBlocksRef.current = [];
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {ropedByUserId && (
+              <div className="follow-indicator-pill" role="status">
+                <span>🪢 Mengikuti: <strong>{playersRef.current.get(ropedByUserId)?.username || 'Player'}</strong></span>
+                <button
+                  type="button"
+                  className="follow-unfollow-btn"
+                  title="Lepas Tali / Berhenti Mengikuti (/unfollow)"
+                  onClick={() => handleChatCommand('/unfollow')}
+                >
+                  ✕ Unfollow
+                </button>
+              </div>
+            )}
+
+            <div className="mp-top-right">
+              <div className="mp-timer-row">
+                <div
+                  className="mp-ping-pill"
+                  title={`Realtime Transport: ${ably.transportMode.toUpperCase()} (${ably.pingMs} ms)`}
+                  aria-label={`Ping ${ably.pingMs} ms`}
+                >
+                  <span className={`mp-ping-dot ${ably.pingMs <= 20 ? 'fast' : ably.pingMs <= 80 ? 'ok' : 'slow'}`} />
+                  <span>{ably.pingMs} ms</span>
+                </div>
+                {isStaff && (
+                  <div className="mp-teacher-actions">
+                    <button
+                      type="button"
+                      className={`pause-btn mp-staff-btn ${room?.status === 'paused' ? 'mp-staff-green' : 'mp-staff-blue'}`}
+                      aria-label={room?.status === 'paused' ? 'Lanjutkan Game' : 'Jeda Game'}
+                      title={room?.status === 'paused' ? 'Lanjutkan Game' : 'Jeda Game'}
+                      onClick={togglePauseGame}
+                    >
+                      {room?.status === 'paused' ? (
                         <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            d="M12 3v9"
-                            fill="none"
-                            stroke="#fff"
-                            strokeWidth="2.6"
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d="M7.05 6.05a8 8 0 1 0 9.9 0"
-                            fill="none"
-                            stroke="#fff"
-                            strokeWidth="2.4"
-                            strokeLinecap="round"
-                          />
+                          <path d="M8 5.5v13l11-6.5-11-6.5z" fill="#fff" />
                         </svg>
-                      </button>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className="pause-btn"
-                    aria-label="Toko Karakter & Item"
-                    title="Toko Petualang (Troli)"
-                    onClick={() => {
-                      soundEngine.playClick();
-                      setShowShopModal(true);
-                    }}
-                    style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: '2px solid #fef08a' }}
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="9" cy="21" r="1.5" fill="#fff" />
-                      <circle cx="20" cy="21" r="1.5" fill="#fff" />
-                      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="pause-btn"
-                    aria-pressed={settingsModalOpen}
-                    aria-label="Pengaturan Suara & Tombol"
-                    title="Pengaturan Suara & Tombol"
-                    onClick={() => {
-                      soundEngine.playClick();
-                      setSettingsModalOpen((v) => !v);
-                    }}
-                  >
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                          <rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="#fff" />
+                          <rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="#fff" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="pause-btn mp-staff-btn mp-staff-blue mp-chat-top-btn"
+                      aria-label="Kelola Pemain"
+                      title="Kelola Pemain"
+                      onClick={() => {
+                        setKickModalOpen(true);
+                        fetch('/api/game/room-sync', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ roomId, chatCursor: chatCursorRef.current }),
+                        })
+                          .then((r) => (r.ok ? r.json() : null))
+                          .then((d) => {
+                            if (d && Array.isArray(d.rejoinRequests)) {
+                              setRejoinRequests(d.rejoinRequests);
+                            }
+                          })
+                          .catch(() => { });
+                      }}
+                    >
+                      <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="9" cy="8.5" r="3.2" fill="#fff" />
+                        <path
+                          d="M3.5 19c0-2.8 2.5-5 5.5-5s5.5 2.2 5.5 5"
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                        />
+                        <circle cx="16.8" cy="9.2" r="2.3" fill="#fff" opacity="0.92" />
+                        <path
+                          d="M15.8 14.3c2.4.3 4.4 2 4.4 4.4"
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      {rejoinRequests.length > 0 && (
+                        <span className="mp-chat-badge">{rejoinRequests.length}</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="pause-btn mp-staff-btn mp-staff-danger"
+                      aria-label="Akhiri Sesi Game"
+                      title="Akhiri Sesi Game"
+                      onClick={endGame}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M12 3v9"
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth="2.6"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M7.05 6.05a8 8 0 1 0 9.9 0"
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="pause-btn"
+                  aria-label="Toko Karakter & Item"
+                  title="Toko Petualang (Troli)"
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setShowShopModal(true);
+                  }}
+                  style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: '2px solid #fef08a' }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="9" cy="21" r="1.5" fill="#fff" />
+                    <circle cx="20" cy="21" r="1.5" fill="#fff" />
+                    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="pause-btn"
+                  aria-pressed={settingsModalOpen}
+                  aria-label="Pengaturan Suara & Tombol"
+                  title="Pengaturan Suara & Tombol"
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setSettingsModalOpen((v) => !v);
+                  }}
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"
+                      fill="#fff"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="pause-btn"
+                  aria-pressed={panelsHidden}
+                  aria-label={panelsHidden ? 'Tampilkan semua panel' : 'Sembunyikan semua panel'}
+                  title={panelsHidden ? 'Tampilkan semua panel' : 'Sembunyikan semua panel'}
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setPanelsHidden((v) => !v);
+                  }}
+                >
+                  {panelsHidden ? (
                     <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"
-                        fill="#fff"
-                      />
+                      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                      <line x1="3" y1="3" x2="21" y2="21" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
                     </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="pause-btn"
-                    aria-pressed={panelsHidden}
-                    aria-label={panelsHidden ? 'Tampilkan semua panel' : 'Sembunyikan semua panel'}
-                    title={panelsHidden ? 'Tampilkan semua panel' : 'Sembunyikan semua panel'}
-                    onClick={() => {
-                      soundEngine.playClick();
-                      setPanelsHidden((v) => !v);
-                    }}
-                  >
-                    {panelsHidden ? (
-                      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-                        <line x1="3" y1="3" x2="21" y2="21" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
-                      </svg>
-                    ) : (
-                      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-                        <circle cx="12" cy="12" r="3" fill="#fff" />
-                      </svg>
-                    )}
-                  </button>
-                  <button type="button" className="pause-btn" aria-label="Kembali" title="Kembali" onClick={handleLeaveGame}>
-                    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M20 6l-12 10 12 10v-6h8v-8h-8V6z" fill="#fff" /></svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="pause-btn mp-fullscreen-btn"
-                    aria-label={isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'}
-                    title={isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'}
-                    onClick={toggleFullscreen}
-                  >
-                    {isFullscreen ? (
-                      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M9 3v3H6v3H3V3h6zm6 0h6v6h-3V6h-3V3zM3 15h3v3h3v3H3v-6zm15 0h3v6h-6v-3h3v-3z" fill="#fff" />
-                      </svg>
-                    ) : (
-                      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M3 3h6v3H6v3H3V3zm12 0h6v6h-3V6h-3V3zM3 15h3v3h3v3H3v-6zm18 0v6h-6v-3h3v-3h3z" fill="#fff" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
+                  ) : (
+                    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                      <circle cx="12" cy="12" r="3" fill="#fff" />
+                    </svg>
+                  )}
+                </button>
+                <button type="button" className="pause-btn" aria-label="Kembali" title="Kembali" onClick={handleLeaveGame}>
+                  <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M20 6l-12 10 12 10v-6h8v-8h-8V6z" fill="#fff" /></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pause-btn mp-fullscreen-btn"
+                  aria-label={isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'}
+                  title={isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'}
+                  onClick={toggleFullscreen}
+                >
+                  {isFullscreen ? (
+                    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 3v3H6v3H3V3h6zm6 0h6v6h-3V6h-3V3zM3 15h3v3h3v3H3v-6zm15 0h3v6h-6v-3h3v-3z" fill="#fff" />
+                    </svg>
+                  ) : (
+                    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3 3h6v3H6v3H3V3zm12 0h6v6h-3V6h-3V3zM3 15h3v3h3v3H3v-6zm18 0v6h-6v-3h3v-3h3z" fill="#fff" />
+                    </svg>
+                  )}
+                </button>
+              </div>
 
-                {!panelsHidden && (
-                  <div className="mp-right-tool-rail">
-                    <div className="mp-tool-slot">
-                      <button
-                        type="button"
-                        className={`mp-icon-badge${!leaderboardMinimized ? ' is-active' : ''}`}
-                        aria-pressed={!leaderboardMinimized}
-                        aria-label={leaderboardMinimized ? 'Buka Leaderboard' : 'Tutup Leaderboard'}
-                        title={leaderboardMinimized ? 'Buka Leaderboard' : 'Tutup Leaderboard'}
-                        onClick={() => {
-                          soundEngine.playClick();
-                          setLeaderboardMinimized((v) => !v);
-                        }}
-                        onContextMenu={(e) => e.preventDefault()}
-                      >
-                        <span aria-hidden="true">🏆</span>
-                      </button>
-                      {!leaderboardMinimized && (
-                        <aside className="mp-dark-panel mp-leaderboard-box mp-tool-popover" aria-label="Papan peringkat" style={panelStyle('leaderboard')}>
-                          <h2
-                            className="mp-panel-heading mp-drag-handle"
-                            onPointerDown={(e) => startPanelDrag('leaderboard', e)}
-                            onPointerMove={movePanelDrag}
-                            onPointerUp={(e) => endPanelDrag(e)}
-                            onPointerCancel={(e) => endPanelDrag(e)}
-                          >
-                            <span className="mp-panel-heading-title">
-                              <span aria-hidden="true">🏆</span> Leaderboard
-                            </span>
-                            <div className="flex items-center gap-1.5 ml-auto">
-                              {isAdmin && (
-                                <button
-                                  type="button"
-                                  className="mp-win-btn text-xs font-bold hover:text-amber-300"
-                                  aria-label="Panel Aksi Masal Admin (All / Here)"
-                                  title="Panel Aksi Masal Admin (All / Here)"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    soundEngine.playClick();
-                                    setActionModalTarget({ target: 'global', username: 'Aksi Masal (Global)' });
-                                    setActionModalScope('here');
-                                  }}
-                                >
-                                  ⚙️
-                                </button>
-                              )}
+              {!panelsHidden && (
+                <div className="mp-right-tool-rail">
+                  <div className="mp-tool-slot">
+                    <button
+                      type="button"
+                      className={`mp-icon-badge${!leaderboardMinimized ? ' is-active' : ''}`}
+                      aria-pressed={!leaderboardMinimized}
+                      aria-label={leaderboardMinimized ? 'Buka Leaderboard' : 'Tutup Leaderboard'}
+                      title={leaderboardMinimized ? 'Buka Leaderboard' : 'Tutup Leaderboard'}
+                      onClick={() => {
+                        soundEngine.playClick();
+                        setLeaderboardMinimized((v) => !v);
+                      }}
+                      onContextMenu={(e) => e.preventDefault()}
+                    >
+                      <span aria-hidden="true">🏆</span>
+                    </button>
+                    {!leaderboardMinimized && (
+                      <aside className="mp-dark-panel mp-leaderboard-box mp-tool-popover" aria-label="Papan peringkat" style={panelStyle('leaderboard')}>
+                        <h2
+                          className="mp-panel-heading mp-drag-handle"
+                          onPointerDown={(e) => startPanelDrag('leaderboard', e)}
+                          onPointerMove={movePanelDrag}
+                          onPointerUp={(e) => endPanelDrag(e)}
+                          onPointerCancel={(e) => endPanelDrag(e)}
+                        >
+                          <span className="mp-panel-heading-title">
+                            <span aria-hidden="true">🏆</span> Leaderboard
+                          </span>
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            {(isAdmin || isStaff) && (
                               <button
                                 type="button"
-                                className="mp-win-btn"
-                                aria-label="Perkecil leaderboard"
-                                title="Perkecil"
-                                onClick={() => setLeaderboardMinimized(true)}
-                              >
-                                −
-                              </button>
-                            </div>
-                          </h2>
-                          {isStaff && (
-                            <div className="mp-leaderboard-search-wrap">
-                              <input
-                                type="text"
-                                className="mp-leaderboard-search-input"
-                                placeholder="🔍 Cari username / nama..."
-                                value={leaderboardSearch}
-                                onChange={(e) => setLeaderboardSearch(e.target.value)}
-                                onFocus={() => {
-                                  keysRef.current.left = false;
-                                  keysRef.current.right = false;
-                                  keysRef.current.jump = false;
+                                className="mp-win-btn text-xs font-bold hover:text-amber-300"
+                                aria-label="Panel Aksi Masal Admin & Guru (All / Here)"
+                                title="Panel Aksi Masal Admin & Guru (All / Here)"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  soundEngine.playClick();
+                                  setActionModalTarget({ target: 'global', username: 'Aksi Masal (Global)' });
+                                  setActionModalScope('all');
                                 }}
-                                onKeyDown={(e) => e.stopPropagation()}
-                                onKeyUp={(e) => e.stopPropagation()}
-                              />
-                              {leaderboardSearch && (
-                                <button
-                                  type="button"
-                                  className="mp-search-clear-btn"
-                                  onClick={() => setLeaderboardSearch('')}
-                                  title="Hapus pencarian"
-                                >
-                                  ✕
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          <ol
-                            className="mp-rank-list"
-                            onWheel={(e) => e.stopPropagation()}
-                            onTouchMove={(e) => e.stopPropagation()}
-                            onPointerDown={(e) => e.stopPropagation()}
-                          >
-                            {sortedPlayers
-                              .filter((p) => p.role !== 'admin')
-                              .filter((p) => {
-                                if (!isStaff || !leaderboardSearch.trim()) return true;
-                                const q = leaderboardSearch.trim().toLowerCase();
-                                const uname = p.username.toLowerCase();
-                                const fname = (p.fullName || '').toLowerCase();
-                                return uname.includes(q) || fname.includes(q);
-                              })
-                              .map((p, i) => {
-                                const liveP = playersRef.current.get(p.userId);
-                                const pFullName = p.fullName || liveP?.fullName;
-                                const pUsername = p.username;
-                                const rankDisplayName =
-                                  pFullName && pFullName.trim().toLowerCase() !== pUsername.trim().toLowerCase()
-                                    ? `[${pUsername}] - ${pFullName.trim()}`
-                                    : `[${pUsername}]`;
-                                const isSpectatingThis = spectateTargetId === p.userId;
-                                return (
-                                  <li key={p.userId} className={`mp-rank-row${isSpectatingThis ? ' is-spectating' : ''}`}>
-                                    <span className={`rank-medal ${['gold', 'silver', 'bronze'][i] ?? 'silver'}`}>{i + 1}</span>
-                                    <span className={`rank-cat-dot ${chipColor(p.userId)}`} aria-hidden="true" />
-                                    <span className="rank-name" title={rankDisplayName}>{rankDisplayName}</span>
-                                    <span className="rank-score">{scores[p.userId] ?? 0}</span>
-                                    {isStaff && (
-                                      <div className="mp-rank-actions">
-                                        <button
-                                          type="button"
-                                          className={`mp-rank-btn mp-rank-spy-btn${isSpectatingThis ? ' is-active' : ''}`}
-                                          title={`Pantau / Spy kamera ke ${pUsername}`}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleSpectate(p.userId, pUsername);
-                                          }}
-                                        >
-                                          📹
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="mp-rank-btn mp-rank-admin-btn"
-                                          title={`Buka Panel Aksi untuk ${pUsername}`}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            soundEngine.playClick();
-                                            setActionModalTarget({
-                                              target: p.userId,
-                                              username: pUsername,
-                                              fullName: pFullName,
-                                              role: p.role,
-                                              stage: liveP?.stage ?? p.stage,
-                                            });
-                                          }}
-                                        >
-                                          ⚙️
-                                        </button>
-                                      </div>
-                                    )}
-                                  </li>
-                                );
-                              })}
-                          </ol>
-                        </aside>
-                      )}
-                    </div>
-
-                    <div className="mp-tool-slot">
-                      <button
-                        type="button"
-                        className={`mp-icon-badge${!missionMinimized ? ' is-active' : ''}`}
-                        aria-pressed={!missionMinimized}
-                        aria-label={missionMinimized ? 'Buka Misi' : 'Tutup Misi'}
-                        title={missionMinimized ? 'Buka Misi' : 'Tutup Misi'}
-                        onClick={() => {
-                          soundEngine.playClick();
-                          setMissionMinimized((v) => !v);
-                        }}
-                        onContextMenu={(e) => e.preventDefault()}
-                      >
-                        <span aria-hidden="true">🎯</span>
-                      </button>
-                      {!missionMinimized && (
-                        <aside className="mp-dark-panel mp-topic-card mp-tool-popover" aria-label="Progres misi" style={panelStyle('mission')}>
-                          <h3
-                            className="mp-panel-heading mp-drag-handle"
-                            onPointerDown={(e) => startPanelDrag('mission', e)}
-                            onPointerMove={movePanelDrag}
-                            onPointerUp={(e) => endPanelDrag(e)}
-                            onPointerCancel={(e) => endPanelDrag(e)}
-                          >
-                            <span className="mp-panel-heading-title">
-                              <span aria-hidden="true">🎯</span> Misi
-                            </span>
+                              >
+                                ⚙️
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="mp-win-btn"
-                              aria-label="Perkecil misi"
-                              title="Perkecil misi"
-                              onClick={() => setMissionMinimized(true)}
+                              aria-label="Perkecil leaderboard"
+                              title="Perkecil"
+                              onClick={() => setLeaderboardMinimized(true)}
                             >
                               −
                             </button>
-                          </h3>
-                          <ul className="mp-topic-checklist">
-                            <li><span className="check-green" aria-hidden="true">✔</span> Masuk arena</li>
-                            <li>
-                              <span className={doneSteps > 0 ? 'check-green' : 'check-pending'} aria-hidden="true">
-                                {doneSteps > 0 ? '✔' : '○'}
-                              </span>{' '}
-                              Jawab tantangan soal ({doneSteps}/{totalSteps})
-                            </li>
-                          </ul>
-                          <div className="mp-goal-bar-row">
-                            <span aria-hidden="true">🚩</span>
-                            <div className="mp-goal-track">
-                              <div className="mp-goal-fill" style={{ width: `${(doneSteps / totalSteps) * 100}%` }} />
-                            </div>
-                            <span className="mp-goal-fraction">{doneSteps} / {totalSteps}</span>
                           </div>
-                        </aside>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      className="mp-icon-badge"
-                      aria-label="Perbesar Kamera (Zoom In)"
-                      title="Perbesar (Zoom In)"
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        soundEngine.playClick();
-                        cameraRef.current?.zoomBy(0.12);
-                      }}
-                      onContextMenu={(e) => e.preventDefault()}
-                    >
-                      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
-                        <circle cx="14" cy="14" r="8.5" fill="none" stroke="#fff" strokeWidth="3" />
-                        <line x1="20.5" y1="20.5" x2="27.5" y2="27.5" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
-                        <line x1="10.5" y1="14" x2="17.5" y2="14" stroke="#ffd338" strokeWidth="2.8" strokeLinecap="round" />
-                        <line x1="14" y1="10.5" x2="14" y2="17.5" stroke="#ffd338" strokeWidth="2.8" strokeLinecap="round" />
-                      </svg>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="mp-icon-badge"
-                      aria-label="Perkecil Kamera (Zoom Out)"
-                      title="Perkecil (Zoom Out)"
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        soundEngine.playClick();
-                        cameraRef.current?.zoomBy(-0.12);
-                      }}
-                      onContextMenu={(e) => e.preventDefault()}
-                    >
-                      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
-                        <circle cx="14" cy="14" r="8.5" fill="none" stroke="#fff" strokeWidth="3" />
-                        <line x1="20.5" y1="20.5" x2="27.5" y2="27.5" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
-                        <line x1="10.5" y1="14" x2="17.5" y2="14" stroke="#a8d8ff" strokeWidth="2.8" strokeLinecap="round" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {stageBanner && (
-              <div className="mp-stage-banner-toast" role="status" aria-live="polite">
-                {stageBanner}
-              </div>
-            )}
-
-            {editingControlsLayout && (
-              <div className="hud-edit-banner" role="region" aria-label="Mode atur posisi tombol">
-                <span className="hud-edit-banner-text">Geser tombol Arah &amp; Lompat ke posisi yang nyaman</span>
-                <button
-                  type="button"
-                  className="btn-green-action hud-edit-done-btn"
-                  onClick={() => {
-                    soundEngine.playClick();
-                    setEditingControlsLayout(false);
-                  }}
-                >
-                  ✔ Selesai
-                </button>
-              </div>
-            )}
-
-            <div
-              className={`onscreen-controls${controlsPosClass}${hudControls.swapSides ? ' is-swapped' : ''}`}
-              style={
-                {
-                  '--ctrl-size': `${hudControls.size}px`,
-                  '--ctrl-gap': `${hudControls.gap}px`,
-                  '--ctrl-opacity': hudControls.opacity,
-                } as React.CSSProperties
-              }
-            >
-              <div
-                className={`dpad-group${editingControlsLayout ? ' is-editing-layout' : ''}`}
-                style={{ transform: `translate(${hudControls.dpadX}px, ${hudControls.dpadY}px)` }}
-                onPointerDown={(e) => startControlGroupDrag('dpad', e)}
-                onPointerMove={moveControlGroupDrag}
-                onPointerUp={endControlGroupDrag}
-                onPointerCancel={endControlGroupDrag}
-              >
-                {editingControlsLayout && <span className="dpad-edit-tag">Geser Arah</span>}
-                <button
-                  type="button"
-                  className="ctrl-circle"
-                  aria-label="Gerak ke Kiri"
-                  onPointerDown={(e) => handleTouchControlStart('left', e)}
-                  onPointerUp={(e) => handleTouchControlEnd('left', e)}
-                  onPointerCancel={(e) => handleTouchControlEnd('left', e)}
-                  onContextMenu={(e) => e.preventDefault()}
-                >
-                  <svg
-                    width={Math.round(hudControls.size * 0.44)}
-                    height={Math.round(hudControls.size * 0.44)}
-                    viewBox="0 0 32 32"
-                    aria-hidden="true"
-                  >
-                    <path d="M18 7l-9 9 9 9v-5h8v-8h-8V7z" fill="#fff" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="ctrl-circle"
-                  aria-label="Gerak ke Kanan"
-                  onPointerDown={(e) => handleTouchControlStart('right', e)}
-                  onPointerUp={(e) => handleTouchControlEnd('right', e)}
-                  onPointerCancel={(e) => handleTouchControlEnd('right', e)}
-                  onContextMenu={(e) => e.preventDefault()}
-                >
-                  <svg
-                    width={Math.round(hudControls.size * 0.44)}
-                    height={Math.round(hudControls.size * 0.44)}
-                    viewBox="0 0 32 32"
-                    aria-hidden="true"
-                  >
-                    <path d="M14 7l9 9-9 9v-5H6v-8h8V7z" fill="#fff" />
-                  </svg>
-                </button>
-              </div>
-
-              <div
-                className={`dpad-group${editingControlsLayout ? ' is-editing-layout' : ''}`}
-                style={{ transform: `translate(${hudControls.jumpX}px, ${hudControls.jumpY}px)` }}
-                onPointerDown={(e) => startControlGroupDrag('jump', e)}
-                onPointerMove={moveControlGroupDrag}
-                onPointerUp={endControlGroupDrag}
-                onPointerCancel={endControlGroupDrag}
-              >
-                {editingControlsLayout && <span className="dpad-edit-tag">Aksi &amp; Lompat</span>}
-                {ammoCount > 0 && (
-                  <button
-                    type="button"
-                    className={`ctrl-circle ctrl-shoot-btn has-ammo`}
-                    aria-label="Tembak Laser"
-                    title="Tembak Laser (F / X / E)"
-                    onPointerDown={(e) => handleTouchControlStart('shoot', e)}
-                    onPointerUp={(e) => handleTouchControlEnd('shoot', e)}
-                    onPointerCancel={(e) => handleTouchControlEnd('shoot', e)}
-                    onContextMenu={(e) => e.preventDefault()}
-                  >
-                    <span className="ctrl-shoot-icon" aria-hidden="true">⚡</span>
-                    <span className="ctrl-ammo-badge">{ammoCount === Infinity ? '∞' : ammoCount}</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="ctrl-circle"
-                  aria-label="Lompat"
-                  onPointerDown={(e) => handleTouchControlStart('jump', e)}
-                  onPointerUp={(e) => handleTouchControlEnd('jump', e)}
-                  onPointerCancel={(e) => handleTouchControlEnd('jump', e)}
-                  onContextMenu={(e) => e.preventDefault()}
-                >
-                  <svg
-                    width={Math.round(hudControls.size * 0.46)}
-                    height={Math.round(hudControls.size * 0.46)}
-                    viewBox="0 0 32 32"
-                    aria-hidden="true"
-                  >
-                    <path d="M16 6l-9 9h5v11h8V15h5l-9-9z" fill="#fff" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {(!panelsHidden || hasVisibleQuestion) && (
-              <div className="mp-bottom-dock">
-                {!panelsHidden && !chatMinimized && (
-                  <aside className="mp-dark-panel mp-chat-panel mp-chat-fixed" aria-label="Ruang obrolan">
-                    <div className="mp-chat-header">
-                      <div className="mp-chat-title">
-                        <span aria-hidden="true">💬</span> Chat Room
-                      </div>
-                      <div className="mp-online-count" aria-label={`${players.length} pemain`}>
-                        <span aria-hidden="true">👤</span> {players.length}
-                        <button
-                          type="button"
-                          className="mp-win-btn"
-                          aria-label="Perkecil chat"
-                          title="Perkecil chat"
-                          onClick={() => setChatMinimized(true)}
-                        >
-                          −
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mp-chat-messages" ref={chatBoxRef} role="log" aria-live="polite">
-                      {displayChat.map((m) => {
-                        if (m.senderName === 'SYSTEM') {
-                          return (
-                            <div key={m.id} className="sys-chat-entry">
-                              <span className="font-bold">{m.text}</span>
-                            </div>
-                          );
-                        }
-
-                        const senderPlayer = (m.userId ? playersRef.current.get(m.userId) : null) ||
-                          roomRef.current?.players?.find((pl) => pl.userId === m.userId || pl.username === m.senderName);
-                        const isSenderAdmin = m.role === 'admin' || senderPlayer?.role === 'admin';
-
-                        // Format label: [Tag] - Nama Lengkap (tag/title bold)
-                        let senderTag = '';
-                        let senderName = '';
-                        if (isSenderAdmin) {
-                          senderTag = senderPlayer?.tag || 'Administrator';
-                          senderName = m.senderFullName || senderPlayer?.fullName || m.senderName;
-                        } else if (senderPlayer?.tag || m.role === 'teacher' || senderPlayer?.role === 'teacher') {
-                          senderTag = senderPlayer?.tag || 'Teacher';
-                          senderName = m.senderFullName || senderPlayer?.fullName || m.senderName;
-                        } else {
-                          const uname = m.senderName;
-                          const fname = m.senderFullName || senderPlayer?.fullName;
-                          senderName = fname && fname.trim().toLowerCase() !== uname.trim().toLowerCase()
-                            ? `${uname} - ${fname.trim()}`
-                            : uname;
-                        }
-
-                        return (
-                          <div key={m.id} className="chat-msg-item">
-                            <span>
-                              {senderTag ? (
-                                <>
-                                  <span className={`chat-sender font-bold ${chipColor(m.senderName)}`}>[{senderTag}]</span>
-                                  <span className={`chat-sender ${chipColor(m.senderName)}`}> - {senderName}</span>
-                                </>
-                              ) : (
-                                <span className={`chat-sender ${chipColor(m.senderName)}`}>[{senderName}]</span>
-                              )}
-                              <span className="chat-text">: {m.text}</span>
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <form className="mp-chat-form" onSubmit={sendChat}>
-                      <label htmlFor="mp-chat-input" className="sr-only">Ketik pesan</label>
-                      <input
-                        id="mp-chat-input"
-                        type="text"
-                        className="mp-chat-input"
-                        placeholder={isStaff ? 'Ketik pesan atau /cmd...' : 'Ketik pesan...'}
-                        maxLength={120}
-                        autoComplete="off"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onFocus={() => {
-                          keysRef.current.left = false;
-                          keysRef.current.right = false;
-                          keysRef.current.jump = false;
-                        }}
-                        onKeyDown={(e) => e.stopPropagation()}
-                        onKeyUp={(e) => e.stopPropagation()}
-                      />
-                      <button type="submit" className="mp-chat-send-btn" aria-label="Kirim pesan">
-                        <span aria-hidden="true">➤</span>
-                      </button>
-                    </form>
-                  </aside>
-                )}
-
-                {question && (!isStaff ? !answeredQuestionIds.includes(question.id) : Boolean(mirrorTargetRef.current)) && (
-                  <section className="parchment-card mp-question-dock" aria-label="Tantangan soal" style={panelStyle('question')}>
-                    <div
-                      className="mp-dock-ribbon mp-drag-handle flex items-center justify-between"
-                      onPointerDown={(e) => startPanelDrag('question', e)}
-                      onPointerMove={movePanelDrag}
-                      onPointerUp={(e) => endPanelDrag(e)}
-                      onPointerCancel={(e) => endPanelDrag(e)}
-                      onDoubleClick={() => setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }))}
-                      title="Drag untuk memindahkan, klik 2x untuk reset posisi"
-                    >
-                      <span className="mp-panel-heading-title">
-                        <span aria-hidden="true">📖</span> Tantangan Soal {isStaff && mirrorTarget && (
-                          <span className="text-xs text-yellow-300 font-normal ml-2">
-                            (Mirror: {mirrorTarget})
-                          </span>
-                        )}
-                      </span>
-                      <div className="flex items-center gap-1 ml-auto">
-                        {panelOffsets['question'] && (panelOffsets['question'].x !== 0 || panelOffsets['question'].y !== 0) && (
-                          <button
-                            type="button"
-                            className="mp-win-btn text-xs font-bold text-amber-900 hover:text-black"
-                            title="Reset posisi ke tengah"
-                            onClick={() => setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }))}
-                          >
-                            ⌖
-                          </button>
-                        )}
+                        </h2>
                         {isStaff && (
-                          <button
-                            type="button"
-                            className="mp-win-btn text-sm font-bold text-slate-300 hover:text-white"
-                            title="Tutup Modal Soal (Guru/Admin)"
-                            onClick={() => closeQuestionModal(question.id)}
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mp-bonus-badge" aria-label={`Bonus ${question.points} poin`}>
-                      <span aria-hidden="true">⏱</span> +{question.points}
-                    </div>
-
-                    <form onSubmit={submitAnswer} className="mp-q-form-body">
-                      <div className="mp-q-scroll-content">
-                        <div className="mp-q-header-row">
-                          <h2 className="mp-q-heading">{question.content}</h2>
-                        </div>
-
-                        <div className="mp-options-grid-2x2" role="radiogroup" aria-label="Pilihan jawaban">
-                          {question.options.map((o, idx) => {
-                            const displayLabel = OPTION_DISPLAY_LABELS[idx] ?? o.label;
-                            const isStaffViewer = isStaffRole(myRoleRef.current);
-                            const isCorrectKey = isStaffViewer && Boolean(question.correctAnswer) && (
-                              question.correctAnswer === o.label ||
-                              question.correctAnswer === o.content ||
-                              question.correctAnswer?.toLowerCase() === o.label.toLowerCase() ||
-                              question.correctAnswer?.toLowerCase() === o.content.toLowerCase()
-                            );
-
-                            // Cek apakah opsi ini dipilih oleh siswa yang sedang di-mirror / di-follow
-                            const isMirrorActive = Boolean(mirrorTargetRef.current || ropedByUserId);
-                            const chosenAns = studentChosenAnswers.get(question.id);
-                            const liveSelecting = mirroredStudentSelections.get(question.id);
-                            const studentChoice = chosenAns || liveSelecting;
-                            const isStudentPick = Boolean(isMirrorActive && isStaffViewer && studentChoice && (
-                              studentChoice === o.label ||
-                              studentChoice === o.content ||
-                              studentChoice.toLowerCase() === o.label.toLowerCase() ||
-                              studentChoice.toLowerCase() === o.content.toLowerCase()
-                            ));
-
-                            const qResult = answerResultsRef.current.get(question.id);
-                            const isStudentPickWrong = isStudentPick && (qResult === false || (chosenAns && !isCorrectKey));
-                            const isStudentPickCorrect = isStudentPick && (qResult === true || (chosenAns && isCorrectKey));
-                            const isStudentLiveChoice = isStudentPick && !chosenAns;
-
-                            let ringClass = '';
-                            if (isCorrectKey) ringClass = ' border-emerald-500 ring-2 ring-emerald-400 bg-emerald-50/20';
-                            if (isStudentPickWrong) ringClass = ' border-rose-500 ring-2 ring-rose-400 bg-rose-50/25';
-                            else if (isStudentLiveChoice) ringClass = ' border-amber-400 ring-2 ring-amber-300 bg-amber-50/25';
-
-                            return (
+                          <div className="mp-leaderboard-search-wrap">
+                            <input
+                              type="text"
+                              className="mp-leaderboard-search-input"
+                              placeholder="🔍 Cari username / nama..."
+                              value={leaderboardSearch}
+                              onChange={(e) => setLeaderboardSearch(e.target.value)}
+                              onFocus={() => {
+                                keysRef.current.left = false;
+                                keysRef.current.right = false;
+                                keysRef.current.jump = false;
+                              }}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              onKeyUp={(e) => e.stopPropagation()}
+                            />
+                            {leaderboardSearch && (
                               <button
-                                key={o.label}
                                 type="button"
-                                role="radio"
-                                aria-checked={selected === o.label}
-                                className={`mp-grid-opt-btn${selected === o.label ? ' selected' : ''}${ringClass}`}
-                                onClick={() => {
-                                  soundEngine.playClick();
-                                  setSelected(o.label);
-                                  if (!isStaff && question) {
-                                    ably.publishCommand({ op: 'mirror_question_state', userId: myIdRef.current, qid: question.id, selected: o.label });
-                                  }
-                                }}
+                                className="mp-search-clear-btn"
+                                onClick={() => setLeaderboardSearch('')}
+                                title="Hapus pencarian"
                               >
-                                <span className="opt-badge">{displayLabel}</span>
-                                <span className="flex-1 text-left">{o.content}</span>
-                                {isCorrectKey && (
-                                  <span className="admin-key-badge ml-2" title="Kunci Jawaban Benar (Admin & Guru)">
-                                    ✓ KUNCI JAWABAN
-                                  </span>
-                                )}
-                                {isStudentPickWrong && (
-                                  <span
-                                    className="ml-2 font-bold text-xs"
-                                    title="Opsi yang dipilih siswa (Salah)"
-                                    style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', borderRadius: '6px' }}
-                                  >
-                                    ❌ Dipilih Siswa (Salah)
-                                  </span>
-                                )}
-                                {isStudentPickCorrect && !isCorrectKey && (
-                                  <span
-                                    className="ml-2 font-bold text-xs"
-                                    title="Opsi yang dipilih siswa (Benar)"
-                                    style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '6px' }}
-                                  >
-                                    ✓ Dipilih Siswa (Benar)
-                                  </span>
-                                )}
-                                {isStudentLiveChoice && (
-                                  <span
-                                    className="ml-2 font-bold text-xs"
-                                    title="Siswa sedang memilih opsi ini"
-                                    style={{ background: '#f59e0b', color: '#1e1b4b', padding: '2px 8px', borderRadius: '6px' }}
-                                  >
-                                    👤 Pilihan Siswa
-                                  </span>
-                                )}
+                                ✕
                               </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="mp-q-submit-row">
-                        <button type="submit" className="btn-orange-action" disabled={!selected || submitting}>
-                          <span aria-hidden="true">✔</span> {submitting ? 'Mengirim...' : isStaff ? 'Bantu Jawab (Centang Biru)' : 'Submit'}
-                        </button>
-                      </div>
-                    </form>
-                  </section>
-                )}
-
-              </div>
-            )}
-          </div>
-
-          {actionModalTarget && (
-            <div
-              className="overlay-backdrop"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Panel Aksi"
-              onClick={() => setActionModalTarget(null)}
-            >
-              <div className="parchment-card admin-action-modal-card" onClick={(e) => e.stopPropagation()}>
-                <div className="admin-action-header">
-                  <div>
-                    <div className="admin-action-title">
-                      <span aria-hidden="true">{actionModalTarget.target === 'global' ? '🌐' : '⚡'}</span>
-                      {actionModalTarget.target === 'global' ? 'Panel Aksi Masal Admin' : `Panel Aksi: ${actionModalTarget.username}`}
-                      {actionModalTarget.target !== 'global' && (
-                        <button
-                          type="button"
-                          className="btn-copy-nick text-xs px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 border border-amber-400 font-bold ml-2 text-amber-900 inline-flex items-center gap-1"
-                          title={`Salin Username '${actionModalTarget.username}'`}
-                          onClick={() => copyPlayerUsername(actionModalTarget.username)}
+                            )}
+                          </div>
+                        )}
+                        <ol
+                          className="mp-rank-list"
+                          onWheel={(e) => e.stopPropagation()}
+                          onTouchMove={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
                         >
-                          📋 Salin
-                        </button>
-                      )}
-                    </div>
-                    {actionModalTarget.target !== 'global' && (
-                      <div className="admin-action-subinfo">
-                        {actionModalTarget.fullName && <span>Nama: <strong>{actionModalTarget.fullName}</strong></span>}
-                        {actionModalTarget.stage && <span>Stage: <strong>{actionModalTarget.stage}</strong></span>}
-                        {actionModalTarget.role && <span>Role: <strong className="capitalize">{actionModalTarget.role}</strong></span>}
-                      </div>
+                          {sortedPlayers
+                            .filter((p) => p.role !== 'admin')
+                            .filter((p) => {
+                              if (!isStaff || !leaderboardSearch.trim()) return true;
+                              const q = leaderboardSearch.trim().toLowerCase();
+                              const uname = p.username.toLowerCase();
+                              const fname = (p.fullName || '').toLowerCase();
+                              return uname.includes(q) || fname.includes(q);
+                            })
+                            .map((p, i) => {
+                              const liveP = playersRef.current.get(p.userId);
+                              const pFullName = p.fullName || liveP?.fullName;
+                              const pUsername = p.username;
+                              const rankDisplayName =
+                                pFullName && pFullName.trim().toLowerCase() !== pUsername.trim().toLowerCase()
+                                  ? `[${pUsername}] - ${pFullName.trim()}`
+                                  : `[${pUsername}]`;
+                              const isSpectatingThis = spectateTargetId === p.userId;
+                              return (
+                                <li key={p.userId} className={`mp-rank-row${isSpectatingThis ? ' is-spectating' : ''}`}>
+                                  <span className={`rank-medal ${['gold', 'silver', 'bronze'][i] ?? 'silver'}`}>{i + 1}</span>
+                                  <span className={`rank-cat-dot ${chipColor(p.userId)}`} aria-hidden="true" />
+                                  <span className="rank-name" title={rankDisplayName}>{rankDisplayName}</span>
+                                  <span className="rank-score">{scores[p.userId] ?? 0}</span>
+                                  {isStaff && (
+                                    <div className="mp-rank-actions">
+                                      <button
+                                        type="button"
+                                        className={`mp-rank-btn mp-rank-spy-btn${isSpectatingThis ? ' is-active' : ''}`}
+                                        title={`Pantau / Spy kamera ke ${pUsername}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleSpectate(p.userId, pUsername);
+                                        }}
+                                      >
+                                        📹
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="mp-rank-btn mp-rank-admin-btn"
+                                        title={`Buka Panel Aksi untuk ${pUsername}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          soundEngine.playClick();
+                                          setActionModalTarget({
+                                            target: p.userId,
+                                            username: pUsername,
+                                            fullName: pFullName,
+                                            role: p.role,
+                                            stage: liveP?.stage ?? p.stage,
+                                          });
+                                        }}
+                                      >
+                                        ⚙️
+                                      </button>
+                                    </div>
+                                  )}
+                                </li>
+                              );
+                            })}
+                        </ol>
+                      </aside>
                     )}
                   </div>
+
+                  <div className="mp-tool-slot">
+                    <button
+                      type="button"
+                      className={`mp-icon-badge${!missionMinimized ? ' is-active' : ''}`}
+                      aria-pressed={!missionMinimized}
+                      aria-label={missionMinimized ? 'Buka Misi' : 'Tutup Misi'}
+                      title={missionMinimized ? 'Buka Misi' : 'Tutup Misi'}
+                      onClick={() => {
+                        soundEngine.playClick();
+                        setMissionMinimized((v) => !v);
+                      }}
+                      onContextMenu={(e) => e.preventDefault()}
+                    >
+                      <span aria-hidden="true">🎯</span>
+                    </button>
+                    {!missionMinimized && (
+                      <aside className="mp-dark-panel mp-topic-card mp-tool-popover" aria-label="Progres misi" style={panelStyle('mission')}>
+                        <h3
+                          className="mp-panel-heading mp-drag-handle"
+                          onPointerDown={(e) => startPanelDrag('mission', e)}
+                          onPointerMove={movePanelDrag}
+                          onPointerUp={(e) => endPanelDrag(e)}
+                          onPointerCancel={(e) => endPanelDrag(e)}
+                        >
+                          <span className="mp-panel-heading-title">
+                            <span aria-hidden="true">🎯</span> Misi
+                          </span>
+                          <button
+                            type="button"
+                            className="mp-win-btn"
+                            aria-label="Perkecil misi"
+                            title="Perkecil misi"
+                            onClick={() => setMissionMinimized(true)}
+                          >
+                            −
+                          </button>
+                        </h3>
+                        <ul className="mp-topic-checklist">
+                          <li><span className="check-green" aria-hidden="true">✔</span> Masuk arena</li>
+                          <li>
+                            <span className={doneSteps > 0 ? 'check-green' : 'check-pending'} aria-hidden="true">
+                              {doneSteps > 0 ? '✔' : '○'}
+                            </span>{' '}
+                            Jawab tantangan soal ({doneSteps}/{totalSteps})
+                          </li>
+                        </ul>
+                        <div className="mp-goal-bar-row">
+                          <span aria-hidden="true">🚩</span>
+                          <div className="mp-goal-track">
+                            <div className="mp-goal-fill" style={{ width: `${(doneSteps / totalSteps) * 100}%` }} />
+                          </div>
+                          <span className="mp-goal-fraction">{doneSteps} / {totalSteps}</span>
+                        </div>
+                      </aside>
+                    )}
+                  </div>
+
                   <button
                     type="button"
-                    className="mp-win-btn text-base font-bold text-amber-950 hover:text-black ml-auto"
-                    aria-label="Tutup Panel Aksi"
-                    onClick={() => setActionModalTarget(null)}
+                    className="mp-icon-badge"
+                    aria-label="Perbesar Kamera (Zoom In)"
+                    title="Perbesar (Zoom In)"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      soundEngine.playClick();
+                      cameraRef.current?.zoomBy(0.12);
+                    }}
+                    onContextMenu={(e) => e.preventDefault()}
                   >
-                    ✕
+                    <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+                      <circle cx="14" cy="14" r="8.5" fill="none" stroke="#fff" strokeWidth="3" />
+                      <line x1="20.5" y1="20.5" x2="27.5" y2="27.5" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
+                      <line x1="10.5" y1="14" x2="17.5" y2="14" stroke="#ffd338" strokeWidth="2.8" strokeLinecap="round" />
+                      <line x1="14" y1="10.5" x2="14" y2="17.5" stroke="#ffd338" strokeWidth="2.8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="mp-icon-badge"
+                    aria-label="Perkecil Kamera (Zoom Out)"
+                    title="Perkecil (Zoom Out)"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      soundEngine.playClick();
+                      cameraRef.current?.zoomBy(-0.12);
+                    }}
+                    onContextMenu={(e) => e.preventDefault()}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+                      <circle cx="14" cy="14" r="8.5" fill="none" stroke="#fff" strokeWidth="3" />
+                      <line x1="20.5" y1="20.5" x2="27.5" y2="27.5" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
+                      <line x1="10.5" y1="14" x2="17.5" y2="14" stroke="#a8d8ff" strokeWidth="2.8" strokeLinecap="round" />
+                    </svg>
                   </button>
                 </div>
+              )}
+            </div>
+          </div>
 
-                {actionModalTarget.target === 'global' && isAdmin && (
-                  <div className="admin-action-scope-tabs" role="tablist">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={actionModalScope === 'here'}
-                      className={`admin-action-scope-tab${actionModalScope === 'here' ? ' is-active' : ''}`}
-                      onClick={() => setActionModalScope('here')}
-                    >
-                      📍 Stage Ini ({currentStage})
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={actionModalScope === 'all'}
-                      className={`admin-action-scope-tab${actionModalScope === 'all' ? ' is-active' : ''}`}
-                      onClick={() => setActionModalScope('all')}
-                    >
-                      🌐 Seluruh Siswa (All)
-                    </button>
-                  </div>
-                )}
+          {stageBanner && (
+            <div className="mp-stage-banner-toast" role="status" aria-live="polite">
+              {stageBanner}
+            </div>
+          )}
 
-                <div className="admin-action-scroll">
-                  {/* 1. TELEPORT */}
-                  <div className="admin-action-group">
-                    <div className="admin-action-group-title">
-                      <span aria-hidden="true">🚀</span> Teleportasi &amp; Posisi
+          {editingControlsLayout && (
+            <div className="hud-edit-banner" role="region" aria-label="Mode atur posisi tombol">
+              <span className="hud-edit-banner-text">Geser tombol Arah &amp; Lompat ke posisi yang nyaman</span>
+              <button
+                type="button"
+                className="btn-green-action hud-edit-done-btn"
+                onClick={() => {
+                  soundEngine.playClick();
+                  setEditingControlsLayout(false);
+                }}
+              >
+                ✔ Selesai
+              </button>
+            </div>
+          )}
+
+          <div
+            className={`onscreen-controls${controlsPosClass}${hudControls.swapSides ? ' is-swapped' : ''}`}
+            style={
+              {
+                '--ctrl-size': `${hudControls.size}px`,
+                '--ctrl-gap': `${hudControls.gap}px`,
+                '--ctrl-opacity': hudControls.opacity,
+              } as React.CSSProperties
+            }
+          >
+            <div
+              className={`dpad-group${editingControlsLayout ? ' is-editing-layout' : ''}`}
+              style={{ transform: `translate(${hudControls.dpadX}px, ${hudControls.dpadY}px)` }}
+              onPointerDown={(e) => startControlGroupDrag('dpad', e)}
+              onPointerMove={moveControlGroupDrag}
+              onPointerUp={endControlGroupDrag}
+              onPointerCancel={endControlGroupDrag}
+            >
+              {editingControlsLayout && <span className="dpad-edit-tag">Geser Arah</span>}
+              <button
+                type="button"
+                className="ctrl-circle"
+                aria-label="Gerak ke Kiri"
+                onPointerDown={(e) => handleTouchControlStart('left', e)}
+                onPointerUp={(e) => handleTouchControlEnd('left', e)}
+                onPointerCancel={(e) => handleTouchControlEnd('left', e)}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                <svg
+                  width={Math.round(hudControls.size * 0.44)}
+                  height={Math.round(hudControls.size * 0.44)}
+                  viewBox="0 0 32 32"
+                  aria-hidden="true"
+                >
+                  <path d="M18 7l-9 9 9 9v-5h8v-8h-8V7z" fill="#fff" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="ctrl-circle"
+                aria-label="Gerak ke Kanan"
+                onPointerDown={(e) => handleTouchControlStart('right', e)}
+                onPointerUp={(e) => handleTouchControlEnd('right', e)}
+                onPointerCancel={(e) => handleTouchControlEnd('right', e)}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                <svg
+                  width={Math.round(hudControls.size * 0.44)}
+                  height={Math.round(hudControls.size * 0.44)}
+                  viewBox="0 0 32 32"
+                  aria-hidden="true"
+                >
+                  <path d="M14 7l9 9-9 9v-5H6v-8h8V7z" fill="#fff" />
+                </svg>
+              </button>
+            </div>
+
+            <div
+              className={`dpad-group${editingControlsLayout ? ' is-editing-layout' : ''}`}
+              style={{ transform: `translate(${hudControls.jumpX}px, ${hudControls.jumpY}px)` }}
+              onPointerDown={(e) => startControlGroupDrag('jump', e)}
+              onPointerMove={moveControlGroupDrag}
+              onPointerUp={endControlGroupDrag}
+              onPointerCancel={endControlGroupDrag}
+            >
+              {editingControlsLayout && <span className="dpad-edit-tag">Aksi &amp; Lompat</span>}
+              {ammoCount > 0 && (
+                <button
+                  type="button"
+                  className={`ctrl-circle ctrl-shoot-btn has-ammo`}
+                  aria-label="Tembak Laser"
+                  title="Tembak Laser (F / X / E)"
+                  onPointerDown={(e) => handleTouchControlStart('shoot', e)}
+                  onPointerUp={(e) => handleTouchControlEnd('shoot', e)}
+                  onPointerCancel={(e) => handleTouchControlEnd('shoot', e)}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  <span className="ctrl-shoot-icon" aria-hidden="true">⚡</span>
+                  <span className="ctrl-ammo-badge">{ammoCount === Infinity ? '∞' : ammoCount}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="ctrl-circle"
+                aria-label="Lompat"
+                onPointerDown={(e) => handleTouchControlStart('jump', e)}
+                onPointerUp={(e) => handleTouchControlEnd('jump', e)}
+                onPointerCancel={(e) => handleTouchControlEnd('jump', e)}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                <svg
+                  width={Math.round(hudControls.size * 0.46)}
+                  height={Math.round(hudControls.size * 0.46)}
+                  viewBox="0 0 32 32"
+                  aria-hidden="true"
+                >
+                  <path d="M16 6l-9 9h5v11h8V15h5l-9-9z" fill="#fff" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {(!panelsHidden || hasVisibleQuestion) && (
+            <div className="mp-bottom-dock">
+              {!panelsHidden && !chatMinimized && (
+                <aside className="mp-dark-panel mp-chat-panel mp-chat-fixed" aria-label="Ruang obrolan">
+                  <div className="mp-chat-header">
+                    <div className="mp-chat-title">
+                      <span aria-hidden="true">💬</span> Chat Room
                     </div>
-                    <div className="admin-action-grid">
-                      {actionModalTarget.target === 'global' ? (
+                    <div className="mp-online-count" aria-label={`${players.length} pemain`}>
+                      <span aria-hidden="true">👤</span> {players.length}
+                      <button
+                        type="button"
+                        className="mp-win-btn"
+                        aria-label="Perkecil chat"
+                        title="Perkecil chat"
+                        onClick={() => setChatMinimized(true)}
+                      >
+                        −
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mp-chat-messages" ref={chatBoxRef} role="log" aria-live="polite">
+                    {displayChat.map((m) => {
+                      if (m.senderName === 'SYSTEM') {
+                        return (
+                          <div key={m.id} className="sys-chat-entry">
+                            <span className="font-bold">{m.text}</span>
+                          </div>
+                        );
+                      }
+
+                      const senderPlayer = (m.userId ? playersRef.current.get(m.userId) : null) ||
+                        roomRef.current?.players?.find((pl) => pl.userId === m.userId || pl.username === m.senderName);
+                      const isSenderAdmin = m.role === 'admin' || senderPlayer?.role === 'admin';
+
+                      // Format label: [Tag] - Nama Lengkap (tag/title bold)
+                      let senderTag = '';
+                      let senderName = '';
+                      if (isSenderAdmin) {
+                        senderTag = senderPlayer?.tag || 'Administrator';
+                        senderName = m.senderFullName || senderPlayer?.fullName || m.senderName;
+                      } else if (senderPlayer?.tag || m.role === 'teacher' || senderPlayer?.role === 'teacher') {
+                        senderTag = senderPlayer?.tag || 'Teacher';
+                        senderName = m.senderFullName || senderPlayer?.fullName || m.senderName;
+                      } else {
+                        const uname = m.senderName;
+                        const fname = m.senderFullName || senderPlayer?.fullName;
+                        senderName = fname && fname.trim().toLowerCase() !== uname.trim().toLowerCase()
+                          ? `${uname} - ${fname.trim()}`
+                          : uname;
+                      }
+
+                      return (
+                        <div key={m.id} className="chat-msg-item">
+                          <span>
+                            {senderTag ? (
+                              <>
+                                <span className={`chat-sender font-bold ${chipColor(m.senderName)}`}>[{senderTag}]</span>
+                                <span className={`chat-sender ${chipColor(m.senderName)}`}> - {senderName}</span>
+                              </>
+                            ) : (
+                              <span className={`chat-sender ${chipColor(m.senderName)}`}>[{senderName}]</span>
+                            )}
+                            <span className="chat-text">: {m.text}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <form className="mp-chat-form" onSubmit={sendChat}>
+                    <label htmlFor="mp-chat-input" className="sr-only">Ketik pesan</label>
+                    <input
+                      id="mp-chat-input"
+                      type="text"
+                      className="mp-chat-input"
+                      placeholder={isStaff ? 'Ketik pesan atau /cmd...' : 'Ketik pesan...'}
+                      maxLength={120}
+                      autoComplete="off"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onFocus={() => {
+                        keysRef.current.left = false;
+                        keysRef.current.right = false;
+                        keysRef.current.jump = false;
+                      }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onKeyUp={(e) => e.stopPropagation()}
+                    />
+                    <button type="submit" className="mp-chat-send-btn" aria-label="Kirim pesan">
+                      <span aria-hidden="true">➤</span>
+                    </button>
+                  </form>
+                </aside>
+              )}
+
+              {question && (!isStaff ? !answeredQuestionIds.includes(question.id) : Boolean(mirrorTargetRef.current)) && (
+                <section className="parchment-card mp-question-dock" aria-label="Tantangan soal" style={panelStyle('question')}>
+                  <div
+                    className="mp-dock-ribbon mp-drag-handle flex items-center justify-between"
+                    onPointerDown={(e) => startPanelDrag('question', e)}
+                    onPointerMove={movePanelDrag}
+                    onPointerUp={(e) => endPanelDrag(e)}
+                    onPointerCancel={(e) => endPanelDrag(e)}
+                    onDoubleClick={() => setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }))}
+                    title="Drag untuk memindahkan, klik 2x untuk reset posisi"
+                  >
+                    <span className="mp-panel-heading-title">
+                      <span aria-hidden="true">📖</span> Tantangan Soal {isStaff && mirrorTarget && (
+                        <span className="text-xs text-yellow-300 font-normal ml-2">
+                          (Mirror: {mirrorTarget})
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-1 ml-auto">
+                      {panelOffsets['question'] && (panelOffsets['question'].x !== 0 || panelOffsets['question'].y !== 0) && (
+                        <button
+                          type="button"
+                          className="mp-win-btn text-xs font-bold text-amber-900 hover:text-black"
+                          title="Reset posisi ke tengah"
+                          onClick={() => setPanelOffsets((prev) => ({ ...prev, question: { x: 0, y: 0 } }))}
+                        >
+                          ⌖
+                        </button>
+                      )}
+                      {isStaff && (
+                        <button
+                          type="button"
+                          className="mp-win-btn text-sm font-bold text-slate-300 hover:text-white"
+                          title="Tutup Modal Soal (Guru/Admin)"
+                          onClick={() => closeQuestionModal(question.id)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mp-bonus-badge" aria-label={`Bonus ${question.points} poin`}>
+                    <span aria-hidden="true">⏱</span> +{question.points}
+                  </div>
+
+                  <form onSubmit={submitAnswer} className="mp-q-form-body">
+                    <div className="mp-q-scroll-content">
+                      <div className="mp-q-header-row">
+                        <h2 className="mp-q-heading">{question.content}</h2>
+                      </div>
+
+                      <div className="mp-options-grid-2x2" role="radiogroup" aria-label="Pilihan jawaban">
+                        {question.options.map((o, idx) => {
+                          const displayLabel = OPTION_DISPLAY_LABELS[idx] ?? o.label;
+                          const isStaffViewer = isStaffRole(myRoleRef.current);
+                          const isCorrectKey = isStaffViewer && Boolean(question.correctAnswer) && (
+                            question.correctAnswer === o.label ||
+                            question.correctAnswer === o.content ||
+                            question.correctAnswer?.toLowerCase() === o.label.toLowerCase() ||
+                            question.correctAnswer?.toLowerCase() === o.content.toLowerCase()
+                          );
+
+                          // Cek apakah opsi ini dipilih oleh siswa yang sedang di-mirror / di-follow
+                          const isMirrorActive = Boolean(mirrorTargetRef.current || ropedByUserId);
+                          const chosenAns = studentChosenAnswers.get(question.id);
+                          const liveSelecting = mirroredStudentSelections.get(question.id);
+                          const studentChoice = chosenAns || liveSelecting;
+                          const isStudentPick = Boolean(isMirrorActive && isStaffViewer && studentChoice && (
+                            studentChoice === o.label ||
+                            studentChoice === o.content ||
+                            studentChoice.toLowerCase() === o.label.toLowerCase() ||
+                            studentChoice.toLowerCase() === o.content.toLowerCase()
+                          ));
+
+                          const qResult = answerResultsRef.current.get(question.id);
+                          const isStudentPickWrong = isStudentPick && (qResult === false || (chosenAns && !isCorrectKey));
+                          const isStudentPickCorrect = isStudentPick && (qResult === true || (chosenAns && isCorrectKey));
+                          const isStudentLiveChoice = isStudentPick && !chosenAns;
+
+                          let ringClass = '';
+                          if (isCorrectKey) ringClass = ' border-emerald-500 ring-2 ring-emerald-400 bg-emerald-50/20';
+                          if (isStudentPickWrong) ringClass = ' border-rose-500 ring-2 ring-rose-400 bg-rose-50/25';
+                          else if (isStudentLiveChoice) ringClass = ' border-amber-400 ring-2 ring-amber-300 bg-amber-50/25';
+
+                          return (
+                            <button
+                              key={o.label}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected === o.label}
+                              className={`mp-grid-opt-btn${selected === o.label ? ' selected' : ''}${ringClass}`}
+                              onClick={() => {
+                                soundEngine.playClick();
+                                setSelected(o.label);
+                                if (!isStaff && question) {
+                                  ably.publishCommand({ op: 'mirror_question_state', userId: myIdRef.current, qid: question.id, selected: o.label });
+                                }
+                              }}
+                            >
+                              <span className="opt-badge">{displayLabel}</span>
+                              <span className="flex-1 text-left">{o.content}</span>
+                              {isCorrectKey && (
+                                <span className="admin-key-badge ml-2" title="Kunci Jawaban Benar (Admin & Guru)">
+                                  ✓ KUNCI JAWABAN
+                                </span>
+                              )}
+                              {isStudentPickWrong && (
+                                <span
+                                  className="ml-2 font-bold text-xs"
+                                  title="Opsi yang dipilih siswa (Salah)"
+                                  style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', borderRadius: '6px' }}
+                                >
+                                  ❌ Dipilih Siswa (Salah)
+                                </span>
+                              )}
+                              {isStudentPickCorrect && !isCorrectKey && (
+                                <span
+                                  className="ml-2 font-bold text-xs"
+                                  title="Opsi yang dipilih siswa (Benar)"
+                                  style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '6px' }}
+                                >
+                                  ✓ Dipilih Siswa (Benar)
+                                </span>
+                              )}
+                              {isStudentLiveChoice && (
+                                <span
+                                  className="ml-2 font-bold text-xs"
+                                  title="Siswa sedang memilih opsi ini"
+                                  style={{ background: '#f59e0b', color: '#1e1b4b', padding: '2px 8px', borderRadius: '6px' }}
+                                >
+                                  👤 Pilihan Siswa
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="mp-q-submit-row">
+                      <button type="submit" className="btn-orange-action" disabled={!selected || submitting}>
+                        <span aria-hidden="true">✔</span> {submitting ? 'Mengirim...' : isStaff ? 'Bantu Jawab (Centang Biru)' : 'Submit'}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              )}
+
+            </div>
+          )}
+        </div>
+
+        {actionModalTarget && (
+          <div
+            className="overlay-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Panel Aksi"
+            onClick={() => setActionModalTarget(null)}
+          >
+            <div className="parchment-card admin-action-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="admin-action-header">
+                <div>
+                  <div className="admin-action-title">
+                    <span aria-hidden="true">{actionModalTarget.target === 'global' ? '🌐' : '⚡'}</span>
+                    {actionModalTarget.target === 'global' ? 'Panel Aksi Masal Admin' : `Panel Aksi: ${actionModalTarget.username}`}
+                    {actionModalTarget.target !== 'global' && (
+                      <button
+                        type="button"
+                        className="btn-copy-nick text-xs px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 border border-amber-400 font-bold ml-2 text-amber-900 inline-flex items-center gap-1"
+                        title={`Salin Username '${actionModalTarget.username}'`}
+                        onClick={() => copyPlayerUsername(actionModalTarget.username)}
+                      >
+                        📋 Salin
+                      </button>
+                    )}
+                  </div>
+                  {actionModalTarget.target !== 'global' && (
+                    <div className="admin-action-subinfo">
+                      {actionModalTarget.fullName && <span>Nama: <strong>{actionModalTarget.fullName}</strong></span>}
+                      {actionModalTarget.stage && <span>Stage: <strong>{actionModalTarget.stage}</strong></span>}
+                      {actionModalTarget.role && <span>Role: <strong className="capitalize">{actionModalTarget.role}</strong></span>}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="mp-win-btn text-base font-bold text-amber-950 hover:text-black ml-auto"
+                  aria-label="Tutup Panel Aksi"
+                  onClick={() => setActionModalTarget(null)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {actionModalTarget.target === 'global' && (isAdmin || isStaff) && (
+                <div className="admin-action-scope-tabs" role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={actionModalScope === 'here'}
+                    className={`admin-action-scope-tab${actionModalScope === 'here' ? ' is-active' : ''}`}
+                    onClick={() => setActionModalScope('here')}
+                  >
+                    📍 Stage Ini ({currentStage})
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={actionModalScope === 'all'}
+                    className={`admin-action-scope-tab${actionModalScope === 'all' ? ' is-active' : ''}`}
+                    onClick={() => setActionModalScope('all')}
+                  >
+                    🌐 Seluruh Siswa (All)
+                  </button>
+                </div>
+              )}
+
+              <div className="admin-action-scroll">
+                {/* 1. TELEPORT */}
+                <div className="admin-action-group">
+                  <div className="admin-action-group-title">
+                    <span aria-hidden="true">🚀</span> Teleportasi &amp; Posisi
+                  </div>
+                  <div className="admin-action-grid">
+                    {actionModalTarget.target === 'global' ? (
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-cyan"
+                        onClick={() => handleChatCommand(`/teleport ${actionModalScope} me`)}
+                      >
+                        🚀 Tarik {actionModalScope === 'here' ? 'Stage Ini' : 'Semua'} ke Saya
+                      </button>
+                    ) : (
+                      <>
                         <button
                           type="button"
                           className="admin-action-btn btn-cyan"
-                          onClick={() => handleChatCommand(`/teleport ${actionModalScope} me`)}
+                          onClick={() => handleChatCommand(`/teleport ${actionModalTarget.username} me`)}
                         >
-                          🚀 Tarik {actionModalScope === 'here' ? 'Stage Ini' : 'Semua'} ke Saya
+                          🚀 Tarik ke Posisi Saya
                         </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-cyan"
-                            onClick={() => handleChatCommand(`/teleport ${actionModalTarget.username} me`)}
-                          >
-                            🚀 Tarik ke Posisi Saya
-                          </button>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-cyan"
-                            onClick={() => handleChatCommand(`/teleport ${actionModalTarget.username}`)}
-                          >
-                            📍 Samperin Player Ini
-                          </button>
-                          {actionModalTarget.target !== myIdRef.current && (
-                            ropedByUserId === actionModalTarget.target ? (
-                              <button
-                                type="button"
-                                className="admin-action-btn btn-rose"
-                                onClick={() => handleChatCommand('/unfollow')}
-                              >
-                                ⛓️ Unfollow ({actionModalTarget.username})
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="admin-action-btn btn-amber"
-                                onClick={() => handleChatCommand(`/follow ${actionModalTarget.username}`)}
-                              >
-                                🪢 Follow ({actionModalTarget.username})
-                              </button>
-                            )
-                          )}
-                        </>
-                      )}
-                    </div>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-cyan"
+                          onClick={() => handleChatCommand(`/teleport ${actionModalTarget.username}`)}
+                        >
+                          📍 Samperin Player Ini
+                        </button>
+                        {actionModalTarget.target !== myIdRef.current && (
+                          ropedByUserId === actionModalTarget.target ? (
+                            <button
+                              type="button"
+                              className="admin-action-btn btn-rose"
+                              onClick={() => handleChatCommand('/unfollow')}
+                            >
+                              ⛓️ Unfollow ({actionModalTarget.username})
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="admin-action-btn btn-amber"
+                              onClick={() => handleChatCommand(`/follow ${actionModalTarget.username}`)}
+                            >
+                              🪢 Follow ({actionModalTarget.username})
+                            </button>
+                          )
+                        )}
+                      </>
+                    )}
                   </div>
+                </div>
 
-                  {/* 2. SENJATA / WEAPONS */}
+                {/* 2. SENJATA / WEAPONS */}
+                <div className="admin-action-group">
+                  <div className="admin-action-group-title">
+                    <span aria-hidden="true">🔫</span> Senjata &amp; Combat
+                  </div>
+                  <div className="admin-action-grid admin-action-grid-3">
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun minigun ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🔫 Minigun
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun laser ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      ⚡ Laser
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun ice ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🧊 Ice Gun
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-amber"
+                      onClick={() => handleChatCommand(`/spawn gun stunt ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      ⚡ Stun Gun
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-rose"
+                      onClick={() => handleChatCommand(`/spawn gun none ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🚫 Tarik Senjata
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. GOD MODE (ADMIN ONLY) */}
+                {isAdmin && (
                   <div className="admin-action-group">
                     <div className="admin-action-group-title">
-                      <span aria-hidden="true">🔫</span> Senjata &amp; Combat
+                      <span aria-hidden="true">👑</span> Mode Kebal (God Mode)
                     </div>
-                    <div className="admin-action-grid admin-action-grid-3">
+                    <div className="admin-action-grid">
                       <button
                         type="button"
-                        className="admin-action-btn btn-amber"
-                        onClick={() => handleChatCommand(`/spawn gun minigun ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                        className="admin-action-btn btn-gold"
+                        onClick={() => handleChatCommand(`/set god ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
                       >
-                        🔫 Minigun
+                        👑 Aktifkan God Mode
                       </button>
                       <button
                         type="button"
-                        className="admin-action-btn btn-amber"
-                        onClick={() => handleChatCommand(`/spawn gun laser ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                        className="admin-action-btn btn-gold"
+                        onClick={() => handleChatCommand(`/unset god ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
                       >
-                        ⚡ Laser
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-action-btn btn-amber"
-                        onClick={() => handleChatCommand(`/spawn gun ice ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                      >
-                        🧊 Ice Gun
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-action-btn btn-amber"
-                        onClick={() => handleChatCommand(`/spawn gun stunt ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                      >
-                        ⚡ Stun Gun
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-action-btn btn-rose"
-                        onClick={() => handleChatCommand(`/spawn gun none ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                      >
-                        🚫 Tarik Senjata
+                        ❌ Matikan God Mode
                       </button>
                     </div>
                   </div>
+                )}
 
-                  {/* 3. GOD MODE (ADMIN ONLY) */}
-                  {isAdmin && (
-                    <div className="admin-action-group">
-                      <div className="admin-action-group-title">
-                        <span aria-hidden="true">👑</span> Mode Kebal (God Mode)
-                      </div>
-                      <div className="admin-action-grid">
-                        <button
-                          type="button"
-                          className="admin-action-btn btn-gold"
-                          onClick={() => handleChatCommand(`/set god ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                        >
-                          👑 Aktifkan God Mode
-                        </button>
-                        <button
-                          type="button"
-                          className="admin-action-btn btn-gold"
-                          onClick={() => handleChatCommand(`/unset god ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                        >
-                          ❌ Matikan God Mode
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 4. ROPE & SKIP STAGE (ADMIN ONLY) */}
-                  {isAdmin && (
-                    <div className="admin-action-group">
-                      <div className="admin-action-group-title">
-                        <span aria-hidden="true">🪢</span> Tali &amp; Bypass Soal (Admin)
-                      </div>
-                      <div className="admin-action-grid">
-                        <button
-                          type="button"
-                          className="admin-action-btn btn-emerald"
-                          onClick={() => handleChatCommand(`/take rope ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                        >
-                          🪢 Ikat Tali (Rope)
-                        </button>
-                        <button
-                          type="button"
-                          className="admin-action-btn btn-emerald"
-                          onClick={() => handleChatCommand(`/untake rope ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                        >
-                          🪢 Lepas Tali
-                        </button>
-                        <button
-                          type="button"
-                          className="admin-action-btn btn-violet"
-                          onClick={() => handleChatCommand(`/skip stage ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
-                        >
-                          ⏩ Luluskan Stage (Skip)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 5. KONTROL & AKSES SISWA (STAFF: ADMIN & GURU) */}
+                {/* 4. ROPE & SKIP STAGE (ADMIN ONLY) */}
+                {isAdmin && (
                   <div className="admin-action-group">
                     <div className="admin-action-group-title">
-                      <span aria-hidden="true">🛡️</span> Kontrol &amp; Akses Siswa
+                      <span aria-hidden="true">🪢</span> Tali &amp; Bypass Soal (Admin)
                     </div>
                     <div className="admin-action-grid">
                       <button
                         type="button"
                         className="admin-action-btn btn-emerald"
-                        onClick={() => handleChatCommand(`/enable cmd ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                        onClick={() => handleChatCommand(`/take rope ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
                       >
-                        💬 Beri Akses Cmd
+                        🪢 Ikat Tali (Rope)
                       </button>
                       <button
                         type="button"
-                        className="admin-action-btn btn-rose"
-                        onClick={() => handleChatCommand(`/disable cmd ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                        className="admin-action-btn btn-emerald"
+                        onClick={() => handleChatCommand(`/untake rope ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
                       >
-                        🚫 Cabut Akses Cmd
+                        🪢 Lepas Tali
                       </button>
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-violet"
+                        onClick={() => handleChatCommand(`/skip stage ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                      >
+                        ⏩ Luluskan Stage (Skip)
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                      {actionModalTarget.target !== 'global' && (
-                        <>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-rose"
-                            onClick={() => handleChatCommand(`/jail on ${actionModalTarget.username}`)}
-                          >
-                            🔒 Penjara (Jail)
-                          </button>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-emerald"
-                            onClick={() => handleChatCommand(`/jail off ${actionModalTarget.username}`)}
-                          >
-                            🔓 Buka Penjara
-                          </button>
-                        </>
-                      )}
+                {/* 5. KONTROL & AKSES SISWA (STAFF: ADMIN & GURU) */}
+                <div className="admin-action-group">
+                  <div className="admin-action-group-title">
+                    <span aria-hidden="true">🛡️</span> Kontrol &amp; Akses Siswa
+                  </div>
+                  <div className="admin-action-grid">
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-emerald"
+                      onClick={() => handleChatCommand(`/enable cmd ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      💬 Beri Akses Cmd
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn btn-rose"
+                      onClick={() => handleChatCommand(`/disable cmd ${actionModalTarget.target === 'global' ? actionModalScope : actionModalTarget.username}`)}
+                    >
+                      🚫 Cabut Akses Cmd
+                    </button>
 
-                      {actionModalTarget.target !== 'global' ? (
+                    {actionModalTarget.target !== 'global' && (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-rose"
+                          onClick={() => handleChatCommand(`/jail on ${actionModalTarget.username}`)}
+                        >
+                          🔒 Penjara (Jail)
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-emerald"
+                          onClick={() => handleChatCommand(`/jail off ${actionModalTarget.username}`)}
+                        >
+                          🔓 Buka Penjara
+                        </button>
+                      </>
+                    )}
+
+                    {actionModalTarget.target !== 'global' ? (
+                      <button
+                        type="button"
+                        className="admin-action-btn btn-cyan"
+                        onClick={() => handleChatCommand(`/mirror ${actionModalTarget.username}`)}
+                      >
+                        🔍 Mirror Soal Siswa
+                      </button>
+                    ) : isAdmin && actionModalScope === 'all' && (
+                      <>
                         <button
                           type="button"
                           className="admin-action-btn btn-cyan"
-                          onClick={() => handleChatCommand(`/mirror ${actionModalTarget.username}`)}
+                          onClick={() => handleChatCommand(`/mirror all`)}
                         >
-                          🔍 Mirror Soal Siswa
+                          🔍 Mirror Seluruh Kelas
                         </button>
-                      ) : isAdmin && actionModalScope === 'all' && (
-                        <>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-cyan"
-                            onClick={() => handleChatCommand(`/mirror all`)}
-                          >
-                            🔍 Mirror Seluruh Kelas
-                          </button>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-cyan"
-                            onClick={() => handleChatCommand(`/unset mirror`)}
-                          >
-                            ❌ Matikan Mirror
-                          </button>
-                        </>
-                      )}
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-cyan"
+                          onClick={() => handleChatCommand(`/unset mirror`)}
+                        >
+                          ❌ Matikan Mirror
+                        </button>
+                      </>
+                    )}
 
-                      {actionModalTarget.target !== 'global' ? (
-                        <>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-gold"
-                            onClick={() => handleChatCommand(`/set semiadmin ${actionModalTarget.username}`)}
-                          >
-                            ⭐ Angkat Semi-Admin
-                          </button>
+                    {actionModalTarget.target !== 'global' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-gold"
+                          onClick={() => handleChatCommand(`/set semiadmin ${actionModalTarget.username}`)}
+                        >
+                          ⭐ Angkat Semi-Admin
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-rose"
+                          onClick={() => handleChatCommand(`/unset semiadmin ${actionModalTarget.username}`)}
+                        >
+                          🚫 Cabut Semi-Admin
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-rose"
+                          onClick={() => handleChatCommand(`/reset ${actionModalTarget.username}`)}
+                        >
+                          🔄 Reset Soal Siswa
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-amber"
+                          onClick={() => handleChatCommand('/set pvp on')}
+                        >
+                          ⚔️ Bolehkan Siswa Saling Tembak
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn btn-emerald"
+                          onClick={() => handleChatCommand('/set pvp off')}
+                        >
+                          🕊️ Mode Damai (Tutup PvP Siswa)
+                        </button>
+                        {isAdmin && actionModalScope === 'all' && (
                           <button
                             type="button"
                             className="admin-action-btn btn-rose"
-                            onClick={() => handleChatCommand(`/unset semiadmin ${actionModalTarget.username}`)}
+                            onClick={() => handleChatCommand(`/reset all`)}
                           >
-                            🚫 Cabut Semi-Admin
+                            🔄 Reset Soal Sekelas
                           </button>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-rose"
-                            onClick={() => handleChatCommand(`/reset ${actionModalTarget.username}`)}
-                          >
-                            🔄 Reset Soal Siswa
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-amber"
-                            onClick={() => handleChatCommand('/set pvp on')}
-                          >
-                            ⚔️ Bolehkan Siswa Saling Tembak
-                          </button>
-                          <button
-                            type="button"
-                            className="admin-action-btn btn-emerald"
-                            onClick={() => handleChatCommand('/set pvp off')}
-                          >
-                            🕊️ Mode Damai (Tutup PvP Siswa)
-                          </button>
-                          {isAdmin && actionModalScope === 'all' && (
-                            <button
-                              type="button"
-                              className="admin-action-btn btn-rose"
-                              onClick={() => handleChatCommand(`/reset all`)}
-                            >
-                              🔄 Reset Soal Sekelas
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {settingsModalOpen && (
-            <div
-              className="overlay-backdrop"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Pengaturan Game"
-              onClick={() => setSettingsModalOpen(false)}
-            >
-              <div className="parchment-card feedback-modal-card settings-modal-card" onClick={(e) => e.stopPropagation()}>
-                <div className="text-center">
-                  <div className="green-arch-ribbon">Pengaturan Game</div>
-                </div>
+        {settingsModalOpen && (
+          <div
+            className="overlay-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pengaturan Game"
+            onClick={() => setSettingsModalOpen(false)}
+          >
+            <div className="parchment-card feedback-modal-card settings-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="text-center">
+                <div className="green-arch-ribbon">Pengaturan Game</div>
+              </div>
 
-                <div className="settings-section">
-                  <div className="settings-section-title">Suara &amp; Musik (BGM)</div>
+              <div className="settings-section">
+                <div className="settings-section-title">Suara &amp; Musik (BGM)</div>
 
-                  <div className="settings-row">
-                    <span className="settings-label">Musik Latar (BGM)</span>
-                    <button
-                      type="button"
-                      className={`settings-toggle-btn ${bgmEnabled ? 'on' : 'off'}`}
-                      onClick={() => {
-                        const next = !bgmEnabled;
-                        setBgmEnabled(next);
-                        soundEngine.setBgmEnabled(next);
-                        soundEngine.playClick();
-                      }}
-                    >
-                      {bgmEnabled ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-
-                  <div className="settings-slider-wrap">
-                    <div className="settings-row">
-                      <span className="settings-label">Volume Musik</span>
-                      <span className="settings-val-badge">{Math.round(bgmVolume * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      className="settings-range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={Math.round(bgmVolume * 100)}
-                      onChange={(e) => {
-                        const v = Number(e.target.value) / 100;
-                        setBgmVolume(v);
-                        soundEngine.setBgmVolume(v);
-                      }}
-                    />
-                  </div>
-
-                  <div className="settings-row" style={{ marginTop: 4 }}>
-                    <span className="settings-label">Efek Suara (Lompat, Api, Mati, Klik)</span>
-                    <button
-                      type="button"
-                      className={`settings-toggle-btn ${sfxEnabled ? 'on' : 'off'}`}
-                      onClick={() => {
-                        const next = !sfxEnabled;
-                        setSfxEnabled(next);
-                        soundEngine.setSfxEnabled(next);
-                        if (next) soundEngine.playClick();
-                      }}
-                    >
-                      {sfxEnabled ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-
-                  <div className="settings-slider-wrap">
-                    <div className="settings-row">
-                      <span className="settings-label">Volume Efek Suara</span>
-                      <span className="settings-val-badge">{Math.round(sfxVolume * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      className="settings-range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={Math.round(sfxVolume * 100)}
-                      onChange={(e) => {
-                        const v = Number(e.target.value) / 100;
-                        setSfxVolume(v);
-                        soundEngine.setSfxVolume(v);
-                      }}
-                      onPointerUp={() => soundEngine.playJump()}
-                    />
-                  </div>
-                </div>
-
-                <div className="settings-section">
-                  <div className="settings-section-title">Ukuran &amp; Posisi Tombol Layar</div>
-
-                  <div className="settings-slider-wrap">
-                    <div className="settings-row">
-                      <span className="settings-label">Ukuran Tombol (Kiri/Kanan/Lompat)</span>
-                      <span className="settings-val-badge">{hudControls.size}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      className="settings-range"
-                      min={64}
-                      max={128}
-                      step={2}
-                      value={hudControls.size}
-                      onChange={(e) => updateHudControls({ size: Number(e.target.value) })}
-                    />
-                  </div>
-
-                  <div className="settings-slider-wrap">
-                    <div className="settings-row">
-                      <span className="settings-label">Jarak Tombol Kiri &amp; Kanan</span>
-                      <span className="settings-val-badge">{hudControls.gap}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      className="settings-range"
-                      min={8}
-                      max={44}
-                      step={2}
-                      value={hudControls.gap}
-                      onChange={(e) => updateHudControls({ gap: Number(e.target.value) })}
-                    />
-                  </div>
-
-                  <div className="settings-slider-wrap">
-                    <div className="settings-row">
-                      <span className="settings-label">Transparansi Tombol</span>
-                      <span className="settings-val-badge">{Math.round(hudControls.opacity * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      className="settings-range"
-                      min={35}
-                      max={100}
-                      step={5}
-                      value={Math.round(hudControls.opacity * 100)}
-                      onChange={(e) => updateHudControls({ opacity: Number(e.target.value) / 100 })}
-                    />
-                  </div>
-
-                  <div className="settings-row">
-                    <span className="settings-label">Tukar Sisi Kiri &amp; Kanan</span>
-                    <button
-                      type="button"
-                      className={`settings-toggle-btn ${hudControls.swapSides ? 'on' : 'off'}`}
-                      onClick={() => {
-                        soundEngine.playClick();
-                        updateHudControls({ swapSides: !hudControls.swapSides });
-                      }}
-                    >
-                      {hudControls.swapSides ? 'DITUKAR' : 'NORMAL'}
-                    </button>
-                  </div>
-
-                  <div className="settings-actions-row">
-                    <button
-                      type="button"
-                      className="btn-blue-action"
-                      style={{ fontSize: 13, padding: '8px 14px', minHeight: 40, flex: 1 }}
-                      onClick={() => {
-                        soundEngine.playClick();
-                        setSettingsModalOpen(false);
-                        setEditingControlsLayout(true);
-                      }}
-                    >
-                      Geser Posisi Tombol di Layar
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-orange-action"
-                      style={{ fontSize: 13, padding: '8px 14px', minHeight: 40 }}
-                      onClick={resetHudControls}
-                    >
-                      Reset Tombol
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex justify-end">
+                <div className="settings-row">
+                  <span className="settings-label">Musik Latar (BGM)</span>
                   <button
                     type="button"
-                    className="btn-green-action"
-                    style={{ fontSize: 14, padding: '8px 24px', minHeight: 42 }}
+                    className={`settings-toggle-btn ${bgmEnabled ? 'on' : 'off'}`}
+                    onClick={() => {
+                      const next = !bgmEnabled;
+                      setBgmEnabled(next);
+                      soundEngine.setBgmEnabled(next);
+                      soundEngine.playClick();
+                    }}
+                  >
+                    {bgmEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                <div className="settings-slider-wrap">
+                  <div className="settings-row">
+                    <span className="settings-label">Volume Musik</span>
+                    <span className="settings-val-badge">{Math.round(bgmVolume * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="settings-range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={Math.round(bgmVolume * 100)}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) / 100;
+                      setBgmVolume(v);
+                      soundEngine.setBgmVolume(v);
+                    }}
+                  />
+                </div>
+
+                <div className="settings-row" style={{ marginTop: 4 }}>
+                  <span className="settings-label">Efek Suara (Lompat, Api, Mati, Klik)</span>
+                  <button
+                    type="button"
+                    className={`settings-toggle-btn ${sfxEnabled ? 'on' : 'off'}`}
+                    onClick={() => {
+                      const next = !sfxEnabled;
+                      setSfxEnabled(next);
+                      soundEngine.setSfxEnabled(next);
+                      if (next) soundEngine.playClick();
+                    }}
+                  >
+                    {sfxEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                <div className="settings-slider-wrap">
+                  <div className="settings-row">
+                    <span className="settings-label">Volume Efek Suara</span>
+                    <span className="settings-val-badge">{Math.round(sfxVolume * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="settings-range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={Math.round(sfxVolume * 100)}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) / 100;
+                      setSfxVolume(v);
+                      soundEngine.setSfxVolume(v);
+                    }}
+                    onPointerUp={() => soundEngine.playJump()}
+                  />
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <div className="settings-section-title">Ukuran &amp; Posisi Tombol Layar</div>
+
+                <div className="settings-slider-wrap">
+                  <div className="settings-row">
+                    <span className="settings-label">Ukuran Tombol (Kiri/Kanan/Lompat)</span>
+                    <span className="settings-val-badge">{hudControls.size}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="settings-range"
+                    min={64}
+                    max={128}
+                    step={2}
+                    value={hudControls.size}
+                    onChange={(e) => updateHudControls({ size: Number(e.target.value) })}
+                  />
+                </div>
+
+                <div className="settings-slider-wrap">
+                  <div className="settings-row">
+                    <span className="settings-label">Jarak Tombol Kiri &amp; Kanan</span>
+                    <span className="settings-val-badge">{hudControls.gap}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="settings-range"
+                    min={8}
+                    max={44}
+                    step={2}
+                    value={hudControls.gap}
+                    onChange={(e) => updateHudControls({ gap: Number(e.target.value) })}
+                  />
+                </div>
+
+                <div className="settings-slider-wrap">
+                  <div className="settings-row">
+                    <span className="settings-label">Transparansi Tombol</span>
+                    <span className="settings-val-badge">{Math.round(hudControls.opacity * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="settings-range"
+                    min={35}
+                    max={100}
+                    step={5}
+                    value={Math.round(hudControls.opacity * 100)}
+                    onChange={(e) => updateHudControls({ opacity: Number(e.target.value) / 100 })}
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <span className="settings-label">Tukar Sisi Kiri &amp; Kanan</span>
+                  <button
+                    type="button"
+                    className={`settings-toggle-btn ${hudControls.swapSides ? 'on' : 'off'}`}
+                    onClick={() => {
+                      soundEngine.playClick();
+                      updateHudControls({ swapSides: !hudControls.swapSides });
+                    }}
+                  >
+                    {hudControls.swapSides ? 'DITUKAR' : 'NORMAL'}
+                  </button>
+                </div>
+
+                <div className="settings-actions-row">
+                  <button
+                    type="button"
+                    className="btn-blue-action"
+                    style={{ fontSize: 13, padding: '8px 14px', minHeight: 40, flex: 1 }}
                     onClick={() => {
                       soundEngine.playClick();
                       setSettingsModalOpen(false);
+                      setEditingControlsLayout(true);
                     }}
                   >
-                    Selesai
+                    Geser Posisi Tombol di Layar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-orange-action"
+                    style={{ fontSize: 13, padding: '8px 14px', minHeight: 40 }}
+                    onClick={resetHudControls}
+                  >
+                    Reset Tombol
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  className="btn-green-action"
+                  style={{ fontSize: 14, padding: '8px 24px', minHeight: 42 }}
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setSettingsModalOpen(false);
+                  }}
+                >
+                  Selesai
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {kickModalOpen && isStaff && (
+          <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Kelola Pemain" onClick={() => setKickModalOpen(false)}>
+            <div className="parchment-card feedback-modal-card teacher-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="text-center">
+                <div className="green-arch-ribbon">Kelola Pemain</div>
+              </div>
+              <p className="feedback-subtext text-center" style={{ marginBottom: 8 }}>
+                Keluarkan peserta yang tidak dikenal dari ruang permainan.
+              </p>
+
+              {sortedPlayers.filter((pl) => pl.userId !== myIdRef.current && pl.role !== 'admin' && pl.role !== 'teacher').length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    className="btn-orange-action"
+                    style={{ fontSize: 12, padding: '6px 14px', minHeight: 36 }}
+                    onClick={kickAllPlayers}
+                  >
+                    🚫 Kick Semua Pemain
+                  </button>
+                </div>
+              )}
+
+              <div className="teacher-list-box">
+                {rejoinRequests.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div
+                      className="teacher-q-text"
+                      style={{ fontSize: 13, color: '#8c5308', marginBottom: 6 }}
+                    >
+                      Permintaan Masuk Kembali (Approve = Reset Soal &amp; Poin Sesi ke 0):
+                    </div>
+                    {rejoinRequests.map((req) => (
+                      <div key={req.userId} className="teacher-q-card" style={{ marginBottom: 6 }}>
+                        <div className="teacher-q-info">
+                          <div className="teacher-q-text">{req.username}</div>
+                          <div className="teacher-q-meta">
+                            <span>Ingin bergabung ulang setelah di-kick</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            className="btn-green-action"
+                            style={{ fontSize: 12, padding: '6px 12px', minHeight: 36 }}
+                            onClick={() => approveRejoin(req.userId)}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-orange-action"
+                            style={{ fontSize: 12, padding: '6px 10px', minHeight: 36 }}
+                            onClick={() => rejectRejoin(req.userId)}
+                          >
+                            Tolak
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {sortedPlayers.filter((pl) => pl.userId !== myIdRef.current).length === 0 &&
+                  rejoinRequests.length === 0 ? (
+                  <p className="feedback-subtext text-center">Belum ada siswa di dalam ruang.</p>
+                ) : (
+                  sortedPlayers
+                    .filter((pl) => pl.userId !== myIdRef.current)
+                    .map((pl) => (
+                      <div key={pl.userId} className="teacher-q-card">
+                        <div className="teacher-q-info">
+                          <div className="teacher-q-text">
+                            {pl.username}
+                            {pl.role === 'admin' ? ' (ADMIN)' : pl.role === 'teacher' ? ' (GURU)' : ''}
+                          </div>
+                          <div className="teacher-q-meta">
+                            <span>Skor: {scores[pl.userId] ?? 0} poin</span>
+                          </div>
+                        </div>
+                        {pl.role !== 'admin' && pl.role !== 'teacher' && (
+                          <button
+                            type="button"
+                            className="btn-orange-action"
+                            style={{ fontSize: 13, padding: '6px 14px', minHeight: 38, flexShrink: 0 }}
+                            onClick={() => kickPlayer(pl.userId)}
+                          >
+                            Kick
+                          </button>
+                        )}
+                      </div>
+                    ))
+                )}
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    className="btn-blue-action"
+                    style={{ fontSize: 13, padding: '6px 20px', minHeight: 40 }}
+                    onClick={() => setKickModalOpen(false)}
+                  >
+                    Tutup
                   </button>
                 </div>
               </div>
             </div>
-          )}
-
-          {kickModalOpen && isStaff && (
-            <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Kelola Pemain" onClick={() => setKickModalOpen(false)}>
-              <div className="parchment-card feedback-modal-card teacher-modal-card" onClick={(e) => e.stopPropagation()}>
-                <div className="text-center">
-                  <div className="green-arch-ribbon">Kelola Pemain</div>
-                </div>
-                <p className="feedback-subtext text-center" style={{ marginBottom: 8 }}>
-                  Keluarkan peserta yang tidak dikenal dari ruang permainan.
-                </p>
-
-                {sortedPlayers.filter((pl) => pl.userId !== myIdRef.current && pl.role !== 'admin' && pl.role !== 'teacher').length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-                    <button
-                      type="button"
-                      className="btn-orange-action"
-                      style={{ fontSize: 12, padding: '6px 14px', minHeight: 36 }}
-                      onClick={kickAllPlayers}
-                    >
-                      🚫 Kick Semua Pemain
-                    </button>
-                  </div>
-                )}
-
-                <div className="teacher-list-box">
-                  {rejoinRequests.length > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <div
-                        className="teacher-q-text"
-                        style={{ fontSize: 13, color: '#8c5308', marginBottom: 6 }}
-                      >
-                        Permintaan Masuk Kembali (Approve = Reset Soal &amp; Poin Sesi ke 0):
-                      </div>
-                      {rejoinRequests.map((req) => (
-                        <div key={req.userId} className="teacher-q-card" style={{ marginBottom: 6 }}>
-                          <div className="teacher-q-info">
-                            <div className="teacher-q-text">{req.username}</div>
-                            <div className="teacher-q-meta">
-                              <span>Ingin bergabung ulang setelah di-kick</span>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                            <button
-                              type="button"
-                              className="btn-green-action"
-                              style={{ fontSize: 12, padding: '6px 12px', minHeight: 36 }}
-                              onClick={() => approveRejoin(req.userId)}
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-orange-action"
-                              style={{ fontSize: 12, padding: '6px 10px', minHeight: 36 }}
-                              onClick={() => rejectRejoin(req.userId)}
-                            >
-                              Tolak
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {sortedPlayers.filter((pl) => pl.userId !== myIdRef.current).length === 0 &&
-                    rejoinRequests.length === 0 ? (
-                    <p className="feedback-subtext text-center">Belum ada siswa di dalam ruang.</p>
-                  ) : (
-                    sortedPlayers
-                      .filter((pl) => pl.userId !== myIdRef.current)
-                      .map((pl) => (
-                        <div key={pl.userId} className="teacher-q-card">
-                          <div className="teacher-q-info">
-                            <div className="teacher-q-text">
-                              {pl.username}
-                              {pl.role === 'admin' ? ' (ADMIN)' : pl.role === 'teacher' ? ' (GURU)' : ''}
-                            </div>
-                            <div className="teacher-q-meta">
-                              <span>Skor: {scores[pl.userId] ?? 0} poin</span>
-                            </div>
-                          </div>
-                          {pl.role !== 'admin' && pl.role !== 'teacher' && (
-                            <button
-                              type="button"
-                              className="btn-orange-action"
-                              style={{ fontSize: 13, padding: '6px 14px', minHeight: 38, flexShrink: 0 }}
-                              onClick={() => kickPlayer(pl.userId)}
-                            >
-                              Kick
-                            </button>
-                          )}
-                        </div>
-                      ))
-                  )}
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      type="button"
-                      className="btn-blue-action"
-                      style={{ fontSize: 13, padding: '6px 20px', minHeight: 40 }}
-                      onClick={() => setKickModalOpen(false)}
-                    >
-                      Tutup
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
+        )}
 
         {/* Floating Preview Mode Banner (Harmonized with game theme) */}
         {(previewBody || previewTag1 || previewColors) && (
@@ -8299,11 +8316,10 @@ export default function GamePage() {
                               <button
                                 type="button"
                                 title={isHidden ? "Tampilkan kembali item ke Guru & Siswa" : "Sembunyikan item dari toko (Guru & Siswa tidak bisa melihat / membeli)"}
-                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 shadow-xs ${
-                                  isHidden
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-400 hover:bg-emerald-100'
-                                    : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                                }`}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 shadow-xs ${isHidden
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-400 hover:bg-emerald-100'
+                                  : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                                  }`}
                                 onClick={() => toggleHideBody(item.id)}
                               >
                                 {isHidden ? '👁️ Tampilkan' : '👁️ Sembunyikan'}
@@ -8642,86 +8658,86 @@ export default function GamePage() {
         )}
 
         {feedback && (
-                                                                                          <div className="overlay-backdrop" role="dialog" aria-modal="true">
-                                                                                            <div className="parchment-card feedback-modal-card">
-                                                                                              <div className="green-arch-ribbon">{feedback.isCorrect ? 'Jawaban Benar!' : 'Jawaban Salah'}</div>
+          <div className="overlay-backdrop" role="dialog" aria-modal="true">
+            <div className="parchment-card feedback-modal-card">
+              <div className="green-arch-ribbon">{feedback.isCorrect ? 'Jawaban Benar!' : 'Jawaban Salah'}</div>
 
-                                                                                              <div className="big-star-wrap" aria-hidden="true">
-                                                                                                <svg width="96" height="96" viewBox="0 0 64 64">
-                                                                                                  <polygon
-                                                                                                    points="32,4 40.5,21.5 60,24.3 46,38 49.3,57.2 32,48 14.7,57.2 18,38 4,24.3 23.5,21.5"
-                                                                                                    fill={feedback.isCorrect ? '#ffd43b' : '#d9c9a8'}
-                                                                                                    stroke="#8c5308"
-                                                                                                    strokeWidth="3.5"
-                                                                                                    strokeLinejoin="round"
-                                                                                                  />
-                                                                                                </svg>
-                                                                                              </div>
+              <div className="big-star-wrap" aria-hidden="true">
+                <svg width="96" height="96" viewBox="0 0 64 64">
+                  <polygon
+                    points="32,4 40.5,21.5 60,24.3 46,38 49.3,57.2 32,48 14.7,57.2 18,38 4,24.3 23.5,21.5"
+                    fill={feedback.isCorrect ? '#ffd43b' : '#d9c9a8'}
+                    stroke="#8c5308"
+                    strokeWidth="3.5"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
 
-                                                                                              <p className="feedback-star-bonus">+{feedback.pointsEarned} Poin</p>
-                                                                                              <p className="feedback-subtext">
-                                                                                                {feedback.isCorrect
-                                                                                                  ? 'Mantap! Soal yang kamu jawab dinyatakan BENAR.'
-                                                                                                  : 'Jawaban kamu pada soal yang sudah dijawab ini dinyatakan SALAH.'}
-                                                                                              </p>
+              <p className="feedback-star-bonus">+{feedback.pointsEarned} Poin</p>
+              <p className="feedback-subtext">
+                {feedback.isCorrect
+                  ? 'Mantap! Soal yang kamu jawab dinyatakan BENAR.'
+                  : 'Jawaban kamu pada soal yang sudah dijawab ini dinyatakan SALAH.'}
+              </p>
 
-                                                                                              <button
-                                                                                                type="button"
-                                                                                                className="btn-green-action"
-                                                                                                onClick={() => {
-                                                                                                  setFeedback(null);
-                                                                                                  questionRef.current = null;
-                                                                                                  setQuestion(null);
-                                                                                                }}
-                                                                                              >
-                                                                                                Oke <span aria-hidden="true">▶</span>
-                                                                                              </button>
-                                                                                            </div>
-                                                                                          </div>
-                                                                                        )}
+              <button
+                type="button"
+                className="btn-green-action"
+                onClick={() => {
+                  setFeedback(null);
+                  questionRef.current = null;
+                  setQuestion(null);
+                }}
+              >
+                Oke <span aria-hidden="true">▶</span>
+              </button>
+            </div>
+          </div>
+        )}
 
-                                                                                        {room?.status === 'paused' && !exitNotice && (
-                                                                                          <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Room Dijeda">
-                                                                                            <div className="parchment-card feedback-modal-card">
-                                                                                              <p className="feedback-subtext" style={{ marginTop: 4 }}>
-                                                                                                {isStaff
-                                                                                                  ? 'Room sedang dijeda. Semua pergerakan siswa dikunci.'
-                                                                                                  : 'Room sedang dijeda, menunggu aksi dari guru...'}
-                                                                                              </p>
-                                                                                              {isStaff && (
-                                                                                                <button
-                                                                                                  type="button"
-                                                                                                  className="btn-green-action"
-                                                                                                  onClick={togglePauseGame}
-                                                                                                >
-                                                                                                  Lanjutkan Game
-                                                                                                </button>
-                                                                                              )}
-                                                                                            </div>
-                                                                                          </div>
-                                                                                        )}
+        {room?.status === 'paused' && !exitNotice && (
+          <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Room Dijeda">
+            <div className="parchment-card feedback-modal-card">
+              <p className="feedback-subtext" style={{ marginTop: 4 }}>
+                {isStaff
+                  ? 'Room sedang dijeda. Semua pergerakan siswa dikunci.'
+                  : 'Room sedang dijeda, menunggu aksi dari guru...'}
+              </p>
+              {isStaff && (
+                <button
+                  type="button"
+                  className="btn-green-action"
+                  onClick={togglePauseGame}
+                >
+                  Lanjutkan Game
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
-                                                                                        {exitNotice && (
-                                                                                          <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Notifikasi Ruang">
-                                                                                            <div className="parchment-card feedback-modal-card">
-                                                                                              <p className="feedback-subtext" style={{ marginTop: 4 }}>
-                                                                                                {exitNotice === 'kicked'
-                                                                                                  ? 'Kamu telah dikeluarkan dari ruang permainan ini oleh guru.'
-                                                                                                  : 'Room game ini telah dihapus oleh guru.'}
-                                                                                              </p>
-                                                                                              <button
-                                                                                                type="button"
-                                                                                                className="btn-orange-action"
-                                                                                                onClick={() => {
-                                                                                                  router.replace(isStaff ? '/dashboard/teacher/rooms' : '/dashboard/student');
-                                                                                                }}
-                                                                                              >
-                                                                                                Kembali ke Dashboard
-                                                                                              </button>
-                                                                                            </div>
-                                                                                          </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                  </main>
-                                                                                  );
+        {exitNotice && (
+          <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Notifikasi Ruang">
+            <div className="parchment-card feedback-modal-card">
+              <p className="feedback-subtext" style={{ marginTop: 4 }}>
+                {exitNotice === 'kicked'
+                  ? 'Kamu telah dikeluarkan dari ruang permainan ini oleh guru.'
+                  : 'Room game ini telah dihapus oleh guru.'}
+              </p>
+              <button
+                type="button"
+                className="btn-orange-action"
+                onClick={() => {
+                  router.replace(isStaff ? '/dashboard/teacher/rooms' : '/dashboard/student');
+                }}
+              >
+                Kembali ke Dashboard
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
 }

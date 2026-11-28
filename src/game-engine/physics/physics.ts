@@ -781,18 +781,13 @@ export function updatePlayerPhysics(
     if (pu.collectedUntil && pu.collectedUntil > now) continue;
     const puBox = { x: pu.x, y: pu.y, w: pu.w, h: pu.h };
     if (rectsOverlap(box, puBox)) {
-      pu.collectedUntil = now + 40000;
+      // Power-up bersifat per-player (client-local): hilang 5 detik untuk player ini saja, lalu muncul kembali
+      pu.collectedUntil = now + 5000;
       if (!p.hasAdminGun) {
         p.blasterAmmo = p.isGodMode ? 999 : 10;
         p.blasterUntil = p.isGodMode ? now + 99999999 : now + 30000;
       }
       stageOptions?.onCollectPowerUp?.(pu);
-      stageOptions?.onObstacleEvent?.({
-        op: 'powerup',
-        stg: p.stage ?? 1,
-        id: pu.id,
-        until: now + 40000,
-      });
     }
   }
 

@@ -19,6 +19,10 @@ import {
   touchPresence,
   updateLivePlayerPosition,
   clearRoomRopes,
+  getRoomPvpState,
+  setRoomPvpState,
+  getRoomCmdAccessUsers,
+  setRoomCmdAccess,
 } from './presence-store';
 
 type WsClient = {
@@ -60,9 +64,6 @@ const globalForWsHub = globalThis as unknown as {
   __llysWsHubV3?: { server?: { close: () => void } | null; rooms?: Map<string, Map<string, WsClient>> };
   __llysWsHubV4?: WsHubState;
 };
-
-// Cache status PvP per room agar player yang baru connect / refresh langsung sinkron
-const roomPvpState = new Map<string, boolean>();
 
 function getHub(): WsHubState {
   if (globalForWsHub.__llysWsHub?.server) {
@@ -319,9 +320,24 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
     );
     if (!client.socket.destroyed && client.socket.writable) {
       client.socket.write(initFrame);
-      if (roomPvpState.get(roomId)) {
+      if (getRoomPvpState(roomId)) {
         const pvpFrame = encodeWsTextFrame(JSON.stringify({ t: 'cmd', op: 'pvp_mode', value: true }));
         client.socket.write(pvpFrame);
+      }
+      const cmdUsers = getRoomCmdAccessUsers(roomId);
+      if (cmdUsers.length > 0) {
+        if (cmdUsers.includes('__ALL_STUDENTS__')) {
+          client.socket.write(
+            encodeWsTextFrame(JSON.stringify({ t: 'cmd', op: 'cmd_access', targetId: 'all', value: true })),
+          );
+        }
+        for (const uid of cmdUsers) {
+          if (uid !== '__ALL_STUDENTS__') {
+            client.socket.write(
+              encodeWsTextFrame(JSON.stringify({ t: 'cmd', op: 'cmd_access', targetId: uid, value: true })),
+            );
+          }
+        }
       }
     }
 
@@ -381,21 +397,9 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
         client.userId,
         client.id,
       );
-    } else if (op === 'powerup' && typeof msg.id === 'string') {
-      const until = typeof msg.until === 'number' ? msg.until : Date.now() + 40000;
-      recordRoomPowerUp(client.roomId, stg, msg.id, until);
-      broadcastRoomEvent(
-        client.roomId,
-        {
-          t: 'obstacle',
-          op: 'powerup',
-          stg,
-          id: msg.id,
-          until,
-        },
-        client.userId,
-        client.id,
-      );
+    } else if (op === 'powerup') {
+      // Power-up sekarang client-local (masing-masing player punya cooldown sendiri 5 detik).
+      return;
     } else if (op === 'shoot' && typeof msg.pid === 'string') {
       broadcastRoomEvent(
         client.roomId,
@@ -497,7 +501,10 @@ function handleIncomingMessage(client: WsClient, rawText: string) {
     if (!isAllowedStudentOp && client.role !== 'teacher' && client.role !== 'admin') return;
 
     if (msg.op === 'pvp_mode') {
-      roomPvpState.set(client.roomId, Boolean(msg.value));
+      setRoomPvpState(client.roomId, Boolean(msg.value));
+    }
+    if (msg.op === 'cmd_access' && typeof msg.targetId === 'string') {
+      setRoomCmdAccess(client.roomId, msg.targetId, Boolean(msg.value));
     }
     // rope_all_clear: server ikut melepas tali di live-state & connection semua client
     // supaya snapshot/heartbeat berikutnya tidak mengembalikan tali yang sudah dilepas.
@@ -781,6 +788,20 @@ function handleRawPosHttpRequest(req: http.IncomingMessage, res: http.ServerResp
 
       const snapshot = Array.from(getLiveRoomPositions(roomId).values());
       sendRaw(JSON.stringify({ t: 'snapshot', players: snapshot }));
+      if (getRoomPvpState(roomId)) {
+        sendRaw(JSON.stringify({ t: 'cmd', op: 'pvp_mode', value: true }));
+      }
+      const cmdUsers = getRoomCmdAccessUsers(roomId);
+      if (cmdUsers.length > 0) {
+        if (cmdUsers.includes('__ALL_STUDENTS__')) {
+          sendRaw(JSON.stringify({ t: 'cmd', op: 'cmd_access', targetId: 'all', value: true }));
+        }
+        for (const uid of cmdUsers) {
+          if (uid !== '__ALL_STUDENTS__') {
+            sendRaw(JSON.stringify({ t: 'cmd', op: 'cmd_access', targetId: uid, value: true }));
+          }
+        }
+      }
 
       const cleanupSse = registerSseClient(roomId, userId, sendRaw);
       const keepAliveTimer = setInterval(() => {

@@ -51,9 +51,11 @@ export default async function LandingPage() {
           <Link href={user ? (user.role === 'teacher' || user.role === 'admin' ? '/dashboard/teacher' : '/dashboard/student') : '/register'} className="btn-primary text-lg">
             Mulai Main ▶
           </Link>
-          <Link href="/login" className="btn-secondary text-lg">
-            Sudah Punya Akun
-          </Link>
+          {!user && (
+            <Link href="/login" className="btn-secondary text-lg">
+              Sudah Punya Akun
+            </Link>
+          )}
         </div>
 
         <div className="mx-auto mt-14 grid max-w-4xl gap-6 md:grid-cols-3">

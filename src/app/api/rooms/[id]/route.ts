@@ -22,6 +22,8 @@ import {
   removePresence,
   setLiveRoomStatus,
   touchPresence,
+  getRoomPvpState,
+  getRoomCmdAccessUsers,
 } from '@/server/services/presence-store';
 import { generateId } from '@/server/auth/crypto';
 import { ok, fail, handleError } from '@/server/middleware/http';
@@ -172,6 +174,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       correctCount: answeredQuestionIds.length,
       kicked,
       rejoinRequests: isStaff ? getRejoinRequests(id) : [],
+      isPvpEnabled: getRoomPvpState(id),
+      cmdAccessUsers: getRoomCmdAccessUsers(id),
     });
   } catch (err) {
     return handleError(err);

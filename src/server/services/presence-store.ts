@@ -73,7 +73,59 @@ const globalForPresence = globalThis as unknown as {
   __llysRejoinRequests?: Map<string, Map<string, RejoinRequest>>;
   __llysRejectedRejoins?: Map<string, number>;
   __llysRoomObstacles?: Map<string, RoomObstacleState>;
+  __llysRoomPvpState?: Map<string, boolean>;
+  __llysRoomCmdAccessState?: Map<string, Set<string>>;
 };
+
+function getRoomPvpStore(): Map<string, boolean> {
+  if (!globalForPresence.__llysRoomPvpState) {
+    globalForPresence.__llysRoomPvpState = new Map();
+  }
+  return globalForPresence.__llysRoomPvpState;
+}
+
+function getRoomCmdAccessStore(): Map<string, Set<string>> {
+  if (!globalForPresence.__llysRoomCmdAccessState) {
+    globalForPresence.__llysRoomCmdAccessState = new Map();
+  }
+  return globalForPresence.__llysRoomCmdAccessState;
+}
+
+export function getRoomPvpState(roomId: string): boolean {
+  return getRoomPvpStore().get(roomId) ?? false;
+}
+
+export function setRoomPvpState(roomId: string, enabled: boolean): void {
+  getRoomPvpStore().set(roomId, enabled);
+}
+
+export function getRoomCmdAccessUsers(roomId: string): string[] {
+  const set = getRoomCmdAccessStore().get(roomId);
+  return set ? Array.from(set) : [];
+}
+
+export function setRoomCmdAccess(roomId: string, targetId: string, enabled: boolean): void {
+  const store = getRoomCmdAccessStore();
+  let set = store.get(roomId);
+  if (!set) {
+    set = new Set();
+    store.set(roomId, set);
+  }
+  if (targetId === 'all') {
+    if (enabled) {
+      set.add('__ALL_STUDENTS__');
+    } else {
+      set.clear();
+    }
+  } else {
+    if (enabled) {
+      set.add(targetId);
+    } else {
+      set.delete(targetId);
+      set.delete('__ALL_STUDENTS__');
+    }
+  }
+}
 
 function getRoomObstaclesStore(): Map<string, RoomObstacleState> {
   if (!globalForPresence.__llysRoomObstacles) {
@@ -344,6 +396,8 @@ export function markRoomDeleted(roomId: string): void {
   getLiveRoomStatusStore().set(roomId, 'deleted');
   getPresenceStore().delete(roomId);
   getLivePositionsStore().delete(roomId);
+  getRoomPvpStore().delete(roomId);
+  getRoomCmdAccessStore().delete(roomId);
   invalidateRoomSyncCache(roomId);
 }
 

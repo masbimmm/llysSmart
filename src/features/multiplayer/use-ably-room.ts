@@ -673,6 +673,7 @@ export function useAblyRoom(
               vy: Math.round((pos.vy ?? 0) * 100) / 100,
               f: pos.facing,
               g: pos.onGround ?? true,
+              hp: typeof pos.hp === 'number' ? pos.hp : 5,
             }),
           );
         } catch {
